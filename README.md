@@ -77,43 +77,43 @@ Where `x_norm = (f1 - f2) / |f1 - f2|` is the normalized gradient difference.
 
 ### User Interface
 
-- ✅ **Template Generation**: Create input files from geometry files (XYZ, GJF, LOG)
-- ✅ **Comprehensive Help**: Built-in help system with keyword, method, and feature documentation
-- ✅ **Command Line Interface**: Simple `omecp ci` and `omecp --help` commands
+- **Template Generation**: Create input files from geometry files (XYZ, GJF, LOG)
+- **Comprehensive Help**: Built-in help system with keyword, method, and feature documentation
+- **Command Line Interface**: Simple `omecp ci` and `omecp --help` commands
 
 ### Core Functionality
 
-- ✅ **MECP Optimization**: Harvey et al. algorithm implementation
-- ✅ **BFGS Optimizer**: Quasi-Newton optimization with PSB Hessian updates
-- ✅ **GDIIS Optimizer**: Geometry-based DIIS for 2-3x faster convergence
-- ✅ **GEDIIS Optimizer**: Energy-informed DIIS for enhanced convergence
-- ✅ **Hybrid Strategy**: Automatic switching between BFGS, GDIIS, and GEDIIS
+- **MECP Optimization**: Harvey et al. algorithm implementation
+- **BFGS Optimizer**: Quasi-Newton optimization with PSB Hessian updates
+- **GDIIS Optimizer**: Geometry-based DIIS for 2-3x faster convergence
+- **GEDIIS Optimizer**: Energy-informed DIIS for enhanced convergence
+- **Hybrid Strategy**: Automatic switching between BFGS, GDIIS, and GEDIIS
 
 ### Constraints
 
-- ✅ **Bond Constraints**: Fix bond lengths during optimization
-- ✅ **Angle Constraints**: Fix bond angles during optimization
-- ✅ **Lagrange Multipliers**: Exact constraint enforcement
-- ✅ **Fixed Atoms**: Partial geometry optimization
+- **Bond Constraints**: Fix bond lengths during optimization
+- **Angle Constraints**: Fix bond angles during optimization
+- **Lagrange Multipliers**: Exact constraint enforcement
+- **Fixed Atoms**: Partial geometry optimization
 
 ### QM Program Support
 
-- ✅ **Gaussian**: DFT, TD-DFT, MP2, CASSCF
-- ✅ **ORCA**: DFT, TD-DFT, CASSCF
-- ✅ **Custom**: User-defined via JSON configuration
+- **Gaussian**: DFT, TD-DFT, MP2, CASSCF
+- **ORCA**: DFT, TD-DFT, CASSCF
+- **Custom**: User-defined via JSON configuration
 
 ### Advanced Features
 
-- ✅ **PES Scan**: 1D and 2D potential energy surface scans
-- ✅ **LST Interpolation**: Linear synchronous transit with Kabsch alignment
-- ✅ **Coordinate Driving**: Drive reaction coordinates systematically
-- ✅ **Path Optimization**: Nudged Elastic Band (NEB) method
-- ✅ **Fix-dE Optimization**: Constrain energy difference to target value
-- ✅ **State Selection**: Choose specific excited states for TD-DFT
-- ✅ **External Geometry**: Read geometries from external files
-- ✅ **ONIOM Support**: Multi-layer QM/MM calculations
-- ✅ **Run Modes**: Normal, Read, NoRead, Stable, InterRead
-- ✅ **Pre-point Calculations**: For difficult SCF convergence
+- **PES Scan**: 1D and 2D potential energy surface scans
+- **LST Interpolation**: Linear synchronous transit with Kabsch alignment
+- **Coordinate Driving**: Drive reaction coordinates systematically
+- **Path Optimization**: Nudged Elastic Band (NEB) method
+- **Fix-dE Optimization**: Constrain energy difference to target value
+- **State Selection**: Choose specific excited states for TD-DFT
+- **External Geometry**: Read geometries from external files
+- **ONIOM Support**: Multi-layer QM/MM calculations
+- **Run Modes**: Normal, Read, NoRead, Stable, InterRead
+- **Pre-point Calculations**: For difficult SCF convergence
 
 ## Installation
 

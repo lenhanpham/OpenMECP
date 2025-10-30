@@ -1,109 +1,238 @@
 name: OpenMECP CI
-
-on:
+'on':
   push:
-    branches: [main, develop, dev]
+    branches:
+      - main
+      - develop
+      - dev
+    tags:
+      - v*
   pull_request:
-    branches: [main, develop, dev]
-  workflow_dispatch:
-
+    branches:
+      - main
+      - develop
+      - dev
+  workflow_dispatch: null
+concurrency:
+  group: '${{ github.workflow }}-${{ github.ref }}'
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
 jobs:
-  test:
-    name: Test Suite
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        rust: [stable, beta]
-
+  determine-changes:
+    name: Determine which jobs to run
+    runs-on: ubuntu-latest
+    outputs:
+      run_tests: '${{ steps.changes.outputs.run_tests }}'
+      run_docs: '${{ steps.changes.outputs.run_docs }}'
+      run_security: '${{ steps.changes.outputs.run_security }}'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch base ref for PRs
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin ${{ github.base_ref }} --depth=1
+      - name: Generate changed files list
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} HEAD)
+          else
+            CHANGED_FILES=$(git diff --name-only HEAD~1)
+          fi
+          echo "CHANGED_FILES<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHANGED_FILES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+      - name: Set outputs
+        id: set-outputs
+        run: >
+          CHANGED_FILES="${{ steps.changes.outputs.CHANGED_FILES }}"
 
+          # Run tests/docs if Rust source or Cargo files changed
+
+          if echo "$CHANGED_FILES" | grep -qE
+          '^(Cargo\.|src/|tests/|examples/|benches/)'; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "run_docs=true" >> "$GITHUB_OUTPUT"
+            echo "run_security=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            echo "run_docs=false" >> "$GITHUB_OUTPUT"
+            echo "run_security=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Always run security if deps changed
+
+          if echo "$CHANGED_FILES" | grep -qE '^(Cargo\.lock|Cargo\.toml)'; then
+            echo "run_security=true" >> "$GITHUB_OUTPUT"
+          fi
+  test:
+    name: Test Suite
+    runs-on: '${{ matrix.os }}'
+    needs: determine-changes
+    if: |
+      needs.determine-changes.outputs.run_tests == 'true' ||
+      github.ref_type == 'tag'
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+        rust:
+          - stable
+          - beta
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
-          targets: ${{ matrix.rust }}
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+          toolchain: '${{ matrix.rust }}'
+          components: 'clippy, rustfmt'
+          profile: minimal
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-${{ matrix.rust }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
+          workspaces: .
+          cache-on-failure: true
+          save-if: '${{ github.ref == ''refs/heads/main'' || github.ref_type == ''tag'' }}'
       - name: Install cargo-hack
         run: cargo install cargo-hack
-
+      - name: Check that Cargo.lock is up to date
+        run: cargo update --locked --workspace
       - name: Check formatting
         run: cargo fmt --all -- --check
-
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
-
       - name: Run tests
         run: cargo test --verbose
-
       - name: Build release
         run: cargo build --release
-
       - name: Build all features
         run: cargo hack build --release --all-features
-
   docs:
     name: Documentation
     runs-on: ubuntu-latest
+    needs: determine-changes
+    if: |
+      needs.determine-changes.outputs.run_docs == 'true' ||
+      github.ref_type == 'tag'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rust-docs
-
+          profile: minimal
       - name: Check documentation
         run: cargo doc --no-deps --document-private-items
-
   security:
     name: Security Audit
     runs-on: ubuntu-latest
+    needs: determine-changes
+    if: |
+      needs.determine-changes.outputs.run_security == 'true' ||
+      github.ref_type == 'tag'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
+        with:
+          profile: minimal
       - name: Install cargo-audit
         run: cargo install cargo-audit
-
       - name: Run audit
         run: cargo audit
+  release:
+    name: Release
+    runs-on: '${{ matrix.os }}'
+    needs:
+      - test
+      - docs
+      - security
+    if: 'startsWith(github.ref, ''refs/tags/'')'
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: omecp-linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: omecp-windows-x86_64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: omecp-macos-x86_64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: '${{ matrix.target }}'
+          profile: minimal
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: .
+      - name: Build release binary
+        run: 'cargo build --release --target ${{ matrix.target }}'
+      - name: Package binary
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            zip -r ../../${{ matrix.artifact }}.zip omecp.exe
+          else
+            tar -czf ../../${{ matrix.artifact }}.tar.gz omecp
+          fi
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: 'target/${{ matrix.artifact }}.*'
+        env:
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+  ci-success:
+    name: CI Success Check
+    runs-on: ubuntu-latest
+    needs:
+      - determine-changes
+      - test
+      - docs
+      - security
+      - release
+    if: always()
+    steps:
+      - name: Verify all jobs passed
+        run: >
+          # Skip determine-changes as it's always run
 
-  # Optional: Create release on tags
-  # release:
-  #   name: Release
-  #   runs-on: ubuntu-latest
-  #   if: startsWith(github.ref, 'refs/tags/')
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: dtolnay/rust-toolchain@stable
-  #     - name: Build release
-  #       run: cargo build --release
-  #     - name: Create release
-  #       uses: softprops/action-gh-release@v1
-  #       with:
-  #         files: target/release/omecp
+          REQUIRED_JOBS=("test" "docs" "security")
+
+          for job in "${REQUIRED_JOBS[@]}"; do
+            if [[ "${{ needs.$job.result }}" != "success" && "${{ needs.determine-changes.outputs.run_$job }}" == "true" ]]; then
+              echo "$job failed!"
+              exit 1
+            fi
+          done
+
+          if [[ "${{ needs.release.result }}" != "success" &&
+          startsWith(github.ref, 'refs/tags/') ]]; then
+            echo "Release job failed!"
+            exit 1
+          fi
+
+          echo "All relevant CI jobs passed!"

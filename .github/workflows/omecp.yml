@@ -47,7 +47,7 @@ jobs:
           run_tests=false
           run_docs=false
           run_security=false
-          if echo "$CHANGED_FILES" | grep -qE '^(Cargo\.|src/|tests/|examples/|benches/)'; then
+          if echo "$CHANGED_FILES" | grep -qE '^(Cargo\.|src/|tests/|examples/|benches/|\.github/workflows/)'; then
             run_tests=true
             run_docs=true
             run_security=true

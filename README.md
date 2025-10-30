@@ -17,10 +17,10 @@
 
 A high-performance Rust implementation of the MECP (Minimum Energy Crossing Point) optimizer for locating crossing points between two potential energy surfaces in quantum chemistry calculations.
 
-**Version**: 0.0.1
-**Author**: Le Nhan Pham
-**Language**: Rust
-**License**: MIT
+**Version**: 0.0.1  
+**Author**: Le Nhan Pham  
+**Language**: Rust  
+**License**: MIT  
 
 ## Important Note
 

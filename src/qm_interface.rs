@@ -1,3 +1,57 @@
+//! Quantum chemistry program interfaces for MECP calculations.
+//!
+//! This module provides a unified interface for running calculations with different
+//! quantum chemistry programs. It abstracts away the differences between programs
+//! (Gaussian, ORCA, Bagel, XTB, custom interfaces) and provides a consistent API
+//! for:
+//!
+//! - Writing input files
+//! - Executing calculations
+//! - Parsing output files
+//! - Extracting energies, forces, and geometries
+//!
+//! # Supported Programs
+//!
+//! - **Gaussian**: Full feature support with checkpoint files, TD-DFT, MP2, etc.
+//! - **ORCA**: Energy and gradient files with GBW checkpoints
+//! - **Bagel**: CASSCF and MRCI calculations with JSON model files
+//! - **XTB**: Fast semi-empirical calculations using GFN2-xTB
+//! - **Custom**: JSON-configurable interface for any program
+//!
+//! # Interface Design
+//!
+//! The [`QMInterface`] trait defines the contract that all QM programs must implement.
+//! Each program has its own implementation that handles:
+//! - Program-specific input file format
+//! - Program execution commands and flags
+//! - Output parsing and data extraction
+//! - Error handling specific to the program
+//!
+//! # Usage Pattern
+//!
+//! ```rust
+//! use omecp::qm_interface::{QMInterface, GaussianInterface};
+//!
+//! let gaussian = GaussianInterface::new("g16".to_string(), false);
+//! gaussian.write_input(&geometry, &header, &tail, Path::new("input.gjf"))?;
+//! gaussian.run_calculation(Path::new("input.gjf"))?;
+//! let state = gaussian.read_output(Path::new("output.log"), 0)?;
+//! ```
+//!
+//! # Error Handling
+//!
+//! All operations return a [`QMError`] result that can be:
+//! - `IO`: File system errors (missing files, permission issues)
+//! - `Calculation`: QM program execution failures
+//! - `Parse`: Output parsing errors (malformed or unexpected output)
+//!
+//! # State Extraction
+//!
+//! Each call to `read_output` extracts a [`State`] containing:
+//! - Energy (in hartree)
+//! - Forces/gradients (in hartree/bohr)
+//! - Final geometry
+
 use crate::geometry::{Geometry, State};
 use crate::io;
 use nalgebra::DVector;
@@ -8,30 +62,141 @@ use std::path::Path;
 use std::process::Command;
 use thiserror::Error;
 
+/// Error type for QM interface operations.
+///
+/// QM calculations can fail at three stages:
+/// 1. **I/O**: File operations (reading/writing input/output files)
+/// 2. **Calculation**: Program execution (segfaults, convergence failures, etc.)
+/// 3. **Parsing**: Output file interpretation (malformed data, unexpected format)
 #[derive(Error, Debug)]
 pub enum QMError {
+    /// File system or I/O operation failed
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    /// Quantum chemistry program execution failed
     #[error("QM calculation failed: {0}")]
     Calculation(String),
+    /// Failed to parse program output
     #[error("Parse error: {0}")]
     Parse(String),
 }
 
+/// Type alias for QM operation results
 type Result<T> = std::result::Result<T, QMError>;
 
+/// Trait that defines the interface for all quantum chemistry programs.
+///
+/// This trait must be implemented by each QM program to provide a uniform
+/// interface for MECP calculations. It handles the complete lifecycle of
+/// a single-point calculation: input generation, execution, and output parsing.
 pub trait QMInterface {
+    /// Writes a calculation input file for the quantum chemistry program.
+    ///
+    /// # Arguments
+    ///
+    /// * `geom` - Molecular geometry with element types and coordinates
+    /// * `header` - Program-specific header section (methods, basis sets, options)
+    /// * `tail` - Additional keywords or sections specific to the calculation
+    /// * `path` - Output path for the input file
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success, or a `QMError` if file writing fails.
     fn write_input(&self, geom: &Geometry, header: &str, tail: &str, path: &Path) -> Result<()>;
+
+    /// Executes the quantum chemistry calculation.
+    ///
+    /// Runs the external QM program with the input file and waits for completion.
+    /// The program output is captured and checked for success status.
+    ///
+    /// # Arguments
+    ///
+    /// * `input_path` - Path to the input file to execute
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the calculation succeeds, or a `QMError` if:
+    /// - The program cannot be executed (not found, permissions)
+    /// - The calculation fails (non-zero exit status)
+    /// - Runtime errors occur during execution
     fn run_calculation(&self, input_path: &Path) -> Result<()>;
+
+    /// Parses the calculation output file to extract results.
+    ///
+    /// Reads and parses the program output file to extract the electronic state
+    /// properties needed for MECP optimization.
+    ///
+    /// # Arguments
+    ///
+    /// * `output_path` - Path to the output/log file to parse
+    /// * `state` - Electronic state index to extract (0 = ground state, >0 = excited state)
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing:
+    /// - `Ok(State)` - Successfully parsed state with energy, forces, and geometry
+    /// - `Err(QMError::Parse)` - Failed to parse required data from output
+    /// - `Err(QMError::IO)` - Cannot read output file
+    ///
+    /// # State Selection
+    ///
+    /// The `state` parameter selects which electronic state to extract:
+    /// - `state = 0`: Ground state (S0 for singlet, S1 for triplet, etc.)
+    /// - `state = n`: n-th excited state (for TD-DFT calculations)
+    ///
+    /// Different programs interpret this differently:
+    /// - **Gaussian**: State index for TD-DFT excited states
+    /// - **ORCA**: State index for excited state calculations
+    /// - **Other programs**: May ignore this parameter
     fn read_output(&self, output_path: &Path, state: usize) -> Result<State>;
 }
 
+/// Gaussian quantum chemistry program interface.
+///
+/// Provides support for Gaussian calculations including:
+/// - DFT, TD-DFT, MP2, and post-HF methods
+/// - Excited state calculations via TD-DFT
+/// - Checkpoint files for wavefunction continuity
+/// - Both energy-only and gradient calculations
+///
+/// # Examples
+///
+/// ```
+/// use omecp::qm_interface::GaussianInterface;
+/// use std::path::Path;
+///
+/// // Create interface with Gaussian 16
+/// let gaussian = GaussianInterface::new("g16".to_string(), false);
+///
+/// // Create interface with MP2 enabled
+/// let gaussian_mp2 = GaussianInterface::new("g16".to_string(), true);
+/// ```
 pub struct GaussianInterface {
+    /// Gaussian command to execute (e.g., "g16", "g09", "gview")
     pub command: String,
+    /// Enable MP2 energy extraction from checkpoint archive
     pub mp2: bool,
 }
 
 impl GaussianInterface {
+    /// Creates a new Gaussian interface.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - Gaussian executable command (e.g., "g16", "/path/to/g16")
+    /// * `mp2` - If true, extracts MP2 energy from checkpoint archive instead of SCF
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use omecp::qm_interface::GaussianInterface;
+    ///
+    /// // Standard DFT calculation
+    /// let g16 = GaussianInterface::new("g16".to_string(), false);
+    ///
+    /// // MP2 calculation
+    /// let g16_mp2 = GaussianInterface::new("g16".to_string(), true);
+    /// ```
     pub fn new(command: String, mp2: bool) -> Self {
         Self { command, mp2 }
     }
@@ -181,11 +346,40 @@ fn atomic_number_to_symbol(num: usize) -> String {
     }.to_string()
 }
 
+/// ORCA quantum chemistry program interface.
+///
+/// Provides support for ORCA calculations including:
+/// - DFT, TD-DFT, and CASSCF methods
+/// - Energy and gradient parsing from .engrad files
+/// - Checkpoint files (.gbw) for wavefunction continuity
+///
+/// # Examples
+///
+/// ```
+/// use omecp::qm_interface::OrcaInterface;
+///
+/// // Create interface with ORCA
+/// let orca = OrcaInterface::new("orca".to_string());
+/// ```
 pub struct OrcaInterface {
+    /// ORCA executable command (e.g., "orca", "/path/to/orca")
     pub command: String,
 }
 
 impl OrcaInterface {
+    /// Creates a new ORCA interface.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - ORCA executable command (e.g., "orca", "/path/to/orca")
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use omecp::qm_interface::OrcaInterface;
+    ///
+    /// let orca = OrcaInterface::new("orca".to_string());
+    /// ```
     pub fn new(command: String) -> Self {
         Self { command }
     }
@@ -287,16 +481,69 @@ impl QMInterface for OrcaInterface {
     }
 }
 
+/// BAGEL quantum chemistry program interface.
+///
+/// Provides support for BAGEL calculations including:
+/// - CASSCF and MRCI methods
+/// - JSON-based input files
+/// - Parsing energies and forces from BAGEL output
+///
+/// # Examples
+///
+/// ```
+/// use omecp::qm_interface::BagelInterface;
+///
+/// // Create interface with BAGEL
+/// let bagel = BagelInterface::new(
+///     "bagel".to_string(),
+///     "{\"job\":{\"method\":\"caspt2\"}}".to_string(),
+/// );
+/// ```
 pub struct BagelInterface {
+    /// BAGEL executable command (e.g., "bagel", "/path/to/bagel")
     pub command: String,
+    /// JSON template for BAGEL input (geometry placeholder will be replaced)
     pub model_template: String,
 }
 
+/// XTB semi-empirical program interface.
+///
+/// Provides support for XTB calculations using GFN2-xTB method:
+/// - Fast semi-empirical energies and gradients
+/// - XYZ input format
+/// - Parsing from .engrad files
+///
+/// # Examples
+///
+/// ```
+/// use omecp::qm_interface::XtbInterface;
+///
+/// // Create interface with XTB
+/// let xtb = XtbInterface::new("xtb".to_string());
+/// ```
 pub struct XtbInterface {
+    /// XTB executable command (e.g., "xtb", "/path/to/xtb")
     pub command: String,
 }
 
 impl BagelInterface {
+    /// Creates a new BAGEL interface.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - BAGEL executable command (e.g., "bagel", "/path/to/bagel")
+    /// * `model_template` - JSON string for BAGEL input, with "geometry" placeholder
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use omecp::qm_interface::BagelInterface;
+    ///
+    /// let bagel = BagelInterface::new(
+    ///     "bagel".to_string(),
+    ///     "{\"job\":{\"method\":\"caspt2\"}}".to_string(),
+    /// );
+    /// ```
     pub fn new(command: String, model_template: String) -> Self {
         Self { command, model_template }
     }
@@ -405,6 +652,19 @@ impl QMInterface for BagelInterface {
 }
 
 impl XtbInterface {
+    /// Creates a new XTB interface.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - XTB executable command (e.g., "xtb", "/path/to/xtb")
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use omecp::qm_interface::XtbInterface;
+    ///
+    /// let xtb = XtbInterface::new("xtb".to_string());
+    /// ```
     pub fn new(command: String) -> Self {
         Self { command }
     }
@@ -534,6 +794,10 @@ pub struct CustomInterfaceConfig {
     pub forces_parser: Option<ForcesParser>,
 }
 
+/// Configuration for parsing energy from custom QM program output.
+///
+/// Specifies the regular expression pattern to locate the energy value
+/// in the output file and a unit conversion factor to convert it to Hartree.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct EnergyParser {
     /// Regex pattern to find energy (should contain a capture group for the value)
@@ -542,6 +806,10 @@ pub struct EnergyParser {
     pub unit_factor: f64,
 }
 
+/// Configuration for parsing forces from custom QM program output.
+///
+/// Specifies the regular expression pattern to locate the force components
+/// (Fx, Fy, Fz) for each atom in the output file.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ForcesParser {
     /// Regex pattern to find forces (should capture Fx, Fy, Fz for each atom)
@@ -556,6 +824,33 @@ pub struct CustomInterface {
 }
 
 impl CustomInterface {
+    /// Creates a new `CustomInterface` by loading configuration from a JSON file.
+    ///
+    /// This function reads a JSON configuration file that defines how to interact
+    /// with a custom quantum chemistry program. The configuration includes:
+    /// - Program command
+    /// - Input file template with placeholders
+    /// - Output file extension
+    /// - Regular expressions for parsing energy and forces
+    ///
+    /// # Arguments
+    ///
+    /// * `config_path` - Path to the JSON configuration file
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing:
+    /// - `Ok(Self)` - Successfully created `CustomInterface`
+    /// - `Err(QMError::Parse)` - Failed to read or parse the configuration file
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omecp::qm_interface::CustomInterface;
+    /// use std::path::Path;
+    ///
+    /// let custom_interface = CustomInterface::from_file(Path::new("my_qm_config.json"))?;
+    /// ```
     pub fn from_file(config_path: &Path) -> Result<Self> {
         let content = fs::read_to_string(config_path)
             .map_err(|e| QMError::Parse(format!("Failed to read custom interface config: {}", e)))?;

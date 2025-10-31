@@ -1,3 +1,48 @@
+//! OpenMECP Command-Line Interface
+//!
+//! This module contains the main entry point for the OpenMECP program and handles
+//! command-line argument parsing, help system integration, and orchestration of
+//! different calculation modes.
+//!
+//! # Usage
+//!
+//! OpenMECP supports two main commands:
+//!
+//! 1. **Input Creation** (`omecp ci <geometry_file> [output_file]`):
+//!    Creates a template input file from a geometry file
+//!
+//! 2. **MECP Optimization** (`omecp <input_file>`):
+//!    Runs MECP optimization using the specified input file
+//!
+//! # Examples
+//!
+//! ```bash
+//! # Create template input file from XYZ geometry
+//! omecp ci molecule.xyz
+//!
+//! # Create template with custom output name
+//! omecp ci molecule.xyz custom.inp
+//!
+//! # Run MECP optimization
+//! omecp my_calculation.inp
+//! ```
+//!
+//! # Help System
+//!
+//! Built-in help is available through the `--help` or `-h` flags:
+//!
+//! - `omecp --help` - General help
+//! - `omecp --help keywords` - All input file keywords
+//! - `omecp --help methods` - QM methods and programs
+//! - `omecp --help features` - MECP features and modes
+//! - `omecp ci --help` - Input creation help
+//!
+//! # Supported Geometry Formats
+//!
+//! - `.xyz` - XYZ coordinate files
+//! - `.log` - Gaussian output files (with final geometry)
+//! - `.gjf` - Gaussian input files
+
 use nalgebra::DMatrix;
 use omecp::*;
 use omecp::{checkpoint, lst};
@@ -5,6 +50,36 @@ use std::env;
 use std::path::Path;
 use std::process;
 
+/// Main entry point for OpenMECP program.
+///
+/// Initializes the logger, parses command-line arguments, and dispatches to the
+/// appropriate calculation mode based on the command provided.
+///
+/// # Command-Line Arguments
+///
+/// - `omecp ci <geometry_file> [output_file]`: Create template input file
+/// - `omecp <input_file>`: Run MECP optimization
+/// - `omecp --help [topic]`: Display help information
+///
+/// # Errors
+///
+/// Exits with code 1 if:
+/// - Insufficient arguments provided
+/// - Invalid command specified
+/// - File operations fail
+/// - Calculation errors occur
+///
+/// # Examples
+///
+/// ```
+/// use std::env;
+/// use std::process;
+///
+/// fn main() {
+///     // OpenMECP initialization and execution happens here
+///     // See implementation below for details
+/// }
+/// ```
 fn main() {
     env_logger::init();
 
@@ -133,6 +208,23 @@ fn print_mecp_help(input_file: &str) {
     println!();
 }
 
+/// Prints usage information to stderr.
+///
+/// # Arguments
+///
+/// * `program_name` - The name/path of the program binary (typically argv[0])
+///
+/// # Examples
+///
+/// ```
+/// print_usage("omecp");
+/// // Prints:
+/// // OpenMECP - Minimum Energy Crossing Point optimization
+/// // Usage:
+/// //   omecp ci <geometry_file> [output_file]
+/// //                         Create a template input file from a geometry file
+/// //   ...
+/// ```
 fn print_usage(program_name: &str) {
     eprintln!("OpenMECP - Minimum Energy Crossing Point optimization");
     eprintln!();
@@ -154,6 +246,53 @@ fn print_usage(program_name: &str) {
     eprintln!("  {} my_calculation.inp", program_name);
 }
 
+/// Creates a template input file from a geometry file.
+///
+/// This function reads a geometry from the provided file and generates a template
+/// OpenMECP input file with placeholders for all required parameters. The template
+/// includes the geometry section, standard configuration parameters, and optional
+/// sections for constraints and advanced features.
+///
+/// # Arguments
+///
+/// * `geometry_file` - Path to the input geometry file (.xyz, .log, or .gjf)
+/// * `output_path` - Optional custom output path; if None, uses default naming
+///
+/// # Returns
+///
+/// Returns a `Result` containing:
+/// - `Ok(PathBuf)` - Path to the created template file
+/// - `Err(Box<dyn Error>)` - Error details for any failure
+///
+/// # Supported Input Formats
+///
+/// - **.xyz**: Standard XYZ coordinate format
+/// - **.log**: Gaussian output file with final geometry
+/// - **.gjf**: Gaussian input file
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+///
+/// // Create default template
+/// let output = run_create_input(Path::new("molecule.xyz"), None)?;
+/// println!("Template created: {}", output.display());
+///
+/// // Create with custom name
+/// let output = run_create_input(
+///     Path::new("molecule.xyz"),
+///     Some(Path::new("custom.inp"))
+/// )?;
+/// ```
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Geometry file does not exist or cannot be read
+/// - File format is not supported
+/// - Template generation fails
+/// - Output file cannot be written
 fn run_create_input<P: AsRef<Path>>(
     geometry_file: P,
     output_path: Option<P>,
@@ -191,6 +330,59 @@ where
     Ok(output_path)
 }
 
+/// Runs MECP optimization using the specified input file.
+///
+/// This is the main optimization loop that orchestrates the entire MECP calculation.
+/// It handles:
+/// - Input file parsing and validation
+/// - QM program interface initialization
+/// - Initial calculation execution
+/// - Iterative optimization with BFGS/GDIIS/GEDIIS
+/// - Convergence checking and checkpointing
+/// - Multiple run modes (normal, restart, LST, PES scan, etc.)
+///
+/// # Arguments
+///
+/// * `input_path` - Path to the OpenMECP input file
+///
+/// # Returns
+///
+/// Returns a `Result` containing:
+/// - `Ok(())` - Optimization completed successfully
+/// - `Err(Box<dyn Error>)` - Error details for any failure
+///
+/// # Optimization Process
+///
+/// 1. **Initialization**: Parse input file and create QM interface
+/// 2. **Initial Calculations**: Run single-point calculations for both states
+/// 3. **Main Loop**: For each optimization step:
+///    - Compute MECP gradient
+///    - Choose optimizer (BFGS → GDIIS/GEDIIS)
+///    - Take optimization step
+///    - Run new calculations
+///    - Check convergence
+///    - Update Hessian and history
+///    - Save checkpoint
+/// 4. **Completion**: Save final geometry to `final.xyz`
+///
+/// # Run Modes
+///
+/// - **Normal**: Standard MECP optimization
+/// - **Restart**: Continue from checkpoint file
+/// - **LST**: Linear synchronous transit interpolation
+/// - **PES Scan**: 1D/2D potential energy surface scans
+/// - **Coordinate Drive**: Single coordinate driving
+/// - **Path Optimization**: Nudged elastic band optimization
+/// - **Fix-dE**: Optimize at fixed energy difference
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Input file cannot be parsed
+/// - QM calculations fail
+/// - Optimization diverges
+/// - Maximum steps exceeded
+/// - File I/O errors occur
 fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("**** MECP in Rust****");
     println!("****By Le Nhan Pham****\n");
@@ -359,24 +551,45 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         println!("\n****Step {}****", step + 1);
 
         // Compute MECP gradient
-        let grad = optimizer::compute_mecp_gradient(
-            &state1,
-            &state2,
-            constraints,
-            &mut opt_state,
-            fixed_atoms,
-        );
+        let grad = optimizer::compute_mecp_gradient(&state1, &state2, fixed_atoms);
 
-        // Choose optimizer: BFGS for first 3 steps, then GDIIS/GEDIIS
-        let x_new = if step < 3 || !opt_state.has_enough_history() {
-            println!("Using BFGS optimizer");
-            optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
-        } else if config.use_gediis {
-            println!("Using GEDIIS optimizer");
-            optimizer::gediis_step(&opt_state, &config)
+        // Choose optimizer
+        let x_new = if !constraints.is_empty() {
+            println!("Using Lagrange multiplier constrained optimization");
+            // Constrained step
+            let violations = constraints::evaluate_constraints(&geometry, constraints);
+            let jacobian = constraints::build_constraint_jacobian(&geometry, constraints);
+
+            if let Some((delta_x, lambdas)) =
+                optimizer::solve_constrained_step(&hessian, &grad, &jacobian, &violations)
+            {
+                opt_state.lambdas = lambdas.iter().cloned().collect();
+
+                // Apply step size limit
+                let step_norm = delta_x.norm();
+                if step_norm > config.max_step_size {
+                    let scale = config.max_step_size / step_norm;
+                    x_old.clone() + delta_x * scale
+                } else {
+                    x_old.clone() + delta_x
+                }
+            } else {
+                // Fallback to BFGS if solver fails
+                println!("Warning: Constrained step solver failed. Falling back to BFGS.");
+                optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
+            }
         } else {
-            println!("Using GDIIS optimizer");
-            optimizer::gdiis_step(&opt_state, &config)
+            // Unconstrained step
+            if step < 3 || !opt_state.has_enough_history() {
+                println!("Using BFGS optimizer");
+                optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
+            } else if config.use_gediis {
+                println!("Using GEDIIS optimizer");
+                optimizer::gediis_step(&opt_state, &config)
+            } else {
+                println!("Using GDIIS optimizer");
+                optimizer::gdiis_step(&opt_state, &config)
+            }
         };
 
         // Update geometry
@@ -413,13 +626,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         )?;
 
         // Compute new gradient for Hessian update
-        let grad_new = optimizer::compute_mecp_gradient(
-            &state1_new,
-            &state2_new,
-            constraints,
-            &mut opt_state,
-            fixed_atoms,
-        );
+        let grad_new = optimizer::compute_mecp_gradient(&state1_new, &state2_new, fixed_atoms);
 
         // Check convergence
         let conv = optimizer::check_convergence(
@@ -585,18 +792,38 @@ fn run_single_optimization(
             config.state2,
         )?;
 
-        let grad = optimizer::compute_mecp_gradient(
-            &state1,
-            &state2,
-            constraints,
-            &mut opt_state,
-            fixed_atoms,
-        );
+        let grad = optimizer::compute_mecp_gradient(&state1, &state2, fixed_atoms);
 
-        let x_new = if step < 3 || !opt_state.has_enough_history() {
-            optimizer::bfgs_step(&x_old, &grad, &hessian, config)
+        let x_new = if !constraints.is_empty() {
+            println!("Using Lagrange multiplier constrained optimization");
+            // Constrained step
+            let violations = constraints::evaluate_constraints(geometry, constraints);
+            let jacobian = constraints::build_constraint_jacobian(geometry, constraints);
+
+            if let Some((delta_x, lambdas)) =
+                optimizer::solve_constrained_step(&hessian, &grad, &jacobian, &violations)
+            {
+                opt_state.lambdas = lambdas.iter().cloned().collect();
+
+                // Apply step size limit
+                let step_norm = delta_x.norm();
+                if step_norm > config.max_step_size {
+                    let scale = config.max_step_size / step_norm;
+                    x_old.clone() + delta_x * scale
+                } else {
+                    x_old.clone() + delta_x
+                }
+            } else {
+                // Fallback to BFGS if solver fails
+                println!("Warning: Constrained step solver failed. Falling back to BFGS.");
+                optimizer::bfgs_step(&x_old, &grad, &hessian, config)
+            }
         } else {
-            optimizer::gdiis_step(&opt_state, config)
+            if step < 3 || !opt_state.has_enough_history() {
+                optimizer::bfgs_step(&x_old, &grad, &hessian, config)
+            } else {
+                optimizer::gdiis_step(&opt_state, config)
+            }
         };
 
         geometry.coords = x_new.clone();
@@ -624,13 +851,7 @@ fn run_single_optimization(
             Path::new(&format!("running_dir/{}_B.log", step + 1)),
             config.state2,
         )?;
-        let grad_new = optimizer::compute_mecp_gradient(
-            &state1_new,
-            &state2_new,
-            constraints,
-            &mut opt_state,
-            fixed_atoms,
-        );
+        let grad_new = optimizer::compute_mecp_gradient(&state1_new, &state2_new, fixed_atoms);
 
         let conv = optimizer::check_convergence(
             state1_new.energy,
@@ -976,21 +1197,41 @@ fn run_restart(
         )?;
 
         // Compute MECP gradient
-        let grad = optimizer::compute_mecp_gradient(
-            &state1,
-            &state2,
-            constraints,
-            &mut opt_state,
-            fixed_atoms,
-        );
+        let grad = optimizer::compute_mecp_gradient(&state1, &state2, fixed_atoms);
 
         // Choose optimizer
-        let x_new = if step < 3 || !opt_state.has_enough_history() {
-            println!("Using BFGS optimizer");
-            optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
+        let x_new = if !constraints.is_empty() {
+            println!("Using Lagrange multiplier constrained optimization");
+            // Constrained step
+            let violations = constraints::evaluate_constraints(&geometry, constraints);
+            let jacobian = constraints::build_constraint_jacobian(&geometry, constraints);
+
+            if let Some((delta_x, lambdas)) =
+                optimizer::solve_constrained_step(&hessian, &grad, &jacobian, &violations)
+            {
+                opt_state.lambdas = lambdas.iter().cloned().collect();
+
+                // Apply step size limit
+                let step_norm = delta_x.norm();
+                if step_norm > config.max_step_size {
+                    let scale = config.max_step_size / step_norm;
+                    x_old.clone() + delta_x * scale
+                } else {
+                    x_old.clone() + delta_x
+                }
+            } else {
+                // Fallback to BFGS if solver fails
+                println!("Warning: Constrained step solver failed. Falling back to BFGS.");
+                optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
+            }
         } else {
-            println!("Using GDIIS optimizer");
-            optimizer::gdiis_step(&opt_state, &config)
+            if step < 3 || !opt_state.has_enough_history() {
+                println!("Using BFGS optimizer");
+                optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
+            } else {
+                println!("Using GDIIS optimizer");
+                optimizer::gdiis_step(&opt_state, &config)
+            }
         };
 
         // Update geometry
@@ -1315,129 +1556,8 @@ fn run_path_optimization(
 }
 
 fn run_fix_de(
-    input_data: parser::InputData,
-    qm: &dyn qm_interface::QMInterface,
+    _input_data: parser::InputData,
+    _qm: &dyn qm_interface::QMInterface,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n****Running Fix-dE Optimization****");
-
-    let config = &input_data.config;
-    let mut geometry = input_data.geometry;
-    let constraints = &input_data.constraints;
-    let fixed_atoms = &input_data.fixed_atoms;
-
-    if config.fix_de == 0.0 {
-        return Err("Fix-dE optimization requires fix_de parameter to be set".into());
-    }
-
-    // Build headers
-    let header_a = io::build_gaussian_header(config, config.charge1, config.mult1, &config.td1);
-    let header_b = io::build_gaussian_header(config, config.charge2, config.mult2, &config.td2);
-
-    // Initialize optimization
-    let mut opt_state = optimizer::OptimizationState::new();
-    let mut x_old = geometry.coords.clone();
-    let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len());
-
-    // Main optimization loop
-    for step in 0..config.max_steps {
-        println!("\n****Fix-dE Step {}****", step + 1);
-
-        // Run calculations
-        let step_name_a = format!("running_dir/{}_A.gjf", step + 1);
-        let step_name_b = format!("running_dir/{}_B.gjf", step + 1);
-
-        qm.write_input(
-            &geometry,
-            &header_a,
-            &input_data.tail1,
-            Path::new(&step_name_a),
-        )?;
-        qm.write_input(
-            &geometry,
-            &header_b,
-            &input_data.tail2,
-            Path::new(&step_name_b),
-        )?;
-
-        qm.run_calculation(Path::new(&step_name_a))?;
-        qm.run_calculation(Path::new(&step_name_b))?;
-
-        let state1 = qm.read_output(
-            Path::new(&format!("running_dir/{}_A.log", step + 1)),
-            config.state1,
-        )?;
-        let state2 = qm.read_output(
-            Path::new(&format!("running_dir/{}_B.log", step + 1)),
-            config.state2,
-        )?;
-
-        // Compute MECP gradient with energy difference constraint
-        let grad = optimizer::compute_mecp_gradient_with_de_constraint(
-            &state1,
-            &state2,
-            constraints,
-            &mut opt_state,
-            fixed_atoms,
-            config.fix_de,
-        );
-
-        // Choose optimizer
-        let x_new = if step < 3 || !opt_state.has_enough_history() {
-            println!("Using BFGS optimizer");
-            optimizer::bfgs_step(&x_old, &grad, &hessian, config)
-        } else if config.use_gediis {
-            println!("Using GEDIIS optimizer");
-            optimizer::gediis_step(&opt_state, config)
-        } else {
-            println!("Using GDIIS optimizer");
-            optimizer::gdiis_step(&opt_state, config)
-        };
-
-        // Update geometry
-        geometry.coords = x_new.clone();
-
-        // Check convergence
-        let de = (state1.energy - state2.energy).abs();
-        let target_de = config.fix_de.abs();
-        let de_error = (de - target_de).abs();
-
-        println!(
-            "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}, Target ΔE = {:.8}, ΔE Error = {:.8}",
-            state1.energy, state2.energy, de, target_de, de_error
-        );
-
-        // Check if energy difference is close to target
-        if de_error < config.thresholds.de {
-            println!("\nFix-dE optimization converged at step {}", step + 1);
-            io::write_xyz(&geometry, Path::new("final.xyz"))?;
-            return Ok(());
-        }
-
-        // Update Hessian
-        let sk = &x_new - &x_old;
-        let yk = &grad
-            - &optimizer::compute_mecp_gradient_with_de_constraint(
-                &qm.read_output(
-                    Path::new(&format!("running_dir/{}_A.log", step)),
-                    config.state1,
-                )?,
-                &qm.read_output(
-                    Path::new(&format!("running_dir/{}_B.log", step)),
-                    config.state2,
-                )?,
-                constraints,
-                &mut opt_state,
-                fixed_atoms,
-                config.fix_de,
-            );
-        hessian = optimizer::update_hessian_psb(&hessian, &sk, &yk);
-
-        // Add to history
-        let energy_diff = state1.energy - state2.energy;
-        opt_state.add_to_history(x_new.clone(), grad.clone(), hessian.clone(), energy_diff);
-
-        x_old = x_new;
-    }
-
-    Err("Maximum steps exceeded in fix-dE optimization".into())
+    Err("Fix-dE optimization is temporarily unavailable and needs to be reimplemented with the new constraint handling system.".into())
 }

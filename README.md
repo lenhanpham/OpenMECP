@@ -12,7 +12,9 @@
   <a href="./LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
   </a>
-  <img src="https://img.shields.io/badge/Build-Passing-brightgreen.svg" alt="Build Status">
+  <a href="https://github.com/lenhanpham/OpenMECP/actions/workflows/build.yml">
+    <img src="https://github.com/lenhanpham/OpenMECP/actions/workflows/build.yml/badge.svg" alt="Build Status">
+  </a>
 </p>
 
 A high-performance Rust implementation of the MECP (Minimum Energy Crossing Point) optimizer for locating crossing points between two potential energy surfaces in quantum chemistry calculations.
@@ -91,10 +93,11 @@ Where `x_norm = (f1 - f2) / |f1 - f2|` is the normalized gradient difference.
 
 ### Constraints
 
-- **Bond Constraints**: Fix bond lengths during optimization
-- **Angle Constraints**: Fix bond angles during optimization
-- **Lagrange Multipliers**: Exact constraint enforcement
-- **Fixed Atoms**: Partial geometry optimization
+- **Bond Constraints**: Fix bond lengths during optimization.
+- **Angle Constraints**: Fix bond angles during optimization.
+- **Dihedral Constraints**: Fix dihedral angles during optimization using four-atom definitions with analytical gradients.
+- **Lagrange Multipliers**: Enforces constraints with high precision and efficiency using a full implementation of the augmented Hessian method with analytical gradients for all constraint types (bond, angle, dihedral).
+- **Fixed Atoms**: Partial geometry optimization by freezing selected atoms.
 
 ### QM Program Support
 
@@ -108,7 +111,7 @@ Where `x_norm = (f1 - f2) / |f1 - f2|` is the normalized gradient difference.
 - **LST Interpolation**: Linear synchronous transit with Kabsch alignment
 - **Coordinate Driving**: Drive reaction coordinates systematically
 - **Path Optimization**: Nudged Elastic Band (NEB) method
-- **Fix-dE Optimization**: Constrain energy difference to target value
+- **Fix-dE Optimization**: Constrain energy difference to target value. (*Note: This feature is currently being updated to use the new constraint system and is temporarily disabled.*)
 - **State Selection**: Choose specific excited states for TD-DFT
 - **External Geometry**: Read geometries from external files
 - **ONIOM Support**: Multi-layer QM/MM calculations
@@ -371,6 +374,22 @@ s a atom1 atom2 atom3 start num_points step_size
 
 Example: `s a 1 2 3 90 10 5` (scan from 90° to 135°)
 
+#### Dihedral Constraint
+
+```
+D atom1 atom2 atom3 atom4 target_dihedral
+```
+
+Example: `D 1 2 3 4 180.0` (fix dihedral at 180°)
+
+#### Dihedral Scan
+
+```
+s d atom1 atom2 atom3 atom4 start num_points step_size
+```
+
+Example: `s d 1 2 3 4 0 36 10` (scan from 0° to 350°)
+
 ## Supported QM Programs
 
 ### Gaussian
@@ -454,11 +473,34 @@ custom_interface_file = my_qm_interface.json
 }
 ```
 
+**Additional Configuration Options**:
+
+```json
+{
+  "name": "Advanced QM Program",
+  "command": "advanced_qm",
+  "input_template": "$control\n$geometry\n$end\n$tail",
+  "output_extension": "log",
+  "energy_parser": {
+    "pattern": "FINAL ENERGY =\\s*(-?\\d+\\.\\d+)",
+    "unit_factor": 27.2114
+  },
+  "forces_parser": {
+    "pattern": "GRADIENT\\s+X=\\s*(-?\\d+\\.\\d+)\\s+Y=\\s*(-?\\d+\\.\\d+)\\s+Z=\\s*(-?\\d+\\.\\d+)"
+  },
+  "checkpoint_parser": {
+    "pattern": "CHECKPOINT FILE:\\s*(.+)",
+    "extension": "chk"
+  }
+}
+```
+
 **Template Placeholders**:
 
 - `{geometry}`: Replaced with XYZ-format geometry
 - `{header}`: Replaced with state-specific header
 - `{tail}`: Replaced with additional keywords
+- Alternative placeholders: `$control`, `$geometry`, `$end`, `$tail` (program-dependent)
 
 **Output Files**: Files with configured extension in `running_dir/` directory
 
@@ -568,9 +610,12 @@ H  1.2  0.0  0.5
 **Features**:
 
 - Kabsch algorithm for optimal alignment
+- Linear (LST) and Quadratic (QST) interpolation methods
 - 10 interpolation points (default)
 - Energy profile calculation
 - Interactive confirmation
+
+**Note**: QST interpolation uses a midpoint approximation for the third geometry. Full quadratic interpolation with explicit midpoint geometry is planned for a future release.
 
 **Output**: Input files in `running_dir/` directory, energy profile to stdout
 
@@ -667,9 +712,11 @@ drive_steps = 10
 **Features**:
 
 - Creates initial path via coordinate driving
-- Optimizes path using NEB algorithm
+- Optimizes path using simplified NEB algorithm with spring forces
 - Provides smooth energy profiles
 - Identifies transition states and intermediates
+
+**Note**: Current implementation uses a simplified NEB model based on spring forces. Full NEB with perpendicular energy gradient projection is planned for a future release.
 
 ### Fix-dE Optimization
 
@@ -680,7 +727,9 @@ run_mode = fix_de
 fix_de = 0.1    # Target ΔE = 0.1 eV
 ```
 
-**Use Cases**:
+**⚠️ Currently Unavailable**: Fix-dE optimization is temporarily disabled and needs to be reimplemented with the new constraint handling system. This feature will be available in a future release.
+
+**Planned Use Cases**:
 
 - Study avoided crossings
 - Generate diabatic potential energy surfaces
@@ -1122,6 +1171,36 @@ charge_and_mult_oniom1 = 0 1 H 0 1 L
 charge_and_mult_oniom2 = 0 3 H 0 3 L
 ```
 
+### Example 12: Dihedral Constraints
+
+```
+*GEOM
+C  0.0  0.0  0.0
+C  1.5  0.0  0.0
+H  2.0  1.0  0.0
+H  2.0  -1.0  0.0
+*
+
+*CONSTR
+D 1 2 3 4 180.0    # Fix dihedral angle
+R 1 2 1.5          # Fix bond length
+*
+
+*TAIL1
+*
+
+*TAIL2
+*
+
+program = gaussian
+method = B3LYP/6-31G*
+nprocs = 4
+mem = 4GB
+charge = 0
+mult1 = 1
+mult2 = 3
+```
+
 ## Troubleshooting
 
 ### Common Errors
@@ -1144,6 +1223,13 @@ charge_and_mult_oniom2 = 0 3 H 0 3 L
 - Check memory and processor settings
 - Try `mode = noread` for SCF convergence issues
 
+**Common QM-Specific Errors**:
+
+- **Gaussian**: "Convergence failure" → Try `scf=(xqc,qc,nofermi)` in TAIL
+- **ORCA**: "SCF not converged" → Try `%scf SOSCF true end` in TAIL
+- **XTB**: "GFN2-xTB failed" → Check geometry validity, try different charge/multiplicity
+- **Custom**: Check JSON configuration and program-specific error messages
+
 #### Error: "Failed to parse output"
 
 **Cause**: QM output format not recognized
@@ -1152,6 +1238,13 @@ charge_and_mult_oniom2 = 0 3 H 0 3 L
 - Verify QM program version is supported
 - Check output files are complete
 - Ensure calculation finished successfully
+
+**Parsing-Specific Issues**:
+
+- **Energy not found**: Check energy_parser regex pattern in custom interface
+- **Forces not found**: Verify forces_parser regex matches output format
+- **Geometry incomplete**: Ensure calculation reached geometry optimization completion
+- **State extraction failed**: For TD-DFT, verify state indices are valid (0=ground, 1+=excited)
 
 #### Error: "Maximum steps exceeded"
 

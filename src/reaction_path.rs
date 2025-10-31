@@ -1,23 +1,51 @@
 use crate::geometry::Geometry;
-use crate::constraints::{Constraint, evaluate_bond, evaluate_angle, evaluate_dihedral};
+use crate::constraints::{Constraint, evaluate_constraints};
 
 /// Types of coordinates that can be driven
+/// Types of coordinates that can be driven during reaction path following.
+///
+/// This enum defines the geometric parameters that can be systematically varied
+/// to explore a reaction path or potential energy surface.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CoordinateType {
+    /// Represents a bond length between two atoms.
     Bond,
+    /// Represents a bond angle between three atoms.
     Angle,
+    /// Represents a dihedral angle between four atoms.
     Dihedral,
 }
 
 /// Represents a coordinate to drive during reaction path following
+/// Represents a coordinate to drive during reaction path following.
+///
+/// This struct defines a specific geometric parameter (bond, angle, or dihedral)
+/// that will be varied during a coordinate driving or path optimization procedure.
 #[derive(Debug, Clone)]
 pub struct DriveCoordinate {
+    /// The type of geometric coordinate being driven.
     pub coord_type: CoordinateType,
+    /// A vector of atom indices (0-based) defining the coordinate.
+    /// - For `Bond`: `[atom1, atom2]`
+    /// - For `Angle`: `[atom1, atom2, atom3]`
+    /// - For `Dihedral`: `[atom1, atom2, atom3, atom4]`
     pub atoms: Vec<usize>,
+    /// The target value for the coordinate (Angstroms for bonds, radians for angles/dihedrals).
     pub target_value: f64,
 }
 
 impl DriveCoordinate {
+    /// Creates a new `DriveCoordinate` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `coord_type` - The type of geometric coordinate (Bond, Angle, Dihedral).
+    /// * `atoms` - A vector of atom indices (0-based) defining the coordinate.
+    /// * `target_value` - The target value for the coordinate.
+    ///
+    /// # Returns
+    ///
+    /// A new `DriveCoordinate` instance.
     pub fn new(coord_type: CoordinateType, atoms: Vec<usize>, target_value: f64) -> Self {
         Self {
             coord_type,
@@ -28,29 +56,9 @@ impl DriveCoordinate {
 
     /// Calculate the current value of this coordinate
     pub fn current_value(&self, geometry: &Geometry) -> f64 {
-        match self.coord_type {
-            CoordinateType::Bond => {
-                if self.atoms.len() >= 2 {
-                    evaluate_bond(&geometry.coords, self.atoms[0], self.atoms[1])
-                } else {
-                    0.0
-                }
-            },
-            CoordinateType::Angle => {
-                if self.atoms.len() >= 3 {
-                    evaluate_angle(&geometry.coords, self.atoms[0], self.atoms[1], self.atoms[2])
-                } else {
-                    0.0
-                }
-            },
-            CoordinateType::Dihedral => {
-                if self.atoms.len() >= 4 {
-                    evaluate_dihedral(&geometry.coords, self.atoms[0], self.atoms[1], self.atoms[2], self.atoms[3])
-                } else {
-                    0.0
-                }
-            }
-        }
+        let constraint = self.to_constraint();
+        let violations = evaluate_constraints(geometry, &[constraint]);
+        violations[0]
     }
 
     /// Create a constraint for this coordinate
@@ -156,17 +164,8 @@ fn constrained_coordinate_driving(
 
 /// Calculate constraint violation (difference from target value)
 fn calculate_constraint_violation(geometry: &Geometry, constraint: &Constraint) -> f64 {
-    match constraint {
-        Constraint::Bond { atoms: (a1, a2), target } => {
-            evaluate_bond(&geometry.coords, *a1, *a2) - *target
-        }
-        Constraint::Angle { atoms: (a1, a2, a3), target } => {
-            evaluate_angle(&geometry.coords, *a1, *a2, *a3) - *target
-        }
-        Constraint::Dihedral { atoms: (a1, a2, a3, a4), target } => {
-            evaluate_dihedral(&geometry.coords, *a1, *a2, *a3, *a4) - *target
-        }
-    }
+    let violations = evaluate_constraints(geometry, std::slice::from_ref(constraint));
+    violations[0]
 }
 
 /// Calculate constraint force (simplified gradient)
@@ -199,7 +198,7 @@ fn calculate_constraint_force(geometry: &Geometry, constraint: &Constraint, viol
                 force[idx1 + 2] -= force_magnitude * dz;
             }
         }
-        Constraint::Angle { atoms: (_a1, _a2, _a3), .. } => {
+        Constraint::Angle { .. } => {
             // For angles, use finite difference approximation
             // This is simplified - a real implementation would use analytical gradients
             let delta = 0.001;
@@ -211,7 +210,7 @@ fn calculate_constraint_force(geometry: &Geometry, constraint: &Constraint, viol
                 force[i] = -(violation_plus - violation) / delta;
             }
         }
-        Constraint::Dihedral { atoms: (_a1, _a2, _a3, _a4), .. } => {
+        Constraint::Dihedral { .. } => {
             // For dihedrals, use finite difference approximation
             // This is simplified - a real implementation would use analytical gradients
             let delta = 0.001;
@@ -271,16 +270,13 @@ pub fn optimize_reaction_path(
                 // This would need proper constrained optimization
                 // For now, just apply the constraints directly
                 for constraint in constraints {
-                    match constraint {
-                        Constraint::Bond { atoms: (a1, a2), target } => {
-                            // Simple bond constraint application
-                            let current_dist = evaluate_bond(&new_geometry.coords, *a1, *a2);
-                            if (current_dist - *target).abs() > 0.01 {
-                                // Adjust bond length (simplified)
-                                adjust_bond_length(&mut new_geometry, *a1, *a2, *target);
-                            }
+                    if let Constraint::Bond { atoms: (a1, a2), target } = constraint {
+                        // Simple bond constraint application
+                        let current_dist = calculate_distance(&new_geometry, *a1, *a2);
+                        if (current_dist - *target).abs() > 0.01 {
+                            // Adjust bond length (simplified)
+                            adjust_bond_length(&mut new_geometry, *a1, *a2, *target);
                         }
-                        _ => {} // Other constraints not implemented yet
                     }
                 }
             }
@@ -499,11 +495,21 @@ pub fn analyze_reaction_path(geometries: &[Geometry]) -> PathStatistics {
 }
 
 /// Statistics for a reaction path
+/// Statistics and data collected along a reaction path.
+///
+/// This struct holds various metrics and data points generated during a
+/// reaction path optimization or coordinate driving procedure, such as
+/// path length, number of points, and (potentially) energies and other
+/// relevant coordinates.
 #[derive(Debug, Clone)]
 pub struct PathStatistics {
+    /// The total length of the reaction path.
     pub path_length: f64,
+    /// The number of discrete points (geometries) along the path.
     pub num_points: usize,
+    /// A vector of energies corresponding to each point on the path.
     pub energies: Vec<f64>,
+    /// A vector of reaction coordinate values corresponding to each point on the path.
     pub coordinates: Vec<f64>,
 }
 

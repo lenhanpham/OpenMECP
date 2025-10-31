@@ -357,6 +357,14 @@ fn parse_constraint(line: &str, constraints: &mut Vec<Constraint>) -> Result<()>
             let target = parts[4].parse::<f64>().map_err(|_| ParseError::Parse("Invalid target value".into()))?.to_radians();
             constraints.push(Constraint::Angle { atoms: (a, b, c), target });
         }
+        "d" if parts.len() >= 6 => {
+            let a = parts[1].parse::<usize>().map_err(|_| ParseError::Parse("Invalid atom index".into()))? - 1;
+            let b = parts[2].parse::<usize>().map_err(|_| ParseError::Parse("Invalid atom index".into()))? - 1;
+            let c = parts[3].parse::<usize>().map_err(|_| ParseError::Parse("Invalid atom index".into()))? - 1;
+            let d = parts[4].parse::<usize>().map_err(|_| ParseError::Parse("Invalid atom index".into()))? - 1;
+            let target = parts[5].parse::<f64>().map_err(|_| ParseError::Parse("Invalid target value".into()))?.to_radians();
+            constraints.push(Constraint::Dihedral { atoms: (a, b, c, d), target });
+        }
         _ => {}
     }
     Ok(())

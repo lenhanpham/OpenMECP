@@ -1,3 +1,5 @@
+#![deny(missing_docs)]
+
 //! OpenMECP - High-Performance Minimum Energy Crossing Point Optimizer
 //!
 //! OpenMECP is a Rust implementation of the Harvey et al. algorithm for locating
@@ -44,16 +46,21 @@
 //!
 //! # Quick Start
 //!
-//! ```
-//! use omecp::Config;
+//! ```no_run
+//! use omecp::parser::parse_input;
+//! use std::path::Path;
 //!
-//! // Create configuration from file
-//! let config = Config::from_file("input.inp")?;
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     // Create configuration from file
+//!     let input_data = parse_input(Path::new("input.inp"))?;
+//!     let config = input_data.config;
 //!
-//! // Run MECP optimization
-//! let result = config.run()?;
+//!     // Run MECP optimization
+//!     // let result = config.run()?;
 //!
-//! println!("MECP converged at step: {}", result.steps);
+//!     // println!("MECP converged at step: {}", result.steps);
+//!     Ok(())
+//! }
 //! ```
 //!
 //! # Supported QM Programs
@@ -160,10 +167,15 @@ pub mod qm_interface;
 pub mod optimizer;
 pub mod constraints;
 pub mod io;
+/// Linear synchronous transit interpolation
 pub mod lst;
+/// Restart functionality
 pub mod checkpoint;
+/// NEB and path optimization
 pub mod reaction_path;
+/// Input file templates
 pub mod template_generator;
+/// Built-in help system
 pub mod help;
 
 pub use config::Config;

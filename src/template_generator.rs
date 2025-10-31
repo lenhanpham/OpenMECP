@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{self, Write};
 
 /// Template generator for creating MECP input files from geometry files
-
+///
 /// Generate a template input file from a geometry file
 /// Supports .xyz, .log, and .gjf formats
 pub fn generate_template_from_file<P: AsRef<Path>>(geometry_file: P) -> Result<String, Box<dyn std::error::Error>> {

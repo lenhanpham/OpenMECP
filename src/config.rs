@@ -29,18 +29,16 @@ use std::collections::HashMap;
 /// - `Angle { atoms: (1, 2, 3) }`: Scan the angle formed by atoms 1-2-3
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum ScanType {
-    /// Scan a bond length between two atoms
-    ///
-    /// # Arguments
-    ///
-    /// * `atoms` - Tuple of (atom1, atom2) indices (1-based in input, converted to 0-based internally)
-    Bond { atoms: (usize, usize) },
-    /// Scan a bond angle between three atoms
-    ///
-    /// # Arguments
-    ///
-    /// * `atoms` - Tuple of (atom1, atom2, atom3) indices defining the angle
-    Angle { atoms: (usize, usize, usize) },
+    /// Scan a bond length between two atoms.
+    Bond {
+        /// Tuple of (atom1, atom2) indices (1-based in input, converted to 0-based internally).
+        atoms: (usize, usize),
+    },
+    /// Scan a bond angle between three atoms.
+    Angle {
+        /// Tuple of (atom1, atom2, atom3) indices defining the angle.
+        atoms: (usize, usize, usize),
+    },
 }
 
 /// Specifies a potential energy surface scan over a geometric coordinate.

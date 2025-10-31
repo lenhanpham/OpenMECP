@@ -6,53 +6,102 @@
 use std::collections::HashMap;
 
 /// Category for organizing keywords
+/// Category for organizing keywords in the help system.
+///
+/// This enum helps categorize different configuration keywords for easier
+/// navigation and understanding in the built-in help documentation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeywordCategory {
+    /// Keywords that are generally required for a calculation.
     Required,
+    /// Keywords that are optional and have default values.
     Optional,
+    /// Keywords related to convergence thresholds and criteria.
     Convergence,
+    /// Keywords for specifying quantum chemistry program commands.
     Program,
+    /// Keywords specific to Time-Dependent Density Functional Theory (TD-DFT).
     TdDft,
+    /// Keywords for defining geometric constraints.
     Constraints,
+    /// Keywords for advanced or specialized features.
     Advanced,
 }
 
 /// Keyword documentation entry
 #[derive(Debug, Clone)]
+/// Documentation entry for a single configuration keyword.
+///
+/// This struct holds all relevant information for a keyword, including its
+/// name, category, description, default value, example usage, and whether it
+/// is a required parameter.
 pub struct Keyword {
+    /// The name of the keyword (e.g., "nprocs", "method").
     pub name: &'static str,
+    /// The category to which this keyword belongs.
     pub category: KeywordCategory,
+    /// A brief description of what the keyword does.
     pub description: &'static str,
+    /// The default value of the keyword, if applicable.
     pub default_value: Option<&'static str>,
+    /// An example of how to use the keyword in an input file.
     pub example: Option<&'static str>,
+    /// Indicates whether the keyword is required for a calculation.
     pub required: bool,
 }
 
 /// QM Program information
 #[derive(Debug, Clone)]
+/// Information about a supported quantum chemistry program.
+///
+/// This struct provides details for each QM program that OpenMECP can interface
+/// with, including its name, a description, the executable command, and a list
+/// of key features.
 pub struct ProgramInfo {
+    /// The name of the QM program (e.g., "Gaussian", "ORCA").
     pub name: &'static str,
+    /// A brief description of the program.
     pub description: &'static str,
+    /// The typical executable command for the program.
     pub executable: &'static str,
+    /// A list of key features or capabilities of the program.
     pub features: &'static [&'static str],
 }
 
 /// Method information
 #[derive(Debug, Clone)]
+/// Information about a quantum chemistry method.
+///
+/// This struct provides details for each QM method, including its name,
+/// category (e.g., "DFT", "Post-HF"), a description, the programs that
+/// support it, and an example of its usage.
 pub struct MethodInfo {
+    /// The name of the method (e.g., "B3LYP", "MP2").
     pub name: &'static str,
+    /// The category of the method (e.g., "DFT", "Post-HF", "Multireference").
     pub category: &'static str,
+    /// A brief description of the method.
     pub description: &'static str,
+    /// A list of QM programs that support this method.
     pub programs: &'static [&'static str],
+    /// An example of how to specify this method in the input.
     pub example: Option<&'static str>,
 }
 
 /// Feature information
 #[derive(Debug, Clone)]
+/// Information about a specific feature of OpenMECP.
+///
+/// This struct provides details for each major feature, including its name,
+/// a description, how to enable or use it, and an example.
 pub struct FeatureInfo {
+    /// The name of the feature (e.g., "Normal Mode", "Restart").
     pub name: &'static str,
+    /// A brief description of the feature.
     pub description: &'static str,
+    /// Instructions on how to use or enable the feature.
     pub usage: &'static str,
+    /// An example demonstrating the feature's usage.
     pub example: Option<&'static str>,
 }
 

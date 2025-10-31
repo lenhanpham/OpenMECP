@@ -51,14 +51,19 @@
 //! Checkpoint files are typically saved as `mecp.chk` or a user-specified name
 //! in the `running_dir/` directory for easy management.
 
+//! Checkpoint system for restarting MECP optimizations.
+//!
+//! This module provides functionality to save and restore optimization state
+//! including geometry, gradients, Hessian, and history for recovery.
+
 use crate::config::Config;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 use crate::geometry::Geometry;
 use crate::optimizer::OptimizationState;
 use nalgebra::{DMatrix, DVector};
-use serde::{Deserialize, Serialize};
 
-use std::fs;
-use std::path::Path;
 
 // Serializable versions of structs containing nalgebra types
 
@@ -194,6 +199,14 @@ impl Checkpoint {
     /// use omecp::config::Config;
     /// use nalgebra::{DMatrix, DVector};
     ///
+    /// let elements = vec!["H".to_string()];
+    /// let coords = vec![0.0, 0.0, 0.0];
+    /// let geometry = Geometry::new(elements, coords);
+    /// let x_old = vec![0.0, 0.0, 0.0];
+    /// let hessian = DMatrix::identity(3, 3);
+    /// let opt_state = OptimizationState::new();
+    /// let config = Config::default();
+    ///
     /// let checkpoint = Checkpoint::new(
     ///     5,                          // Step 5
     ///     &geometry,                  // Current geometry
@@ -238,9 +251,33 @@ impl Checkpoint {
     /// ```
     /// use omecp::checkpoint::Checkpoint;
     /// use std::path::Path;
+    /// use omecp::geometry::Geometry;
+    /// use omecp::optimizer::OptimizationState;
+    /// use omecp::config::Config;
+    /// use nalgebra::{DMatrix, DVector};
     ///
-    /// let checkpoint = /* ... */;
-    /// checkpoint.save(Path::new("mecp.chk"))?;
+    /// fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let elements = vec!["H".to_string()];
+    ///     let coords = vec![0.0, 0.0, 0.0];
+    ///     let geometry = Geometry::new(elements, coords);
+    ///     let x_old = vec![0.0, 0.0, 0.0];
+    ///     let hessian = DMatrix::identity(3, 3);
+    ///     let opt_state = OptimizationState::new();
+    ///     let config = Config::default();
+    ///
+    ///     let checkpoint = Checkpoint::new(
+    ///         5,
+    ///         &geometry,
+    ///         &DVector::from_vec(x_old),
+    ///         &hessian,
+    ///         &opt_state,
+    ///         &config,
+    ///     );
+    ///
+    ///     checkpoint.save(Path::new("mecp.chk"))?;
+    ///     std::fs::remove_file("mecp.chk")?;
+    ///     Ok(())
+    /// }
     /// ```
     pub fn save(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let json = serde_json::to_string_pretty(self)?;
@@ -276,9 +313,37 @@ impl Checkpoint {
     /// ```
     /// use omecp::checkpoint::Checkpoint;
     /// use std::path::Path;
+    /// use omecp::geometry::Geometry;
+    /// use omecp::optimizer::OptimizationState;
+    /// use omecp::config::Config;
+    /// use nalgebra::{DMatrix, DVector};
     ///
-    /// let (step, geometry, x_old, hessian, opt_state, config) =
-    ///     Checkpoint::load(Path::new("mecp.chk"))?;
+    /// fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let elements = vec!["H".to_string()];
+    ///     let coords = vec![0.0, 0.0, 0.0];
+    ///     let geometry = Geometry::new(elements, coords);
+    ///     let x_old = vec![0.0, 0.0, 0.0];
+    ///     let hessian = DMatrix::identity(3, 3);
+    ///     let opt_state = OptimizationState::new();
+    ///     let config = Config::default();
+    ///
+    ///     let checkpoint = Checkpoint::new(
+    ///         5,
+    ///         &geometry,
+    ///         &DVector::from_vec(x_old),
+    ///         &hessian,
+    ///         &opt_state,
+    ///         &config,
+    ///     );
+    ///
+    ///     checkpoint.save(Path::new("mecp.chk"))?;
+    ///
+    ///     let (step, geometry, x_old, hessian, opt_state, config) =
+    ///         Checkpoint::load(Path::new("mecp.chk"))?;
+    ///
+    ///     std::fs::remove_file("mecp.chk")?;
+    ///     Ok(())
+    /// }
     /// ```
     pub fn load(path: &Path) -> Result<(usize, Geometry, DVector<f64>, DMatrix<f64>, OptimizationState, Config), Box<dyn std::error::Error>> {
         let content = fs::read_to_string(path)?;

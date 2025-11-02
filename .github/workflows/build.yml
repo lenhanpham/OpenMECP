@@ -1,4 +1,4 @@
-name: Build Rust Project
+name: Build
 
 on:
   push:

@@ -1,7 +1,7 @@
 <p align="center">
   <a href="https://github.com/lenhanpham/OpenMECP">
     <picture>
-      <img src="resources/omecp-logo.svg" alt="OpenMECP">
+      <img src="resources/omecp-logo.svg" alt="OpenMECP" style="width: 50%;">
     </picture>
   </a>
 </p>

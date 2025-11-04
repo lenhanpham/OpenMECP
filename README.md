@@ -26,7 +26,7 @@ A high-performance Rust implementation of the MECP (Minimum Energy Crossing Poin
 
 ## Important Note
 
-### **The program is under active development and not ready for use**
+### **The program is under active development and not ready for production use. Bugs might be around there**
 
 **Status**: Alpha testing phase
 
@@ -65,7 +65,7 @@ Where `x_norm = (f1 - f2) / |f1 - f2|` is the normalized gradient difference.
 - **Comprehensive Help**: Built-in help system with keyword, method, and feature documentation
 - **Command Line Interface**: Simple `omecp ci` and `omecp --help` commands
 
-### Core Functionality
+### Supported Algorithms
 
 - **MECP Optimization**: Harvey et al. algorithm implementation
 - **BFGS Optimizer**: Quasi-Newton optimization with PSB Hessian updates

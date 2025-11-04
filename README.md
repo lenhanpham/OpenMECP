@@ -19,11 +19,6 @@
 
 A high-performance Rust implementation of the MECP (Minimum Energy Crossing Point) optimizer for locating crossing points between two potential energy surfaces in quantum chemistry calculations.
 
-**Version**: 0.0.1  
-**Author**: Le Nhan Pham  
-**Language**: Rust  
-**License**: MIT  
-
 ## Important Note
 
 ### **The program is under active development and not ready for production use. Bugs might be around there**
@@ -1316,3 +1311,20 @@ mult2 = 3
 **Symptoms**: Many optimization steps required
 
 **Solutions**: add more steps
+
+## License
+
+OpenMECP is licensed under the **MIT License**.
+
+### Acknowledgments
+
+- **Le Nhan Pham**: Developer and maintainer
+- **Open-source community**: For contributions and feedback
+- **Quantum chemistry community**: For validation and testing
+
+---
+
+**OpenMECP v0.0.1** - A Rust implementation of the MECP optimizer
+Developed by Le Nhan Pham | [GitHub](https://github.com/lenhanpham/OpenMECP)
+
+For more information, visit the project documentation or use `OpenMECP --help`

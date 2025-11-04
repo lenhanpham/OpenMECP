@@ -547,7 +547,31 @@ pub fn check_convergence(
     }
 }
 
-/// Compute error vectors for GDIIS
+/// Computes error vectors for GDIIS optimization.
+///
+/// Error vectors in GDIIS are computed as the solution to H^(-1) * g, where H is
+/// the Hessian approximation and g is the gradient. These error vectors represent
+/// the "Newton step" that would be taken at each point in the history and are used
+/// to construct the DIIS interpolation matrix.
+///
+/// # Arguments
+///
+/// * `grads` - History of gradient vectors from previous iterations
+/// * `hessians` - History of Hessian approximations from previous iterations
+///
+/// # Returns
+///
+/// Returns a vector of error vectors, one for each iteration in the history.
+/// Each error vector has the same dimension as the gradient vectors.
+///
+/// # Algorithm
+///
+/// For each iteration i:
+/// ```text
+/// error[i] = H[i]^(-1) * g[i]
+/// ```
+///
+/// If the Hessian is singular, falls back to using the gradient directly.
 fn compute_error_vectors(
     grads: &VecDeque<DVector<f64>>,
     hessians: &VecDeque<DMatrix<f64>>,
@@ -560,7 +584,37 @@ fn compute_error_vectors(
         .collect()
 }
 
-/// Build B matrix for GDIIS
+/// Builds the B matrix for GDIIS optimization.
+///
+/// The B matrix is the core of the DIIS method, containing dot products of error
+/// vectors plus constraint equations. It has the structure:
+///
+/// ```text
+/// B = [ e₁·e₁  e₁·e₂  ...  e₁·eₙ  1 ]
+///     [ e₂·e₁  e₂·e₂  ...  e₂·eₙ  1 ]
+///     [  ...    ...   ...   ...   1 ]
+///     [ eₙ·e₁  eₙ·e₂  ...  eₙ·eₙ  1 ]
+///     [   1      1    ...    1    0 ]
+/// ```
+///
+/// where eᵢ·eⱼ represents the dot product of error vectors i and j.
+///
+/// # Arguments
+///
+/// * `errors` - Vector of error vectors from `compute_error_vectors`
+///
+/// # Returns
+///
+/// Returns the (n+1) × (n+1) B matrix where n is the number of error vectors.
+/// The extra row and column enforce the constraint that coefficients sum to 1.
+///
+/// # Mathematical Background
+///
+/// The B matrix is used in solving the DIIS equations:
+/// ```text
+/// B * c = [0, 0, ..., 0, 1]ᵀ
+/// ```
+/// where c contains the interpolation coefficients and the Lagrange multiplier.
 fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
     let n = errors.len();
     let mut b = DMatrix::zeros(n + 1, n + 1);
@@ -678,7 +732,40 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
     x_new
 }
 
-/// Compute GEDIIS error vectors (include energy information)
+/// Computes enhanced error vectors for GEDIIS optimization.
+///
+/// GEDIIS error vectors incorporate both gradient and energy information to
+/// provide better convergence for MECP optimization. The energy contribution
+/// helps emphasize geometries that are closer to the target energy difference.
+///
+/// # Arguments
+///
+/// * `grads` - History of gradient vectors from previous iterations
+/// * `energies` - History of energy differences (E1 - E2) from previous iterations
+///
+/// # Returns
+///
+/// Returns a vector of enhanced error vectors that include energy weighting.
+/// Each error vector combines gradient information with energy deviation.
+///
+/// # Algorithm
+///
+/// For each iteration i:
+/// ```text
+/// error[i] = g[i] + α * (E[i] - E_avg) * g[i]
+/// ```
+///
+/// where:
+/// - g[i] is the gradient at iteration i
+/// - E[i] is the energy difference at iteration i
+/// - E_avg is the average energy difference over all iterations
+/// - α = 0.1 is an empirical scaling factor
+///
+/// # Energy Weighting
+///
+/// The energy weighting helps the optimizer focus on geometries with energy
+/// differences closer to zero (the MECP condition). Points with large energy
+/// differences receive less weight in the interpolation.
 fn compute_gediis_error_vectors(
     grads: &VecDeque<DVector<f64>>,
     energies: &VecDeque<f64>,
@@ -703,7 +790,41 @@ fn compute_gediis_error_vectors(
     errors
 }
 
-/// Build B matrix for GEDIIS (includes energy-energy terms)
+/// Builds the enhanced B matrix for GEDIIS optimization.
+///
+/// The GEDIIS B matrix extends the standard DIIS B matrix by including
+/// energy-energy correlation terms. This provides additional information
+/// about the energy landscape to improve convergence.
+///
+/// # Arguments
+///
+/// * `errors` - Vector of enhanced error vectors from `compute_gediis_error_vectors`
+/// * `energies` - History of energy differences (E1 - E2) from previous iterations
+///
+/// # Returns
+///
+/// Returns the (n+1) × (n+1) enhanced B matrix where n is the number of iterations.
+/// The matrix includes both gradient-gradient and energy-energy correlation terms.
+///
+/// # Algorithm
+///
+/// The matrix elements are computed as:
+/// ```text
+/// B[i,j] = error[i] · error[j] + β * (E[i] - E_avg) * (E[j] - E_avg)
+/// ```
+///
+/// where:
+/// - error[i] · error[j] is the standard DIIS error dot product
+/// - E[i], E[j] are energy differences at iterations i and j
+/// - E_avg is the average energy difference
+/// - β = 0.01 is a small weighting factor for energy terms
+///
+/// # Energy Correlation Terms
+///
+/// The energy-energy terms help the optimizer recognize patterns in the
+/// energy landscape and preferentially weight geometries with similar
+/// energy characteristics. This is particularly useful for MECP optimization
+/// where minimizing the energy difference is crucial.
 fn build_gediis_b_matrix(errors: &[DVector<f64>], energies: &[f64]) -> DMatrix<f64> {
     let n = errors.len();
     let mut b = DMatrix::zeros(n + 1, n + 1);

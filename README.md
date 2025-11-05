@@ -21,7 +21,7 @@ A high-performance Rust implementation of the MECP (Minimum Energy Crossing Poin
 
 ## Important Note
 
-### **The program is under active development and not ready for production use. Bugs might be around there**
+### **The program is under active development and not ready for production use. Bugs might be around**
 
 **Status**: Alpha testing phase
 

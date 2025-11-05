@@ -4,6 +4,8 @@
 
 use crate::geometry::Geometry;
 use nalgebra::{DMatrix, DVector};
+use std::error::Error;
+use std::fmt;
 
 /// Represents a geometric constraint that can be applied during optimization.
 ///
@@ -363,4 +365,351 @@ pub fn calculate_dihedral_gradient(
         [grad3_x, grad3_y, grad3_z],
         [grad4_x, grad4_y, grad4_z],
     )
+}
+
+/// Error type for constraint-related operations.
+#[derive(Debug)]
+pub enum ConstraintError {
+    /// Singular Jacobian matrix - constraints are linearly dependent
+    SingularJacobian,
+    /// Numerical instability in constraint solving
+    NumericalInstability(String),
+    /// Invalid constraint specification
+    InvalidConstraint(String),
+}
+
+impl fmt::Display for ConstraintError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConstraintError::SingularJacobian => {
+                write!(f, "Constraint Jacobian matrix is singular - constraints may be linearly dependent")
+            }
+            ConstraintError::NumericalInstability(msg) => {
+                write!(f, "Numerical instability in constraint solving: {}", msg)
+            }
+            ConstraintError::InvalidConstraint(msg) => {
+                write!(f, "Invalid constraint specification: {}", msg)
+            }
+        }
+    }
+}
+
+impl Error for ConstraintError {}
+
+/// Applies constraint forces using the Lagrange multiplier method.
+///
+/// This function implements the constrained optimization algorithm by:
+/// 1. Evaluating constraint violations
+/// 2. Building the constraint Jacobian matrix
+/// 3. Solving for Lagrange multipliers using the constraint equation
+/// 4. Applying constraint forces to the gradient
+///
+/// The constraint equation solved is:
+/// C * C^T * λ = -g(x)
+/// where C is the Jacobian, λ are the multipliers, and g(x) are violations.
+///
+/// The modified forces are: F_new = F_old + C^T * λ
+///
+/// # Arguments
+///
+/// * `geometry` - Current molecular geometry
+/// * `forces` - Original forces from QM calculation (negative gradient)
+/// * `constraints` - List of geometric constraints to enforce
+/// * `lambdas` - Mutable reference to Lagrange multipliers (updated in-place)
+///
+/// # Returns
+///
+/// Modified forces with constraint contributions added.
+///
+/// # Errors
+///
+/// Returns `ConstraintError` if:
+/// - The constraint Jacobian is singular (linearly dependent constraints)
+/// - Numerical instability occurs during solving
+/// - Constraints are improperly specified
+///
+/// # Examples
+///
+/// ```rust
+/// use omecp::constraints::{add_constraint_lagrange, Constraint};
+/// use omecp::geometry::Geometry;
+/// use nalgebra::DVector;
+///
+/// let geometry = Geometry::new(/* ... */);
+/// let forces = DVector::from_vec(vec![0.1, -0.2, 0.0, 0.3, -0.1, 0.2]);
+/// let constraints = vec![
+///     Constraint::Bond { atoms: (0, 1), target: 1.5 }
+/// ];
+/// let mut lambdas = vec![0.0];
+///
+/// let constrained_forces = add_constraint_lagrange(
+///     &geometry, forces, &constraints, &mut lambdas
+/// ).unwrap();
+/// ```
+pub fn add_constraint_lagrange(
+    geometry: &Geometry,
+    forces: DVector<f64>,
+    constraints: &[Constraint],
+    lambdas: &mut Vec<f64>,
+) -> Result<DVector<f64>, ConstraintError> {
+    // If no constraints, return original forces
+    if constraints.is_empty() {
+        lambdas.clear();
+        return Ok(forces);
+    }
+
+    // Ensure lambdas vector has correct size
+    lambdas.resize(constraints.len(), 0.0);
+
+    // Evaluate constraint violations
+    let violations = evaluate_constraints(geometry, constraints);
+    
+    // Build constraint Jacobian matrix C (num_constraints × 3*num_atoms)
+    let jacobian = build_constraint_jacobian(geometry, constraints);
+    
+    // Check for zero violations - if all constraints are satisfied, no correction needed
+    let max_violation = violations.iter().fold(0.0f64, |acc, &x| acc.max(x.abs()));
+    if max_violation < 1e-12 {
+        lambdas.fill(0.0);
+        return Ok(forces);
+    }
+
+    // Solve the constraint equation: C * C^T * λ = -g(x)
+    // where g(x) are the constraint violations
+    let cct = &jacobian * jacobian.transpose();
+    
+    // Check if the matrix is singular
+    let det = cct.determinant();
+    if det.abs() < 1e-14 {
+        return Err(ConstraintError::SingularJacobian);
+    }
+
+    // Solve for Lagrange multipliers
+    let cct_inv = match cct.try_inverse() {
+        Some(inv) => inv,
+        None => return Err(ConstraintError::SingularJacobian),
+    };
+    
+    let lambda_vec = cct_inv * (-violations);
+    
+    // Update lambdas vector
+    for (i, &lambda) in lambda_vec.iter().enumerate() {
+        if i < lambdas.len() {
+            lambdas[i] = lambda;
+        }
+    }
+
+    // Check for numerical instability
+    for &lambda in &lambda_vec {
+        if !lambda.is_finite() {
+            return Err(ConstraintError::NumericalInstability(
+                "Lagrange multipliers contain NaN or infinite values".to_string()
+            ));
+        }
+    }
+
+    // Apply constraint forces: F_new = F_old + C^T * λ
+    let constraint_forces = jacobian.transpose() * lambda_vec;
+    let modified_forces = forces + constraint_forces;
+
+    Ok(modified_forces)
+}
+
+/// Validates constraint specifications for correctness.
+///
+/// Checks that:
+/// - Atom indices are within valid range
+/// - Target values are reasonable
+/// - No duplicate constraints exist
+///
+/// # Arguments
+///
+/// * `constraints` - List of constraints to validate
+/// * `num_atoms` - Total number of atoms in the system
+///
+/// # Returns
+///
+/// `Ok(())` if all constraints are valid, `Err(ConstraintError)` otherwise.
+pub fn validate_constraints(
+    constraints: &[Constraint],
+    num_atoms: usize,
+) -> Result<(), ConstraintError> {
+    for (i, constraint) in constraints.iter().enumerate() {
+        match constraint {
+            Constraint::Bond { atoms: (a1, a2), target } => {
+                if *a1 >= num_atoms || *a2 >= num_atoms {
+                    return Err(ConstraintError::InvalidConstraint(
+                        format!("Bond constraint {}: atom indices {} or {} exceed number of atoms {}", 
+                               i, a1, a2, num_atoms)
+                    ));
+                }
+                if a1 == a2 {
+                    return Err(ConstraintError::InvalidConstraint(
+                        format!("Bond constraint {}: cannot constrain atom {} to itself", i, a1)
+                    ));
+                }
+                if *target <= 0.0 || *target > 10.0 {
+                    return Err(ConstraintError::InvalidConstraint(
+                        format!("Bond constraint {}: unreasonable target distance {:.3} Å", i, target)
+                    ));
+                }
+            }
+            Constraint::Angle { atoms: (a1, a2, a3), target } => {
+                if *a1 >= num_atoms || *a2 >= num_atoms || *a3 >= num_atoms {
+                    return Err(ConstraintError::InvalidConstraint(
+                        format!("Angle constraint {}: atom indices {}, {}, or {} exceed number of atoms {}", 
+                               i, a1, a2, a3, num_atoms)
+                    ));
+                }
+                if a1 == a2 || a2 == a3 || a1 == a3 {
+                    return Err(ConstraintError::InvalidConstraint(
+                        format!("Angle constraint {}: duplicate atom indices {}, {}, {}", i, a1, a2, a3)
+                    ));
+                }
+                if *target < 0.0 || *target > std::f64::consts::PI {
+                    return Err(ConstraintError::InvalidConstraint(
+                        format!("Angle constraint {}: target angle {:.3} rad is outside valid range [0, π]", 
+                               i, target)
+                    ));
+                }
+            }
+            Constraint::Dihedral { atoms: (a1, a2, a3, a4), target } => {
+                if *a1 >= num_atoms || *a2 >= num_atoms || *a3 >= num_atoms || *a4 >= num_atoms {
+                    return Err(ConstraintError::InvalidConstraint(
+                        format!("Dihedral constraint {}: atom indices {}, {}, {}, or {} exceed number of atoms {}", 
+                               i, a1, a2, a3, a4, num_atoms)
+                    ));
+                }
+                let atoms = [*a1, *a2, *a3, *a4];
+                for j in 0..4 {
+                    for k in (j+1)..4 {
+                        if atoms[j] == atoms[k] {
+                            return Err(ConstraintError::InvalidConstraint(
+                                format!("Dihedral constraint {}: duplicate atom indices {}, {}, {}, {}", 
+                                       i, a1, a2, a3, a4)
+                            ));
+                        }
+                    }
+                }
+                if *target < -std::f64::consts::PI || *target > std::f64::consts::PI {
+                    return Err(ConstraintError::InvalidConstraint(
+                        format!("Dihedral constraint {}: target angle {:.3} rad is outside valid range [-π, π]", 
+                               i, target)
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Reports the current status of all constraints during optimization.
+///
+/// This function evaluates all constraints and provides detailed status information
+/// including current values, target values, violations, and convergence status.
+///
+/// # Arguments
+///
+/// * `geometry` - Current molecular geometry
+/// * `constraints` - List of constraints to evaluate
+/// * `lambdas` - Current Lagrange multipliers
+/// * `step` - Current optimization step number
+///
+/// # Examples
+///
+/// ```rust
+/// use omecp::constraints::{report_constraint_status, Constraint};
+/// use omecp::geometry::Geometry;
+///
+/// let geometry = Geometry::new(/* ... */);
+/// let constraints = vec![
+///     Constraint::Bond { atoms: (0, 1), target: 1.5 }
+/// ];
+/// let lambdas = vec![0.1];
+///
+/// report_constraint_status(&geometry, &constraints, &lambdas, 5);
+/// ```
+pub fn report_constraint_status(
+    geometry: &Geometry,
+    constraints: &[Constraint],
+    lambdas: &[f64],
+    step: usize,
+) {
+    if constraints.is_empty() {
+        return;
+    }
+
+    println!("\n--- Constraint Status (Step {}) ---", step);
+    
+    let violations = evaluate_constraints(geometry, constraints);
+    let max_violation = violations.iter().fold(0.0f64, |acc, &x| acc.max(x.abs()));
+    
+    println!("Maximum constraint violation: {:.6}", max_violation);
+    
+    for (i, constraint) in constraints.iter().enumerate() {
+        let violation = violations[i];
+        let lambda = lambdas.get(i).copied().unwrap_or(0.0);
+        
+        match constraint {
+            Constraint::Bond { atoms: (a, b), target } => {
+                let current = calculate_bond_distance(geometry, *a, *b);
+                println!(
+                    "  Bond {}-{}: current={:.4} Å, target={:.4} Å, violation={:.6}, λ={:.6}",
+                    a + 1, b + 1, current, target, violation, lambda
+                );
+            }
+            Constraint::Angle { atoms: (a, b, c), target } => {
+                let current = calculate_bond_angle(geometry, *a, *b, *c);
+                println!(
+                    "  Angle {}-{}-{}: current={:.2}°, target={:.2}°, violation={:.6}, λ={:.6}",
+                    a + 1, b + 1, c + 1, 
+                    current.to_degrees(), target.to_degrees(), violation, lambda
+                );
+            }
+            Constraint::Dihedral { atoms: (a, b, c, d), target } => {
+                let current = calculate_dihedral(geometry, *a, *b, *c, *d);
+                println!(
+                    "  Dihedral {}-{}-{}-{}: current={:.2}°, target={:.2}°, violation={:.6}, λ={:.6}",
+                    a + 1, b + 1, c + 1, d + 1,
+                    current.to_degrees(), target.to_degrees(), violation, lambda
+                );
+            }
+        }
+    }
+    
+    // Convergence status
+    let converged = max_violation < 1e-6;
+    println!("Constraint convergence: {}", if converged { "CONVERGED" } else { "NOT CONVERGED" });
+    println!("--- End Constraint Status ---\n");
+}
+
+/// Calculates the current bond distance between two atoms.
+fn calculate_bond_distance(geometry: &Geometry, a: usize, b: usize) -> f64 {
+    let pos_a = geometry.get_atom_coords(a);
+    let pos_b = geometry.get_atom_coords(b);
+    let dx = pos_a[0] - pos_b[0];
+    let dy = pos_a[1] - pos_b[1];
+    let dz = pos_a[2] - pos_b[2];
+    (dx * dx + dy * dy + dz * dz).sqrt()
+}
+
+/// Calculates the current bond angle between three atoms.
+fn calculate_bond_angle(geometry: &Geometry, a: usize, b: usize, c: usize) -> f64 {
+    let pos_a = geometry.get_atom_coords(a);
+    let pos_b = geometry.get_atom_coords(b);
+    let pos_c = geometry.get_atom_coords(c);
+    
+    let v_ba = [pos_a[0] - pos_b[0], pos_a[1] - pos_b[1], pos_a[2] - pos_b[2]];
+    let v_bc = [pos_c[0] - pos_b[0], pos_c[1] - pos_b[1], pos_c[2] - pos_b[2]];
+    
+    let dot = v_ba[0] * v_bc[0] + v_ba[1] * v_bc[1] + v_ba[2] * v_bc[2];
+    let norm_ba = (v_ba[0].powi(2) + v_ba[1].powi(2) + v_ba[2].powi(2)).sqrt();
+    let norm_bc = (v_bc[0].powi(2) + v_bc[1].powi(2) + v_bc[2].powi(2)).sqrt();
+    
+    if norm_ba < 1e-10 || norm_bc < 1e-10 {
+        return 0.0;
+    }
+    
+    let cos_angle = (dot / (norm_ba * norm_bc)).clamp(-1.0, 1.0);
+    cos_angle.acos()
 }

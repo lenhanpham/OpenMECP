@@ -173,10 +173,14 @@ pub mod lst;
 pub mod checkpoint;
 /// NEB and path optimization
 pub mod reaction_path;
+/// PES scanning functionality
+pub mod pes_scan;
 /// Input file templates
 pub mod template_generator;
 /// Built-in help system
 pub mod help;
+/// Run mode validation and compatibility checking
+pub mod validation;
 
 pub use config::Config;
 pub use geometry::Geometry;

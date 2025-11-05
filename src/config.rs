@@ -305,11 +305,21 @@ pub enum QMProgram {
 /// - If you're doing reaction path following
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RunMode {
-    /// Standard MECP optimization with checkpoint reading
+    /// Standard MECP optimization with two-phase workflow
     ///
-    /// - Reads checkpoint files from previous steps
+    /// **Phase 1**: Pre-point calculations WITHOUT checkpoint reading to generate initial wavefunctions
+    /// **Phase 2**: Main optimization loop WITH checkpoint reading for faster SCF convergence
+    /// 
+    /// **Program-specific behavior:**
+    /// - **Gaussian**: Generates .chk files in Phase 1, uses `guess=read` in Phase 2
+    /// - **ORCA**: Generates .gbw files in Phase 1, uses `!moread` in Phase 2  
+    /// - **XTB**: Runs pre-point for initialization, no checkpoint files needed
+    /// - **BAGEL**: Validates model file in Phase 1, uses same model in Phase 2
+    /// - **Custom**: Follows Gaussian-like behavior (depends on interface configuration)
+    /// 
     /// - Recommended for most calculations
     /// - Balanced between speed and robustness
+    /// - Follows the exact Python MECP.py workflow
     Normal,
     /// Restart from existing checkpoint file
     ///

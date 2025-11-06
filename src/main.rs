@@ -43,7 +43,7 @@
 //! - `.log` - Gaussian output files (with final geometry)
 //! - `.gjf` - Gaussian input files
 
-use nalgebra::DMatrix;
+use nalgebra::{DMatrix, DVector};
 use omecp::*;
 use omecp::{checkpoint, lst, validation};
 use omecp::qm_interface::get_output_file_base;
@@ -482,6 +482,55 @@ fn run_create_settings_template() -> Result<(), Box<dyn std::error::Error>> {
 /// - Optimization diverges
 /// - Maximum steps exceeded
 /// - File I/O errors occur
+
+/// Prints detailed convergence criteria for the current optimization step
+///
+/// # Arguments
+///
+/// * `step` - Current optimization step number (1-indexed)
+/// * `conv` - Convergence status containing all 5 criteria results
+/// * `e1` - Energy of state 1 in Hartree
+/// * `e2` - Energy of state 2 in Hartree
+/// * `disp` - Displacement vector (new - old geometry)
+/// * `grad` - Current MECP gradient vector
+/// * `config` - Configuration with convergence thresholds
+fn print_convergence_details(
+    step: usize,
+    conv: &optimizer::ConvergenceStatus,
+    e1: f64,
+    e2: f64,
+    disp: &DVector<f64>,
+    grad: &DVector<f64>,
+    config: &config::Config,
+) {
+    // Calculate actual values
+    let de = (e1 - e2).abs();
+    let rms_disp = disp.norm() / (disp.len() as f64).sqrt();
+    let max_disp = disp.iter().map(|x| x.abs()).fold(0.0, f64::max);
+    let rms_grad = grad.norm() / (grad.len() as f64).sqrt();
+    let max_grad = grad.iter().map(|x| x.abs()).fold(0.0, f64::max);
+
+    // Convert Bohr to Angstrom for displacement display (1 Bohr = 0.529177 Å)
+    let bohr_to_angstrom = 0.529177;
+
+    println!("Step {}: Convergence Status", step);
+    println!("┌─────────────────────────────────┬──────────────┬──────────────┬─────────┐");
+    println!("│ Criteria                        │   Current    │   Threshold  │  Pass   │");
+    println!("├─────────────────────────────────┼──────────────┼──────────────┼─────────┤");
+    println!("│ 1. Energy difference            │ {:>12.8}     │ {:>12.8}     │  [{}]   │",
+             de, config.thresholds.de, if conv.de_converged { "YES" } else { "NO " });
+    println!("│ 2. RMS gradient                 │ {:>12.8}     │ {:>12.8}     │  [{}]   │",
+             rms_grad, config.thresholds.rms_g, if conv.rms_grad_converged { "YES" } else { "NO " });
+    println!("│ 3. Max gradient                 │ {:>12.8}     │ {:>12.8}     │  [{}]   │",
+             max_grad, config.thresholds.max_g, if conv.max_grad_converged { "YES" } else { "NO " });
+    println!("│ 4. RMS displacement             │ {:>12.8}     │ {:>12.8}     │  [{}]   │",
+             rms_disp * bohr_to_angstrom, config.thresholds.rms, if conv.rms_disp_converged { "YES" } else { "NO " });
+    println!("│ 5. Max displacement             │ {:>12.8}     │ {:>12.8}     │  [{}]   │",
+             max_disp * bohr_to_angstrom, config.thresholds.max_dis, if conv.max_disp_converged { "YES" } else { "NO " });
+    println!("└─────────────────────────────────┴──────────────┴──────────────┴─────────┘");
+    println!();
+}
+
 fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("**** MECP in Rust****");
     println!("****By Le Nhan Pham****\n");
@@ -1045,6 +1094,10 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             &grad_new,
             &config,
         );
+
+        // Calculate displacement for printing
+        let disp = &x_new - &x_old;
+        print_convergence_details(step + 1, &conv, state1_new.energy, state2_new.energy, &disp, &grad_new, &config);
 
         println!(
             "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
@@ -1886,6 +1939,10 @@ fn run_single_optimization(
             &grad_new,
             config,
         );
+
+        // Calculate displacement for printing
+        let disp = &x_new - &x_old;
+        print_convergence_details(step + 1, &conv, state1_new.energy, state2_new.energy, &disp, &grad_new, &config);
 
         if conv.is_converged() {
             return Ok(());
@@ -2866,6 +2923,10 @@ fn run_restart(
             &config,
         );
 
+        // Calculate displacement for printing
+        let disp = &x_new - &x_old;
+        print_convergence_details(step + 1, &conv, state1.energy, state2.energy, &disp, &grad, &config);
+
         println!(
             "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
             state1.energy,
@@ -2880,7 +2941,7 @@ fn run_restart(
             return Ok(());
         }
 
-        // Check convergence
+        // Check convergence (duplicate check - should be removed)
         let conv = optimizer::check_convergence(
             state1.energy,
             state2.energy,
@@ -2889,6 +2950,10 @@ fn run_restart(
             &grad,
             &config,
         );
+
+        // Calculate displacement for printing
+        let disp = &x_new - &x_old;
+        print_convergence_details(step + 1, &conv, state1.energy, state2.energy, &disp, &grad, &config);
 
         println!(
             "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",

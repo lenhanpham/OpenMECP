@@ -755,6 +755,12 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "drive_steps" => config.drive_steps = value.parse().unwrap_or(10),
         "drive_type" => config.drive_type = value.to_string(),
         "use_gediis" => config.use_gediis = value.to_lowercase() == "true",
+        "switch_step" => {
+            config.switch_step = value.parse().unwrap_or_else(|_| {
+                eprintln!("Warning: Invalid switch_step value '{}', using default (3)", value);
+                3
+            });
+        },
         "drive_atoms" => {
             config.drive_atoms = value.split(',')
                 .filter_map(|s| s.trim().parse::<usize>().ok())

@@ -913,15 +913,30 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // Choose optimizer
-        let x_new = if step < 3 || !opt_state.has_enough_history() {
-            println!("Using BFGS optimizer");
+        // Choose optimizer based on switch_step configuration
+        let use_bfgs = if config.switch_step >= config.max_steps {
+            // Always BFGS if switch_step >= max_steps (BFGS-only mode)
+            true
+        } else if config.switch_step == 0 {
+            // Never BFGS if switch_step = 0 (DIIS-only mode)
+            false
+        } else {
+            // Use BFGS until switch_step, then switch to DIIS
+            step < config.switch_step
+        };
+
+        let x_new = if use_bfgs || !opt_state.has_enough_history() {
+            if config.switch_step >= config.max_steps {
+                println!("Using BFGS optimizer (BFGS-only mode)");
+            } else {
+                println!("Using BFGS optimizer (step {} < switch point {})", step + 1, config.switch_step);
+            }
             optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
         } else if config.use_gediis {
-            println!("Using GEDIIS optimizer");
+            println!("Using GEDIIS optimizer (step {} >= switch point {})", step + 1, config.switch_step);
             optimizer::gediis_step(&opt_state, &config)
         } else {
-            println!("Using GDIIS optimizer");
+            println!("Using GDIIS optimizer (step {} >= switch point {})", step + 1, config.switch_step);
             optimizer::gdiis_step(&opt_state, &config)
         };
 
@@ -1810,8 +1825,22 @@ fn run_single_optimization(
                 optimizer::bfgs_step(&x_old, &grad, &hessian, config)
             }
         } else {
-            if step < 3 || !opt_state.has_enough_history() {
+            // Choose optimizer based on switch_step configuration
+            let use_bfgs = if config.switch_step >= config.max_steps {
+                // Always BFGS if switch_step >= max_steps (BFGS-only mode)
+                true
+            } else if config.switch_step == 0 {
+                // Never BFGS if switch_step = 0 (DIIS-only mode)
+                false
+            } else {
+                // Use BFGS until switch_step, then switch to DIIS
+                step < config.switch_step
+            };
+
+            if use_bfgs || !opt_state.has_enough_history() {
                 optimizer::bfgs_step(&x_old, &grad, &hessian, config)
+            } else if config.use_gediis {
+                optimizer::gediis_step(&opt_state, config)
             } else {
                 optimizer::gdiis_step(&opt_state, config)
             }
@@ -2796,11 +2825,30 @@ fn run_restart(
                 optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
             }
         } else {
-            if step < 3 || !opt_state.has_enough_history() {
-                println!("Using BFGS optimizer");
-                optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
+            // Choose optimizer based on switch_step configuration
+            let use_bfgs = if config.switch_step >= config.max_steps {
+                // Always BFGS if switch_step >= max_steps (BFGS-only mode)
+                true
+            } else if config.switch_step == 0 {
+                // Never BFGS if switch_step = 0 (DIIS-only mode)
+                false
             } else {
-                println!("Using GDIIS optimizer");
+                // Use BFGS until switch_step, then switch to DIIS
+                step < config.switch_step
+            };
+
+            if use_bfgs || !opt_state.has_enough_history() {
+                if config.switch_step >= config.max_steps {
+                    println!("Using BFGS optimizer (BFGS-only mode)");
+                } else {
+                    println!("Using BFGS optimizer (step {} < switch point {})", step + 1, config.switch_step);
+                }
+                optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
+            } else if config.use_gediis {
+                println!("Using GEDIIS optimizer (step {} >= switch point {})", step + 1, config.switch_step);
+                optimizer::gediis_step(&opt_state, &config)
+            } else {
+                println!("Using GDIIS optimizer (step {} >= switch point {})", step + 1, config.switch_step);
                 optimizer::gdiis_step(&opt_state, &config)
             }
         };

@@ -338,6 +338,14 @@ pub const KEYWORDS: &[Keyword] = &[
         example: Some("use_gediis = true"),
         required: false,
     },
+    Keyword {
+        name: "switch_step",
+        category: KeywordCategory::Convergence,
+        description: "Step number to switch from BFGS to DIIS optimizers (0=DIIS-only, >=max_steps=BFGS-only)",
+        default_value: Some("3"),
+        example: Some("switch_step = 10  # BFGS for steps 1-10, then DIIS"),
+        required: false,
+    },
 
     // ADVANCED OPTIONS
     Keyword {
@@ -615,6 +623,12 @@ pub const FEATURES: &[FeatureInfo] = &[
         example: Some("use_gediis = true  # Enables GEDIIS"),
     },
     FeatureInfo {
+        name: "Flexible Optimizer Switching",
+        description: "Control when to switch from BFGS to DIIS optimizers",
+        usage: "switch_step = N (default: 3)",
+        example: Some("switch_step = 0   # DIIS-only\nswitch_step = 10  # BFGS for 10 steps\nswitch_step = 999 # BFGS-only"),
+    },
+    FeatureInfo {
         name: "Bond Constraints",
         description: "Fix bond distances during optimization",
         usage: "R i j value (in Angstrom)",
@@ -884,6 +898,13 @@ pub fn print_feature_help() {
     println!("GEDIIS");
     println!("    Energy-weighted DIIS. Alternative to GDIIS that weights each");
     println!("    previous step by its energy. Enable with 'use_gediis = true'.");
+    println!();
+    println!("OPTIMIZER SWITCHING");
+    println!("    Control when to switch from BFGS to DIIS with 'switch_step = N':");
+    println!("    - switch_step = 0: Pure DIIS (no BFGS)");
+    println!("    - switch_step = 3: Default hybrid (BFGS steps 1-3, then DIIS)");
+    println!("    - switch_step = 10: Extended BFGS (steps 1-10, then DIIS)");
+    println!("    - switch_step >= max_steps: Pure BFGS (no DIIS)");
     println!();
 
     println!("CONSTRAINT TYPES");

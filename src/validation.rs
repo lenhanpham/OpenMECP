@@ -215,7 +215,7 @@ fn validate_wavefunction_files(config: &Config) -> ValidationResult<()> {
             match config.program {
                 QMProgram::Gaussian => {
                     // Check for Gaussian checkpoint files
-                    let chk_files = ["a.chk", "b.chk", "running_dir/a.chk", "running_dir/b.chk"];
+                    let chk_files = ["state_A.chk", "state_B.chk", "running_dir/state_A.chk", "running_dir/state_B.chk"];
                     let mut found_files = Vec::new();
                     
                     for file in &chk_files {
@@ -227,7 +227,7 @@ fn validate_wavefunction_files(config: &Config) -> ValidationResult<()> {
                     if found_files.is_empty() {
                         return Err(ValidationError {
                             category: ErrorCategory::MissingWavefunctionFiles,
-                            message: "Read mode requires Gaussian checkpoint files (a.chk, b.chk) but none were found".to_string(),
+                            message: "Read mode requires Gaussian checkpoint files (state_A.chk, state_B.chk) but none were found".to_string(),
                             suggestion: Some("Run a calculation in 'normal' or 'noread' mode first to generate checkpoint files, or switch to 'noread' mode".to_string()),
                             reference: Some("Checkpoint files are created automatically during normal calculations".to_string()),
                         });
@@ -238,7 +238,7 @@ fn validate_wavefunction_files(config: &Config) -> ValidationResult<()> {
                 
                 QMProgram::Orca => {
                     // Check for ORCA wavefunction files
-                    let gbw_files = ["a.gbw", "b.gbw", "running_dir/a.gbw", "running_dir/b.gbw"];
+                    let gbw_files = ["state_A.gbw", "state_B.gbw", "running_dir/state_A.gbw", "running_dir/state_B.gbw"];
                     let mut found_files = Vec::new();
                     
                     for file in &gbw_files {
@@ -250,7 +250,7 @@ fn validate_wavefunction_files(config: &Config) -> ValidationResult<()> {
                     if found_files.is_empty() {
                         return Err(ValidationError {
                             category: ErrorCategory::MissingWavefunctionFiles,
-                            message: "Read mode requires ORCA wavefunction files (a.gbw, b.gbw) but none were found".to_string(),
+                            message: "Read mode requires ORCA wavefunction files (state_A.gbw, state_B.gbw) but none were found".to_string(),
                             suggestion: Some("Run a calculation in 'normal' or 'noread' mode first to generate .gbw files, or switch to 'noread' mode".to_string()),
                             reference: Some("ORCA .gbw files contain the molecular orbitals and are created during calculations".to_string()),
                         });

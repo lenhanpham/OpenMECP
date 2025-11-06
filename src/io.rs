@@ -268,17 +268,17 @@ fn build_gaussian_header_internal_with_chk(
     };
 
     // Format following Python exactly: 
-    // f'%chk=a.chk\n%nprocshared={NProcs} \n%mem={Mem} \n# {Method} {Td1} nosymm\n\n Title Card \n\n{Charge1} {Mult1}'
+    // f'%chk=state_A.chk\n%nprocshared={NProcs} \n%mem={Mem} \n# {Method} {Td1} nosymm\n\n Title Card \n\n{Charge1} {Mult1}'
     format!(
         "%chk={}\n%nprocshared={} \n%mem={} \n{}\n\n Title Card \n\n{} {}",
         chk_file, config.nprocs, config.mem, route_section, charge, mult
     )
 }
 
-/// Builds an ORCA input file header string (legacy interface).
+/// Builds an ORCA input file header string with basename.
 ///
-/// This function is maintained for backward compatibility. New code should use
-/// `build_program_header()` which includes dynamic method modification.
+/// This function requires a basename parameter for ORCA .gbw file paths.
+/// Use `build_program_header_with_basename()` for the recommended interface.
 ///
 /// # Arguments
 ///
@@ -286,6 +286,7 @@ fn build_gaussian_header_internal_with_chk(
 /// * `charge` - Molecular charge for the current state
 /// * `mult` - Spin multiplicity for the current state
 /// * `tail` - Additional ORCA keywords (tail section content)
+/// * `input_basename` - Basename of input file for .gbw paths (e.g., "compound_x" for "compound_x.inp")
 ///
 /// # Returns
 ///
@@ -295,6 +296,7 @@ pub fn build_orca_header(
     charge: i32,
     mult: usize,
     tail: &str,
+    input_basename: &str,
 ) -> String {
     // Use the dynamic method modification for consistency
     let modified_method = modify_method_for_run_mode(
@@ -306,7 +308,7 @@ pub fn build_orca_header(
     let mut temp_config = config.clone();
     temp_config.method = modified_method;
     
-    build_orca_header_internal(&temp_config, charge, mult, tail)
+    build_orca_header_internal(&temp_config, charge, mult, tail, input_basename)
 }
 
 /// Internal ORCA header builder that doesn't modify the method string.
@@ -321,6 +323,7 @@ pub fn build_orca_header(
 /// * `charge` - Molecular charge for the current state
 /// * `mult` - Spin multiplicity for the current state
 /// * `tail` - Additional ORCA keywords (tail section content)
+/// * `input_basename` - Basename of input file for .gbw paths (e.g., "calc" for "calc.inp")
 ///
 /// # Returns
 ///
@@ -330,6 +333,7 @@ fn build_orca_header_internal(
     charge: i32,
     mult: usize,
     tail: &str,
+    input_basename: &str,
 ) -> String {
     // Use the method string as-is (already modified by modify_method_for_run_mode)
     let method_str = &config.method;
@@ -347,11 +351,11 @@ fn build_orca_header_internal(
     // Replace *** with proper .gbw file paths (following Python logic)
     let method_line = if method_line.contains("***") {
         let gbw_file = if charge == config.charge1 && mult == config.mult1 {
-            "running_dir/a.gbw"
+            format!("{}/state_A.gbw", input_basename)
         } else {
-            "running_dir/b.gbw"
+            format!("{}/state_B.gbw", input_basename)
         };
-        method_line.replace("***", gbw_file)
+        method_line.replace("***", &gbw_file)
     } else {
         method_line
     };
@@ -552,6 +556,9 @@ pub fn modify_method_for_run_mode(
 /// based on the quantum chemistry program specified in the configuration.
 /// It now uses dynamic method modification to ensure run mode compatibility.
 ///
+/// **Note**: For ORCA programs, this function will panic if no input basename is provided.
+/// Use `build_program_header_with_basename()` instead for ORCA calculations.
+///
 /// # Arguments
 ///
 /// * `config` - The global configuration for the MECP calculation
@@ -559,6 +566,56 @@ pub fn modify_method_for_run_mode(
 /// * `mult` - Spin multiplicity for the current state
 /// * `td_or_tail` - TD-DFT keywords (Gaussian) or tail section content (other programs)
 /// * `state` - Electronic state index (used for BAGEL)
+///
+/// # Returns
+///
+/// Returns a `String` containing the formatted input header for the specified program.
+///
+/// # Panics
+///
+/// Panics if `config.program` is `QMProgram::Orca` since ORCA requires an input basename.
+///
+/// # Examples
+///
+/// ```
+/// use omecp::config::{Config, QMProgram, RunMode};
+/// use omecp::io;
+///
+/// let mut config = Config::default();
+/// config.program = QMProgram::Gaussian; // Works for Gaussian
+/// config.method = "B3LYP/6-31G*".to_string();
+/// config.run_mode = RunMode::Normal;
+///
+/// let header = io::build_program_header(&config, 0, 1, "", 0);
+/// println!("{}", header);
+/// ```
+pub fn build_program_header(
+    config: &crate::config::Config,
+    charge: i32,
+    mult: usize,
+    td_or_tail: &str,
+    state: usize,
+) -> String {
+    if config.program == crate::config::QMProgram::Orca {
+        panic!("ORCA requires input basename for .gbw file paths. Use build_program_header_with_basename() instead.");
+    }
+    build_program_header_with_chk(config, charge, mult, td_or_tail, state, None, None)
+}
+
+/// Builds a program-specific input file header string with input basename for ORCA .gbw paths.
+///
+/// This function is specifically designed for cases where you need to specify the basename
+/// of the input file for ORCA calculations, which is used to construct proper .gbw file paths
+/// (e.g., "calc/state_A.gbw" instead of "running_dir/state_A.gbw").
+///
+/// # Arguments
+///
+/// * `config` - The global configuration for the MECP calculation
+/// * `charge` - Molecular charge for the current state
+/// * `mult` - Spin multiplicity for the current state
+/// * `td_or_tail` - TD-DFT keywords (Gaussian) or tail section content (ORCA)
+/// * `state` - State index for multi-reference calculations (BAGEL)
+/// * `input_basename` - Basename of input file for ORCA .gbw paths (e.g., "calc" for "calc.inp")
 ///
 /// # Returns
 ///
@@ -573,21 +630,20 @@ pub fn modify_method_for_run_mode(
 /// let mut config = Config::default();
 /// config.program = QMProgram::Orca;
 /// config.method = "B3LYP def2-SVP".to_string();
-/// config.run_mode = RunMode::Stable;
-/// config.nprocs = 8;
-/// config.mem = "8000".to_string();
+/// config.run_mode = RunMode::Read;
 ///
-/// let header = io::build_program_header(&config, 0, 1, "", 0);
-/// println!("{}", header);
+/// // This will generate ORCA header with "calc/state_A.gbw" paths
+/// let header = io::build_program_header_with_basename(&config, 0, 1, "", 0, "calc");
 /// ```
-pub fn build_program_header(
+pub fn build_program_header_with_basename(
     config: &crate::config::Config,
     charge: i32,
     mult: usize,
     td_or_tail: &str,
     state: usize,
+    input_basename: &str,
 ) -> String {
-    build_program_header_with_chk(config, charge, mult, td_or_tail, state, None)
+    build_program_header_with_chk(config, charge, mult, td_or_tail, state, None, Some(input_basename))
 }
 
 /// Builds a program-specific input file header string with custom checkpoint file name.
@@ -604,6 +660,7 @@ pub fn build_program_header(
 /// * `td_or_tail` - TD-DFT keywords (Gaussian) or tail section content (ORCA)
 /// * `state` - State index for multi-reference calculations (BAGEL)
 /// * `chk_file` - Optional custom checkpoint file name. If None, uses default naming
+/// * `input_basename` - Optional basename of input file for ORCA .gbw paths (e.g., "calc" for "calc.inp")
 ///
 /// # Returns
 ///
@@ -615,6 +672,7 @@ pub fn build_program_header_with_chk(
     td_or_tail: &str,
     state: usize,
     chk_file: Option<&str>,
+    input_basename: Option<&str>,
 ) -> String {
     // Get dynamically modified method based on run mode and program
     let modified_method = modify_method_for_run_mode(
@@ -642,7 +700,8 @@ pub fn build_program_header_with_chk(
             build_gaussian_header_internal_with_chk(&temp_config, charge, mult, td_or_tail, checkpoint_file)
         }
         crate::config::QMProgram::Orca => {
-            build_orca_header_internal(&temp_config, charge, mult, td_or_tail)
+            let basename = input_basename.expect("ORCA requires input_basename parameter for .gbw file paths");
+            build_orca_header_internal(&temp_config, charge, mult, td_or_tail, basename)
         }
         crate::config::QMProgram::Xtb => {
             build_xtb_header(&temp_config, charge, mult, td_or_tail)
@@ -798,7 +857,7 @@ mod tests {
         config.mem = "8000".to_string();
         config.run_mode = RunMode::Normal;
 
-        let header = build_orca_header(&config, 0, 1, "");
+        let header = build_orca_header(&config, 0, 1, "", "test_job");
         
         // Should contain ORCA-specific formatting
         assert!(header.contains("%pal nprocs 8 end"));
@@ -818,7 +877,7 @@ mod tests {
         config.run_mode = RunMode::Normal;
 
         let tail_with_comments = "# Comment\n%tddft\n  nroots 5\nend\n# Another comment";
-        let header = build_orca_header(&config, -1, 2, tail_with_comments);
+        let header = build_orca_header(&config, -1, 2, tail_with_comments, "test_job");
         
         
         // Should contain cleaned tail content - the method is now modified by dynamic function
@@ -840,7 +899,7 @@ mod tests {
         config.mem = "4000".to_string();
         config.run_mode = crate::config::RunMode::NoRead;
 
-        let header = build_orca_header(&config, 0, 1, "");
+        let header = build_orca_header(&config, 0, 1, "", "test_job");
         
         // Should not contain moread in noread mode
         assert!(!header.contains("!moread"));
@@ -1034,8 +1093,10 @@ mod tests {
         let mut config = Config::default();
         config.program = crate::config::QMProgram::Gaussian;
         config.method = "B3LYP".to_string();
+        config.charge1 = 0;
+        config.mult1 = 1;
         let header = build_program_header(&config, 0, 1, "", 0);
-        assert!(header.contains("%chk=calc.chk"));
+        assert!(header.contains("%chk=state_A.chk"));
         assert!(header.contains("%nprocshared="));
         
         // ORCA
@@ -1070,14 +1131,24 @@ mod tests {
         config.charge2 = 0;
         config.mult2 = 3;
         
-        // Test state A (should use a.gbw)
+        // Test default behavior (should use "calc" as default basename)
         let header = build_program_header(&config, 0, 1, "", 0);
-        assert!(header.contains("running_dir/a.gbw"));
+        assert!(header.contains("calc/state_A.gbw"));
         assert!(!header.contains("***"));
         
-        // Test state B (should use b.gbw)
         let header = build_program_header(&config, 0, 3, "", 0);
-        assert!(header.contains("running_dir/b.gbw"));
+        assert!(header.contains("calc/state_B.gbw"));
         assert!(!header.contains("***"));
+        
+        // Test with custom basename (should use custom basename)
+        let header = build_program_header_with_basename(&config, 0, 1, "", 0, "compound_x");
+        assert!(header.contains("compound_x/state_A.gbw"));
+        assert!(!header.contains("***"));
+        assert!(!header.contains("calc"));
+        
+        let header = build_program_header_with_basename(&config, 0, 3, "", 0, "compound_x");
+        assert!(header.contains("compound_x/state_B.gbw"));
+        assert!(!header.contains("***"));
+        assert!(!header.contains("calc"));
     }
 }

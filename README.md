@@ -398,7 +398,7 @@ td2 = TD(nstates=5,root=2)
 
 **Output Files**: `.log` files in `running_dir/` directory
 
-**Checkpoint Files**: `a.chk` (state A), `b.chk` (state B)
+**Checkpoint Files**: `state_A.chk` (state A), `state_B.chk` (state B)
 
 ### ORCA
 
@@ -429,7 +429,7 @@ end
 
 **Output Files**: `.log` and `.engrad` files in `running_dir/` directory
 
-**Checkpoint Files**: `a.gbw` (state A), `b.gbw` (state B)
+**Checkpoint Files**: `state_A.gbw` (state A), `state_B.gbw` (state B)
 
 ### Custom QM Interface
 
@@ -810,8 +810,8 @@ running_dir/
 ├── 1_A.gjf          # Step 1 state A input
 ├── 1_A.log          # Step 1 state A output
 ...
-├── a.chk            # State A checkpoint
-└── b.chk            # State B checkpoint
+├── state_A.chk      # State A checkpoint
+└── state_B.chk      # State B checkpoint
 ```
 
 ### Scan Output

@@ -162,3 +162,159 @@ pub struct State {
     /// Molecular geometry at which energy and forces were evaluated
     pub geometry: Geometry,
 }
+impl State {
+    /// Validates that the State contains meaningful data and is not a zero-energy failure.
+    ///
+    /// This method checks for common failure modes where QM calculations appear to
+    /// succeed but actually return invalid or default values. It prevents silent
+    /// failures that could lead to incorrect MECP optimization results.
+    ///
+    /// # Validation Criteria
+    ///
+    /// The State is considered invalid if:
+    /// - Energy is exactly zero (indicates parsing failure or uninitialized state)
+    /// - All force components are zero (indicates gradient calculation failure)
+    /// - Forces vector is empty (indicates missing gradient data)
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if the State contains valid, meaningful data
+    /// - `Err(String)` with a descriptive error message if validation fails
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use omecp::geometry::{Geometry, State};
+    /// use nalgebra::DVector;
+    ///
+    /// // Valid state with non-zero energy and forces
+    /// let geometry = Geometry::new(vec!["H".to_string()], vec![0.0, 0.0, 0.0]);
+    /// let valid_state = State {
+    ///     energy: -0.5,
+    ///     forces: DVector::from_vec(vec![0.1, -0.2, 0.0]),
+    ///     geometry,
+    /// };
+    /// assert!(valid_state.validate().is_ok());
+    ///
+    /// // Invalid state with zero energy
+    /// let geometry = Geometry::new(vec!["H".to_string()], vec![0.0, 0.0, 0.0]);
+    /// let invalid_state = State {
+    ///     energy: 0.0,
+    ///     forces: DVector::from_vec(vec![0.1, -0.2, 0.0]),
+    ///     geometry,
+    /// };
+    /// assert!(invalid_state.validate().is_err());
+    /// ```
+    pub fn validate(&self) -> Result<(), String> {
+        // Check for zero energy (common failure mode)
+        if self.energy == 0.0 {
+            return Err(
+                "State contains zero energy, indicating parsing failure or uninitialized state"
+                    .to_string(),
+            );
+        }
+
+        // Check for empty forces vector
+        if self.forces.is_empty() {
+            return Err("State contains empty forces vector, indicating missing gradient data"
+                .to_string());
+        }
+
+        // Check for all-zero forces (gradient calculation failure)
+        if self.forces.iter().all(|&f| f == 0.0) {
+            return Err(
+                "State contains all-zero forces, indicating gradient calculation failure"
+                    .to_string(),
+            );
+        }
+
+        // Check force/geometry consistency
+        let expected_force_components = self.geometry.num_atoms * 3;
+        if self.forces.len() != expected_force_components {
+            return Err(format!(
+                "Force/geometry mismatch: expected {} force components for {} atoms, got {}",
+                expected_force_components,
+                self.geometry.num_atoms,
+                self.forces.len()
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_state_validation_valid_state() {
+        let geometry = Geometry::new(vec!["H".to_string()], vec![0.0, 0.0, 0.0]);
+        let valid_state = State {
+            energy: -0.5,
+            forces: DVector::from_vec(vec![0.1, -0.2, 0.0]),
+            geometry,
+        };
+        
+        assert!(valid_state.validate().is_ok());
+    }
+
+    #[test]
+    fn test_state_validation_zero_energy() {
+        let geometry = Geometry::new(vec!["H".to_string()], vec![0.0, 0.0, 0.0]);
+        let invalid_state = State {
+            energy: 0.0,
+            forces: DVector::from_vec(vec![0.1, -0.2, 0.0]),
+            geometry,
+        };
+        
+        let result = invalid_state.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("zero energy"));
+    }
+
+    #[test]
+    fn test_state_validation_zero_forces() {
+        let geometry = Geometry::new(vec!["H".to_string()], vec![0.0, 0.0, 0.0]);
+        let invalid_state = State {
+            energy: -0.5,
+            forces: DVector::from_vec(vec![0.0, 0.0, 0.0]),
+            geometry,
+        };
+        
+        let result = invalid_state.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("all-zero forces"));
+    }
+
+    #[test]
+    fn test_state_validation_empty_forces() {
+        let geometry = Geometry::new(vec!["H".to_string()], vec![0.0, 0.0, 0.0]);
+        let invalid_state = State {
+            energy: -0.5,
+            forces: DVector::from_vec(vec![]),
+            geometry,
+        };
+        
+        let result = invalid_state.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty forces"));
+    }
+
+    #[test]
+    fn test_state_validation_force_geometry_mismatch() {
+        let geometry = Geometry::new(
+            vec!["H".to_string(), "H".to_string()], 
+            vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+        );
+        let invalid_state = State {
+            energy: -0.5,
+            forces: DVector::from_vec(vec![0.1, -0.2, 0.0]), // Only 3 components for 2 atoms
+            geometry,
+        };
+        
+        let result = invalid_state.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Force/geometry mismatch"));
+    }
+}

@@ -46,9 +46,44 @@
 use nalgebra::DMatrix;
 use omecp::*;
 use omecp::{checkpoint, lst, validation};
+use omecp::qm_interface::get_output_file_base;
 use std::env;
 use std::path::Path;
 use std::process;
+
+/// Returns the appropriate input file extension for the given QM program.
+///
+/// # Arguments
+///
+/// * `program` - The QM program type
+///
+/// # Returns
+///
+/// Returns the file extension string (without the dot) for input files.
+///
+/// # Examples
+///
+/// ```
+/// use omecp::config::QMProgram;
+///
+/// assert_eq!(get_input_file_extension(QMProgram::Gaussian), "gjf");
+/// assert_eq!(get_input_file_extension(QMProgram::Orca), "inp");
+/// ```
+fn get_input_file_extension(program: config::QMProgram) -> &'static str {
+    match program {
+        config::QMProgram::Gaussian => "gjf",
+        config::QMProgram::Orca => "inp",
+        config::QMProgram::Xtb => "inp",
+        config::QMProgram::Bagel => "json",
+        config::QMProgram::Custom => "inp",
+    }
+}
+
+/// Returns the output file base name for a given QM program.
+///
+/// Different QM programs create output files with different extensions.
+/// This function returns the base name that should be passed to the
+// Use get_output_file_base from qm_interface module
 
 /// Main entry point for OpenMECP program.
 ///
@@ -478,7 +513,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     // Check if LST interpolation is requested
     if input_data.lst1.is_some() && input_data.lst2.is_some() {
-        return run_lst_interpolation(input_data, &*qm);
+        return run_lst_interpolation(input_data, &*qm, job_dir);
     }
 
     // Check if PES scan is requested
@@ -488,7 +523,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     // Check if coordinate driving is requested
     if input_data.config.run_mode == config::RunMode::CoordinateDrive {
-        return run_coordinate_driving(input_data, &*qm);
+        return run_coordinate_driving(input_data, &*qm, job_dir);
     }
 
     // Check if path optimization is requested
@@ -502,20 +537,22 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Build headers
-    let header_a = io::build_program_header(
+    let header_a = io::build_program_header_with_basename(
         &input_data.config,
         input_data.config.charge1,
         input_data.config.mult1,
         &input_data.config.td1,
         input_data.config.state1,
+        job_dir,
     );
 
-    let header_b = io::build_program_header(
+    let header_b = io::build_program_header_with_basename(
         &input_data.config,
         input_data.config.charge2,
         input_data.config.mult2,
         &input_data.config.td2,
         input_data.config.state2,
+        job_dir,
     );
 
     // Run pre-point calculations for stable/inter_read modes
@@ -523,41 +560,42 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = input_data.config.clone();
     let mut header_a = header_a;
     let mut header_b = header_b;
-    
+
     if original_run_mode == config::RunMode::Normal {
         // Normal Mode: Phase 1 - Pre-point calculations (following Python MECP.py logic)
         println!("****Normal Mode: Phase 1 - Pre-point calculations to generate checkpoint files****");
-        
+
         // Build RAW headers WITHOUT any modifications (matching Python buildHeader)
         // This means NO force, NO guess=read, just the basic method
         let pre_header_a = build_raw_program_header(&input_data.config, input_data.config.charge1, input_data.config.mult1, &input_data.config.td1, input_data.config.state1, "state_A.chk");
         let pre_header_b = build_raw_program_header(&input_data.config, input_data.config.charge2, input_data.config.mult2, &input_data.config.td2, input_data.config.state2, "state_B.chk");
-        
+
         println!("Pre-point headers (raw, no modifications):");
         println!("State A: {}", pre_header_a.lines().nth(2).unwrap_or(""));
         println!("State B: {}", pre_header_b.lines().nth(2).unwrap_or(""));
-        
+
         // Write and run pre-point calculations
-        let pre_a_path = format!("{}/pre_state_A.gjf", job_dir);
-        let pre_b_path = format!("{}/pre_state_B.gjf", job_dir);
-        
+        let ext = get_input_file_extension(input_data.config.program);
+        let pre_a_path = format!("{}/pre_A.{}", job_dir, ext);
+        let pre_b_path = format!("{}/pre_B.{}", job_dir, ext);
+
         qm.write_input(&input_data.geometry, &pre_header_a, &input_data.tail1, Path::new(&pre_a_path))?;
         qm.write_input(&input_data.geometry, &pre_header_b, &input_data.tail2, Path::new(&pre_b_path))?;
-        
+
         println!("Running pre-point calculation for state B...");
         let pre_b_result = qm.run_calculation(Path::new(&pre_b_path));
         if let Err(e) = &pre_b_result {
             println!("⚠ Warning: Pre-point calculation for state B failed: {}", e);
             println!("  This is expected if the QM program is not installed");
         }
-        
+
         println!("Running pre-point calculation for state A...");
         let pre_a_result = qm.run_calculation(Path::new(&pre_a_path));
         if let Err(e) = &pre_a_result {
             println!("⚠ Warning: Pre-point calculation for state A failed: {}", e);
             println!("  This is expected if the QM program is not installed");
         }
-        
+
         // Check if both calculations succeeded
         let pre_calculations_successful = pre_a_result.is_ok() && pre_b_result.is_ok();
         if pre_calculations_successful {
@@ -565,49 +603,46 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         } else {
             println!("⚠ Pre-point calculations failed - continuing without checkpoint files");
         }
-        
-        // Copy checkpoint/wavefunction files to standard locations (following Python logic)
+
+        // Check checkpoint files exactly like Python MECP.py
         match input_data.config.program {
             config::QMProgram::Gaussian => {
-                println!("Copying Gaussian checkpoint files...");
-                let pre_a_chk = format!("{}/pre_state_A.chk", job_dir);
-                let pre_b_chk = format!("{}/pre_state_B.chk", job_dir);
-                let state_a_chk = format!("{}/state_A.chk", job_dir);
-                let state_b_chk = format!("{}/state_B.chk", job_dir);
-                
-                // Check if checkpoint files exist before copying
-                if Path::new(&pre_a_chk).exists() && Path::new(&pre_b_chk).exists() {
-                    std::fs::copy(&pre_a_chk, &state_a_chk)?;
-                    std::fs::copy(&pre_b_chk, &state_b_chk)?;
-                    // Also copy to root directory for compatibility
-                    let _ = std::fs::copy(&state_a_chk, "state_A.chk");
-                    let _ = std::fs::copy(&state_b_chk, "state_B.chk");
-                    println!("✓ Gaussian checkpoint files ready for main optimization loop");
+                println!("Checking Gaussian checkpoint files...");
+                // Gaussian creates state_A.chk and state_B.chk in root directory (current working directory)
+                let state_a_chk = "state_A.chk";
+                let state_b_chk = "state_B.chk";
+
+                if Path::new(state_a_chk).exists() && Path::new(state_b_chk).exists() {
+                    println!("✓ Gaussian checkpoint files found: {} and {}", state_a_chk, state_b_chk);
                 } else {
-                    println!("⚠ Warning: Checkpoint files not found (pre-point calculations may have failed)");
-                    println!("  Expected: {} and {}", pre_a_chk, pre_b_chk);
-                    println!("  Continuing without checkpoint files - main loop will use noread mode");
+                    return Err(format!(
+                        "Error: Gaussian checkpoint files not found after pre-point calculations.\n\
+                         Expected: {} and {} in current directory.\n\
+                         Pre-point calculations may have failed. Please check the calculation setup.",
+                        state_a_chk, state_b_chk
+                    ).into());
                 }
             }
             config::QMProgram::Orca => {
                 println!("Copying ORCA wavefunction files...");
-                let pre_a_gbw = format!("{}/pre_state_A.gbw", job_dir);
-                let pre_b_gbw = format!("{}/pre_state_B.gbw", job_dir);
+                let pre_a_gbw = format!("{}/pre_A.gbw", job_dir);
+                let pre_b_gbw = format!("{}/pre_B.gbw", job_dir);
                 let state_a_gbw = format!("{}/state_A.gbw", job_dir);
                 let state_b_gbw = format!("{}/state_B.gbw", job_dir);
-                
-                // Check if wavefunction files exist before copying
+
+                // Copy ORCA files like Python MECP.py: cp JOBS/pre_A.gbw JOBS/state_A.gbw
                 if Path::new(&pre_a_gbw).exists() && Path::new(&pre_b_gbw).exists() {
                     std::fs::copy(&pre_a_gbw, &state_a_gbw)?;
                     std::fs::copy(&pre_b_gbw, &state_b_gbw)?;
-                    // Also copy to root directory for compatibility
-                    let _ = std::fs::copy(&state_a_gbw, "state_A.gbw");
-                    let _ = std::fs::copy(&state_b_gbw, "state_B.gbw");
-                    println!("✓ ORCA wavefunction files ready for main optimization loop");
+                    println!("✓ ORCA wavefunction files copied: {} -> {}, {} -> {}",
+                             pre_a_gbw, state_a_gbw, pre_b_gbw, state_b_gbw);
                 } else {
-                    println!("⚠ Warning: Wavefunction files not found (pre-point calculations may have failed)");
-                    println!("  Expected: {} and {}", pre_a_gbw, pre_b_gbw);
-                    println!("  Continuing without wavefunction files - main loop will use noread mode");
+                    return Err(format!(
+                        "Error: ORCA wavefunction files not found after pre-point calculations.\n\
+                         Expected: {} and {}\n\
+                         Pre-point calculations may have failed. Please check the calculation setup.",
+                        pre_a_gbw, pre_b_gbw
+                    ).into());
                 }
             }
             config::QMProgram::Xtb => {
@@ -618,43 +653,17 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 println!("Pre-point calculations completed for {:?}", input_data.config.program);
             }
         }
-        
+
         println!("****Normal Mode: Phase 2 - Main optimization loop with checkpoint reading****");
-        
-        // Determine if we should use Read or NoRead mode based on checkpoint file availability
-        let checkpoint_files_exist = match input_data.config.program {
-            config::QMProgram::Gaussian => {
-                let state_a_chk = format!("{}/state_A.chk", job_dir);
-                let state_b_chk = format!("{}/state_B.chk", job_dir);
-                Path::new(&state_a_chk).exists() && Path::new(&state_b_chk).exists()
-            }
-            config::QMProgram::Orca => {
-                let state_a_gbw = format!("{}/state_A.gbw", job_dir);
-                let state_b_gbw = format!("{}/state_B.gbw", job_dir);
-                Path::new(&state_a_gbw).exists() && Path::new(&state_b_gbw).exists()
-            }
-            config::QMProgram::Xtb => true, // XTB doesn't need checkpoint files
-            _ => false,
-        };
-        
-        if checkpoint_files_exist {
-            // Switch to read mode for main optimization (following Python MECP.py logic)
-            validation::log_mode_transition(
-                original_run_mode, 
-                config::RunMode::Read, 
-                "Pre-point calculations completed, switching to read mode for main optimization"
-            );
-            config.run_mode = config::RunMode::Read;
-        } else {
-            // Switch to noread mode if checkpoint files are missing
-            validation::log_mode_transition(
-                original_run_mode, 
-                config::RunMode::NoRead, 
-                "Checkpoint files missing, switching to noread mode for main optimization"
-            );
-            config.run_mode = config::RunMode::NoRead;
-        }
-        
+
+        // If we reach here, checkpoint files exist, so switch to read mode like Python MECP.py
+        validation::log_mode_transition(
+            original_run_mode,
+            config::RunMode::Read,
+            "Pre-point calculations completed successfully, switching to read mode for main optimization"
+        );
+        config.run_mode = config::RunMode::Read;
+
         // Rebuild headers with read mode (includes force + guess=read)
         header_a = io::build_program_header_with_chk(
             &config,
@@ -663,8 +672,9 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             &config.td1,
             config.state1,
             Some("state_A.chk"),
+            Some(job_dir),
         );
-        
+
         header_b = io::build_program_header_with_chk(
             &config,
             config.charge2,
@@ -672,10 +682,11 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             &config.td2,
             config.state2,
             Some("state_B.chk"),
+            Some(job_dir),
         );
-        
+
         println!("Headers rebuilt for read mode with force and guess=read");
-        
+
     } else if original_run_mode == config::RunMode::Stable
         || original_run_mode == config::RunMode::InterRead
     {
@@ -686,35 +697,38 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             &input_data,
             &*qm,
             original_run_mode,
+            job_dir,
         )?;
-        
+
         // CRITICAL: Switch to read mode after pre-point (following Python MECP.py logic)
         validation::log_mode_transition(
-            original_run_mode, 
-            config::RunMode::Read, 
+            original_run_mode,
+            config::RunMode::Read,
             "Pre-point calculations completed, switching to read mode for main optimization"
         );
         config.run_mode = config::RunMode::Read;
-        
+
         // Rebuild headers with new run mode (read mode)
-        header_a = io::build_program_header(
+        header_a = io::build_program_header_with_basename(
             &config,
             config.charge1,
             config.mult1,
             &config.td1,
             config.state1,
+            job_dir,
         );
-        
-        header_b = io::build_program_header(
+
+        header_b = io::build_program_header_with_basename(
             &config,
             config.charge2,
             config.mult2,
             &config.td2,
             config.state2,
+            job_dir,
         );
-        
+
         println!("****Headers rebuilt for read mode****");
-        
+
         // Handle stability mode post-processing (following Python MECP.py logic)
         if original_run_mode == config::RunMode::Stable {
             match input_data.config.program {
@@ -723,13 +737,18 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                     println!("Remember to write UKS when you are handling singlet state!");
                     println!("RI is unsupported for stability analysis. It is recommended to MANUALLY obtain the correct wavefunction,");
                     println!("and then use the read model of OpenMECP, rather than the stable mode, in order to use RI.");
-                    
+
                     // Copy wavefunction files for subsequent calculations
-                    if Path::new("running_dir/pre_A.gbw").exists() {
-                        std::fs::copy("running_dir/pre_A.gbw", "running_dir/a.gbw")?;
+                    let pre_a_gbw = format!("{}/pre_A.gbw", job_dir);
+                    let pre_b_gbw = format!("{}/pre_B.gbw", job_dir);
+                    let state_a_gbw = format!("{}/state_A.gbw", job_dir);
+                    let state_b_gbw = format!("{}/state_B.gbw", job_dir);
+
+                    if Path::new(&pre_a_gbw).exists() {
+                        std::fs::copy(&pre_a_gbw, &state_a_gbw)?;
                     }
-                    if Path::new("running_dir/pre_B.gbw").exists() {
-                        std::fs::copy("running_dir/pre_B.gbw", "running_dir/b.gbw")?;
+                    if Path::new(&pre_b_gbw).exists() {
+                        std::fs::copy(&pre_b_gbw, &state_b_gbw)?;
                     }
                 }
                 _ => {
@@ -748,9 +767,10 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     // Run initial calculations
     println!("\n****Running initial calculations****");
-    let initial_a_path = format!("{}/0_state_A.gjf", job_dir);
-    let initial_b_path = format!("{}/0_state_B.gjf", job_dir);
-    
+    let ext = get_input_file_extension(config.program);
+    let initial_a_path = format!("{}/0_state_A.{}", job_dir, ext);
+    let initial_b_path = format!("{}/0_state_B.{}", job_dir, ext);
+
     qm.write_input(
         &geometry,
         &header_a,
@@ -767,10 +787,11 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     qm.run_calculation(Path::new(&initial_a_path))?;
     qm.run_calculation(Path::new(&initial_b_path))?;
 
-    let initial_a_log = format!("{}/0_state_A.log", job_dir);
-    let initial_b_log = format!("{}/0_state_B.log", job_dir);
-    let state1 = qm.read_output(Path::new(&initial_a_log), config.state1)?;
-    let state2 = qm.read_output(Path::new(&initial_b_log), config.state2)?;
+    let output_ext = get_output_file_base(config.program);
+    let initial_a_output = format!("{}/0_state_A.{}", job_dir, output_ext);
+    let initial_b_output = format!("{}/0_state_B.{}", job_dir, output_ext);
+    let state1 = qm.read_output(Path::new(&initial_a_output), config.state1)?;
+    let state2 = qm.read_output(Path::new(&initial_b_output), config.state2)?;
 
     // Initialize optimization
     let mut opt_state = optimizer::OptimizationState::new();
@@ -791,7 +812,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 Ok(constrained_grad) => {
                     grad = constrained_grad;
                     println!("Constraint forces applied successfully");
-                    
+
                     // Report constraint status
                     constraints::report_constraint_status(&geometry, constraints, &opt_state.lambdas, step + 1);
                 }
@@ -820,8 +841,9 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         match config.program {
             config::QMProgram::Gaussian | config::QMProgram::Orca | config::QMProgram::Custom => {
                 // Standard Gaussian/ORCA workflow
-                let step_name_a = format!("{}/{}_state_A.gjf", job_dir, step + 1);
-                let step_name_b = format!("{}/{}_state_B.gjf", job_dir, step + 1);
+                let ext = get_input_file_extension(config.program);
+                let step_name_a = format!("{}/{}_state_A.{}", job_dir, step + 1, ext);
+                let step_name_b = format!("{}/{}_state_B.{}", job_dir, step + 1, ext);
 
                 qm.write_input(
                     &geometry,
@@ -851,26 +873,27 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Read output files based on program type
+        let output_ext = get_output_file_base(config.program);
         let (state1_new, state2_new) = match config.program {
             config::QMProgram::Gaussian | config::QMProgram::Orca | config::QMProgram::Custom => {
                 let state1 = qm.read_output(
-                    Path::new(&format!("{}/{}_state_A.log", job_dir, step + 1)),
+                    Path::new(&format!("{}/{}_state_A.{}", job_dir, step + 1, output_ext)),
                     config.state1,
                 )?;
                 let state2 = qm.read_output(
-                    Path::new(&format!("{}/{}_state_B.log", job_dir, step + 1)),
+                    Path::new(&format!("{}/{}_state_B.{}", job_dir, step + 1, output_ext)),
                     config.state2,
                 )?;
                 (state1, state2)
             }
             config::QMProgram::Xtb => {
-                // XTB output files (typically .out or .log)
+                // XTB output files use .inp base name, interface handles .engrad extension
                 let state1 = qm.read_output(
-                    Path::new(&format!("{}/{}_state_A.out", job_dir, step + 1)),
+                    Path::new(&format!("{}/{}_state_A.{}", job_dir, step + 1, output_ext)),
                     config.state1,
                 )?;
                 let state2 = qm.read_output(
-                    Path::new(&format!("{}/{}_state_B.out", job_dir, step + 1)),
+                    Path::new(&format!("{}/{}_state_B.{}", job_dir, step + 1, output_ext)),
                     config.state2,
                 )?;
                 (state1, state2)
@@ -878,11 +901,11 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             config::QMProgram::Bagel => {
                 // BAGEL output files
                 let state1 = qm.read_output(
-                    Path::new(&format!("{}/{}_state_A.log", job_dir, step + 1)),
+                    Path::new(&format!("{}/{}_state_A.{}", job_dir, step + 1, output_ext)),
                     config.state1,
                 )?;
                 let state2 = qm.read_output(
-                    Path::new(&format!("{}/{}_state_B.log", job_dir, step + 1)),
+                    Path::new(&format!("{}/{}_state_B.{}", job_dir, step + 1, output_ext)),
                     config.state2,
                 )?;
                 (state1, state2)
@@ -989,7 +1012,7 @@ fn manage_orca_wavefunction_files(
         // Delete .gbw files for noread mode (following Python logic)
         let gbw_a = format!("{}/{}_state_A.gbw", job_dir, step);
         let gbw_b = format!("{}/{}_state_B.gbw", job_dir, step);
-        
+
         if Path::new(&gbw_a).exists() {
             validation::log_file_operation("Delete", &gbw_a, None);
             std::fs::remove_file(&gbw_a)?;
@@ -1004,7 +1027,7 @@ fn manage_orca_wavefunction_files(
         // Copy .gbw files for reuse (following Python logic)
         let gbw_a = format!("{}/{}_state_A.gbw", job_dir, step);
         let gbw_b = format!("{}/{}_state_B.gbw", job_dir, step);
-        
+
         if Path::new(&gbw_a).exists() {
             let dest_a = format!("{}/state_A.gbw", job_dir);
             validation::log_file_operation("Copy", &gbw_a, Some(&dest_a));
@@ -1063,14 +1086,14 @@ fn run_pes_scan(
     let config = &input_data.config;
     let mut geometry = input_data.geometry;
     let mut constraints = input_data.constraints.clone();
-    
+
     // Store initial number of constraints (following Python MECP.py)
     let _initial_cons_num = constraints.len();
-    
+
     // Get scan specifications (following Python MECP.py SCANS format)
     let scan1 = &config.scans[0];
     let mut scans = config.scans.clone();
-    
+
     // Add dummy 2nd dimension for 1D scans (following Python MECP.py logic)
     if scans.len() == 1 {
         scans.push(config::ScanSpec {
@@ -1080,22 +1103,22 @@ fn run_pes_scan(
             step_size: 0.0,
         });
     }
-    
+
     let scan2 = &scans[1];
 
     // Generate scan grid values (following Python MECP.py scanVars logic)
     let mut scan_vars = [Vec::new(), Vec::new()];
-    
+
     // First dimension values
     for i in 0..scan1.num_points {
         scan_vars[0].push(scan1.start + i as f64 * scan1.step_size);
     }
-    
+
     // Second dimension values
     for i in 0..scan2.num_points {
         scan_vars[1].push(scan2.start + i as f64 * scan2.step_size);
     }
-    
+
     // Ensure second dimension has at least one value (following Python MECP.py)
     if scan_vars[1].is_empty() {
         scan_vars[1].push(-1.0); // Dummy value for 1D scans
@@ -1121,7 +1144,7 @@ fn run_pes_scan(
 
             // Print scan cycle info (following Python MECP.py format)
             println!("\n****Scan Cycle {:.4}_{:.4}****", val1, val2);
-            
+
             // Debug: print constraints (following Python MECP.py)
             println!("constraints after pop and append");
             for (i, constraint) in constraints.iter().enumerate() {
@@ -1158,13 +1181,14 @@ fn run_pes_scan(
             // Read final energies for analysis (Task 6.2)
             let (energy_a, energy_b) = if converged {
                 // Read energies from the converged calculation
+                let output_ext = get_output_file_base(config.program);
                 match (
                     qm.read_output(
-                        Path::new(&format!("running_dir/{}_A.log", converged_step)),
+                        Path::new(&format!("job_dir/{}_A.{}", converged_step, output_ext)),
                         config.state1,
                     ),
                     qm.read_output(
-                        Path::new(&format!("running_dir/{}_B.log", converged_step)),
+                        Path::new(&format!("job_dir/{}_B.{}", converged_step, output_ext)),
                         config.state2,
                     ),
                 ) {
@@ -1211,7 +1235,7 @@ fn run_pes_scan(
                 constraints.pop();
             }
         }
-        
+
         // Remove first scan constraint (following Python MECP.py)
         constraints.pop();
     }
@@ -1328,48 +1352,52 @@ fn save_scan_results(
     match config.program {
         config::QMProgram::Gaussian => {
             // Copy Gaussian files
-            let gjf_a = format!("running_dir/{}_A.gjf", converged_step);
-            let gjf_b = format!("running_dir/{}_B.gjf", converged_step);
-            let log_a = format!("running_dir/{}_A.log", converged_step);
-            let log_b = format!("running_dir/{}_B.log", converged_step);
+            let input_ext = get_input_file_extension(config::QMProgram::Gaussian);
+            let output_ext = get_output_file_base(config::QMProgram::Gaussian);
+            let gjf_a = format!("job_dir/{}_A.{}", converged_step, input_ext);
+            let gjf_b = format!("job_dir/{}_B.{}", converged_step, input_ext);
+            let log_a = format!("job_dir/{}_A.{}", converged_step, output_ext);
+            let log_b = format!("job_dir/{}_B.{}", converged_step, output_ext);
 
             if Path::new(&gjf_a).exists() {
-                std::fs::copy(&gjf_a, format!("{:.4}_{:.4}_A.gjf", val1, val2))?;
+                std::fs::copy(&gjf_a, format!("{:.4}_{:.4}_A.{}", val1, val2, input_ext))?;
             }
             if Path::new(&gjf_b).exists() {
-                std::fs::copy(&gjf_b, format!("{:.4}_{:.4}_B.gjf", val1, val2))?;
+                std::fs::copy(&gjf_b, format!("{:.4}_{:.4}_B.{}", val1, val2, input_ext))?;
             }
             if Path::new(&log_a).exists() {
-                std::fs::copy(&log_a, format!("{:.4}_{:.4}_A.log", val1, val2))?;
+                std::fs::copy(&log_a, format!("{:.4}_{:.4}_A.{}", val1, val2, output_ext))?;
             }
             if Path::new(&log_b).exists() {
-                std::fs::copy(&log_b, format!("{:.4}_{:.4}_B.log", val1, val2))?;
+                std::fs::copy(&log_b, format!("{:.4}_{:.4}_B.{}", val1, val2, output_ext))?;
             }
         }
         config::QMProgram::Orca => {
             // Copy ORCA files
-            let inp_a = format!("running_dir/{}_A.inp", converged_step);
-            let inp_b = format!("running_dir/{}_B.inp", converged_step);
-            let log_a = format!("running_dir/{}_A.log", converged_step);
-            let log_b = format!("running_dir/{}_B.log", converged_step);
+            let input_ext = get_input_file_extension(config::QMProgram::Orca);
+            let output_ext = get_output_file_base(config::QMProgram::Orca);
+            let inp_a = format!("job_dir/{}_A.{}", converged_step, input_ext);
+            let inp_b = format!("job_dir/{}_B.{}", converged_step, input_ext);
+            let out_a = format!("job_dir/{}_A.{}", converged_step, output_ext);
+            let out_b = format!("job_dir/{}_B.{}", converged_step, output_ext);
 
             if Path::new(&inp_a).exists() {
-                std::fs::copy(&inp_a, format!("{:.4}_{:.4}_A.inp", val1, val2))?;
+                std::fs::copy(&inp_a, format!("{:.4}_{:.4}_A.{}", val1, val2, input_ext))?;
             }
             if Path::new(&inp_b).exists() {
-                std::fs::copy(&inp_b, format!("{:.4}_{:.4}_B.inp", val1, val2))?;
+                std::fs::copy(&inp_b, format!("{:.4}_{:.4}_B.{}", val1, val2, input_ext))?;
             }
-            if Path::new(&log_a).exists() {
-                std::fs::copy(&log_a, format!("{:.4}_{:.4}_A.log", val1, val2))?;
+            if Path::new(&out_a).exists() {
+                std::fs::copy(&out_a, format!("{:.4}_{:.4}_A.{}", val1, val2, output_ext))?;
             }
-            if Path::new(&log_b).exists() {
-                std::fs::copy(&log_b, format!("{:.4}_{:.4}_B.log", val1, val2))?;
+            if Path::new(&out_b).exists() {
+                std::fs::copy(&out_b, format!("{:.4}_{:.4}_B.{}", val1, val2, output_ext))?;
             }
         }
         config::QMProgram::Xtb => {
             // Copy XTB files
-            let out_a = format!("running_dir/{}_A.out", converged_step);
-            let out_b = format!("running_dir/{}_B.out", converged_step);
+            let out_a = format!("job_dir/{}_A.out", converged_step);
+            let out_b = format!("job_dir/{}_B.out", converged_step);
 
             if Path::new(&out_a).exists() {
                 std::fs::copy(&out_a, format!("{:.4}_{:.4}_A.out", val1, val2))?;
@@ -1380,26 +1408,28 @@ fn save_scan_results(
         }
         config::QMProgram::Bagel => {
             // Copy BAGEL files
-            let log_a = format!("running_dir/{}_A.log", converged_step);
-            let log_b = format!("running_dir/{}_B.log", converged_step);
+            let output_ext = get_output_file_base(config::QMProgram::Bagel);
+            let out_a = format!("job_dir/{}_A.{}", converged_step, output_ext);
+            let out_b = format!("job_dir/{}_B.{}", converged_step, output_ext);
 
-            if Path::new(&log_a).exists() {
-                std::fs::copy(&log_a, format!("{:.4}_{:.4}_A.log", val1, val2))?;
+            if Path::new(&out_a).exists() {
+                std::fs::copy(&out_a, format!("{:.4}_{:.4}_A.{}", val1, val2, output_ext))?;
             }
-            if Path::new(&log_b).exists() {
-                std::fs::copy(&log_b, format!("{:.4}_{:.4}_B.log", val1, val2))?;
+            if Path::new(&out_b).exists() {
+                std::fs::copy(&out_b, format!("{:.4}_{:.4}_B.{}", val1, val2, output_ext))?;
             }
         }
         config::QMProgram::Custom => {
-            // Copy custom program files (assume .log format)
-            let log_a = format!("running_dir/{}_A.log", converged_step);
-            let log_b = format!("running_dir/{}_B.log", converged_step);
+            // Copy custom program files
+            let output_ext = get_output_file_base(config::QMProgram::Custom);
+            let out_a = format!("job_dir/{}_A.{}", converged_step, output_ext);
+            let out_b = format!("job_dir/{}_B.{}", converged_step, output_ext);
 
-            if Path::new(&log_a).exists() {
-                std::fs::copy(&log_a, format!("{:.4}_{:.4}_A.log", val1, val2))?;
+            if Path::new(&out_a).exists() {
+                std::fs::copy(&out_a, format!("{:.4}_{:.4}_A.{}", val1, val2, output_ext))?;
             }
-            if Path::new(&log_b).exists() {
-                std::fs::copy(&log_b, format!("{:.4}_{:.4}_B.log", val1, val2))?;
+            if Path::new(&out_b).exists() {
+                std::fs::copy(&out_b, format!("{:.4}_{:.4}_B.{}", val1, val2, output_ext))?;
             }
         }
     }
@@ -1409,11 +1439,11 @@ fn save_scan_results(
 }
 
 /// Builds a raw program header without any method modifications.
-/// 
+///
 /// This function matches Python MECP.py's `buildHeader` function exactly,
 /// providing the original method string without any additional keywords
 /// like `force`, `guess=read`, `stable=opt`, etc.
-/// 
+///
 /// This is used for pre-point calculations in Normal mode where we need
 /// simple SCF calculations to generate initial checkpoint files.
 ///
@@ -1421,7 +1451,7 @@ fn save_scan_results(
 ///
 /// * `config` - Configuration containing program and method information
 /// * `charge` - Charge for this state
-/// * `mult` - Multiplicity for this state  
+/// * `mult` - Multiplicity for this state
 /// * `td` - TD-DFT keywords (if any)
 /// * `state` - State index for TD-DFT calculations
 ///
@@ -1499,50 +1529,64 @@ fn run_single_optimization(
     tail2: &str,
     fixed_atoms: &[usize],
     qm: &dyn qm_interface::QMInterface,
-    _job_dir: &str,
+    job_dir: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    
+
     // Phase 1: Pre-point calculations for Normal mode (following Python MECP.py logic)
     if config.run_mode == config::RunMode::Normal {
         println!("****Normal Mode: Phase 1 - Pre-point calculations to generate checkpoint files****");
-        
+
         // Build RAW headers WITHOUT any modifications (matching Python buildHeader)
         // This means NO force, NO guess=read, just the basic method
-        let pre_header_a = build_raw_program_header(config, config.charge1, config.mult1, &config.td1, config.state1, "state_A.chk");
-        let pre_header_b = build_raw_program_header(config, config.charge2, config.mult2, &config.td2, config.state2, "state_B.chk");
-        
+        let pre_header_a = build_raw_program_header(config, config.charge1, config.mult1, &config.td1, config.state1, "a.chk");
+        let pre_header_b = build_raw_program_header(config, config.charge2, config.mult2, &config.td2, config.state2, "b.chk");
+
         println!("Pre-point headers (raw, no modifications):");
         println!("State A: {}", pre_header_a.lines().nth(2).unwrap_or(""));
         println!("State B: {}", pre_header_b.lines().nth(2).unwrap_or(""));
-        
+
         // Write and run pre-point calculations
-        qm.write_input(geometry, &pre_header_a, tail1, Path::new("running_dir/pre_A.gjf"))?;
-        qm.write_input(geometry, &pre_header_b, tail2, Path::new("running_dir/pre_B.gjf"))?;
-        
+        let ext = get_input_file_extension(config.program);
+        let pre_a_path = format!("{}/pre_A.{}", job_dir, ext);
+        let pre_b_path = format!("{}/pre_B.{}", job_dir, ext);
+
+        qm.write_input(geometry, &pre_header_a, tail1, Path::new(&pre_a_path))?;
+        qm.write_input(geometry, &pre_header_b, tail2, Path::new(&pre_b_path))?;
+
         println!("Running pre-point calculation for state B...");
-        qm.run_calculation(Path::new("running_dir/pre_B.gjf"))?;
-        
+        qm.run_calculation(Path::new(&pre_b_path))?;
+
         println!("Running pre-point calculation for state A...");
-        qm.run_calculation(Path::new("running_dir/pre_A.gjf"))?;
-        
+        qm.run_calculation(Path::new(&pre_a_path))?;
+
         // Copy checkpoint/wavefunction files to standard locations (following Python logic)
         match config.program {
             config::QMProgram::Gaussian => {
                 println!("Copying Gaussian checkpoint files...");
-                std::fs::copy("running_dir/pre_A.chk", "running_dir/a.chk")?;
-                std::fs::copy("running_dir/pre_B.chk", "running_dir/b.chk")?;
+                let pre_a_chk = format!("{}/pre_A.chk", job_dir);
+                let pre_b_chk = format!("{}/pre_B.chk", job_dir);
+                let a_chk = format!("{}/a.chk", job_dir);
+                let b_chk = format!("{}/b.chk", job_dir);
+
+                std::fs::copy(&pre_a_chk, &a_chk)?;
+                std::fs::copy(&pre_b_chk, &b_chk)?;
                 // Also copy to root directory for compatibility
-                let _ = std::fs::copy("running_dir/a.chk", "a.chk");
-                let _ = std::fs::copy("running_dir/b.chk", "b.chk");
+                let _ = std::fs::copy(&a_chk, "a.chk");
+                let _ = std::fs::copy(&b_chk, "b.chk");
                 println!("✓ Gaussian checkpoint files ready for main optimization loop");
             }
             config::QMProgram::Orca => {
                 println!("Copying ORCA wavefunction files...");
-                std::fs::copy("running_dir/pre_A.gbw", "running_dir/a.gbw")?;
-                std::fs::copy("running_dir/pre_B.gbw", "running_dir/b.gbw")?;
+                let pre_a_gbw = format!("{}/pre_A.gbw", job_dir);
+                let pre_b_gbw = format!("{}/pre_B.gbw", job_dir);
+                let a_gbw = format!("{}/a.gbw", job_dir);
+                let b_gbw = format!("{}/b.gbw", job_dir);
+
+                std::fs::copy(&pre_a_gbw, &a_gbw)?;
+                std::fs::copy(&pre_b_gbw, &b_gbw)?;
                 // Also copy to root directory for compatibility
-                let _ = std::fs::copy("running_dir/a.gbw", "a.gbw");
-                let _ = std::fs::copy("running_dir/b.gbw", "b.gbw");
+                let _ = std::fs::copy(&a_gbw, "a.gbw");
+                let _ = std::fs::copy(&b_gbw, "b.gbw");
                 println!("✓ ORCA wavefunction files ready for main optimization loop");
             }
             config::QMProgram::Xtb => {
@@ -1564,32 +1608,37 @@ fn run_single_optimization(
                 // The behavior depends on the specific program's interface configuration
             }
         }
-        
+
         println!("****Normal Mode: Phase 2 - Main optimization loop with checkpoint reading****");
     }
-    
+
     // Phase 2: Main optimization loop with proper headers (including guess=read for Normal mode)
     let header_a = io::build_program_header(config, config.charge1, config.mult1, &config.td1, config.state1);
     let header_b = io::build_program_header(config, config.charge2, config.mult2, &config.td2, config.state2);
 
     // For Normal mode, we start from step 0 but with checkpoint reading enabled
     // For other modes, this is the initial calculation
-    qm.write_input(geometry, &header_a, tail1, Path::new("running_dir/0_A.gjf"))?;
-    qm.write_input(geometry, &header_b, tail2, Path::new("running_dir/0_B.gjf"))?;
-    qm.run_calculation(Path::new("running_dir/0_A.gjf"))?;
-    qm.run_calculation(Path::new("running_dir/0_B.gjf"))?;
+    let ext = get_input_file_extension(config.program);
+    let initial_a_path = format!("{}/0_A.{}", job_dir, ext);
+    let initial_b_path = format!("{}/0_B.{}", job_dir, ext);
+
+    qm.write_input(geometry, &header_a, tail1, Path::new(&initial_a_path))?;
+    qm.write_input(geometry, &header_b, tail2, Path::new(&initial_b_path))?;
+    qm.run_calculation(Path::new(&initial_a_path))?;
+    qm.run_calculation(Path::new(&initial_b_path))?;
 
     let mut opt_state = optimizer::OptimizationState::new();
     let mut x_old = geometry.coords.clone();
     let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len());
 
     for step in 0..config.max_steps {
+        let output_ext = get_output_file_base(config.program);
         let state1 = qm.read_output(
-            Path::new(&format!("running_dir/{}_A.log", step)),
+            Path::new(&format!("job_dir/{}_A.{}", step, output_ext)),
             config.state1,
         )?;
         let state2 = qm.read_output(
-            Path::new(&format!("running_dir/{}_B.log", step)),
+            Path::new(&format!("job_dir/{}_B.{}", step, output_ext)),
             config.state2,
         )?;
 
@@ -1629,27 +1678,32 @@ fn run_single_optimization(
 
         geometry.coords = x_new.clone();
 
+        let ext = get_input_file_extension(config.program);
+        let step_a_path = format!("job_dir/{}_A.{}", step + 1, ext);
+        let step_b_path = format!("job_dir/{}_B.{}", step + 1, ext);
+
         qm.write_input(
             geometry,
             &header_a,
             tail1,
-            Path::new(&format!("running_dir/{}_A.gjf", step + 1)),
+            Path::new(&step_a_path),
         )?;
         qm.write_input(
             geometry,
             &header_b,
             tail2,
-            Path::new(&format!("running_dir/{}_B.gjf", step + 1)),
+            Path::new(&step_b_path),
         )?;
-        qm.run_calculation(Path::new(&format!("running_dir/{}_A.gjf", step + 1)))?;
-        qm.run_calculation(Path::new(&format!("running_dir/{}_B.gjf", step + 1)))?;
+        qm.run_calculation(Path::new(&step_a_path))?;
+        qm.run_calculation(Path::new(&step_b_path))?;
 
+        let output_ext = get_output_file_base(config.program);
         let state1_new = qm.read_output(
-            Path::new(&format!("running_dir/{}_A.log", step + 1)),
+            Path::new(&format!("job_dir/{}_A.{}", step + 1, output_ext)),
             config.state1,
         )?;
         let state2_new = qm.read_output(
-            Path::new(&format!("running_dir/{}_B.log", step + 1)),
+            Path::new(&format!("job_dir/{}_B.{}", step + 1, output_ext)),
             config.state2,
         )?;
         let grad_new = optimizer::compute_mecp_gradient(&state1_new, &state2_new, fixed_atoms);
@@ -1686,6 +1740,7 @@ fn run_single_optimization(
 fn run_lst_interpolation(
     input_data: parser::InputData,
     qm: &dyn qm_interface::QMInterface,
+    _job_dir: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n****Running Advanced LST Interpolation****");
 
@@ -1746,22 +1801,26 @@ fn run_lst_interpolation(
     // Write input files
     for (i, geom) in geometries.iter().enumerate() {
         let num = i + 1;
+        let ext = get_input_file_extension(input_data.config.program);
+        let step_a_path = format!("job_dir/{}_A.{}", num, ext);
+        let step_b_path = format!("job_dir/{}_B.{}", num, ext);
+
         qm.write_input(
             geom,
             &header_a,
             &input_data.tail1,
-            Path::new(&format!("running_dir/{}_A.gjf", num)),
+            Path::new(&step_a_path),
         )?;
         qm.write_input(
             geom,
             &header_b,
             &input_data.tail2,
-            Path::new(&format!("running_dir/{}_B.gjf", num)),
+            Path::new(&step_b_path),
         )?;
     }
 
     println!(
-        "\nGenerated {} input files in running_dir/",
+        "\nGenerated {} input files in job_dir/",
         geometries.len() * 2
     );
 
@@ -1778,7 +1837,7 @@ fn run_lst_interpolation(
     std::io::stdin().read_line(&mut input)?;
 
     if input.trim().to_lowercase() != "y" {
-        println!("LST interpolation completed. Input files are ready in running_dir/ directory.");
+        println!("LST interpolation completed. Input files are ready in job_dir/ directory.");
         println!("You can run them manually or modify the geometries as needed.");
         return Ok(());
     }
@@ -1793,10 +1852,13 @@ fn run_lst_interpolation(
         println!("\n****Running Point {}/{}****", num, geometries.len());
 
         // Run state A
-        match qm.run_calculation(Path::new(&format!("running_dir/{}_A.gjf", num))) {
+        let ext = get_input_file_extension(input_data.config.program);
+        let step_a_path = format!("job_dir/{}_A.{}", num, ext);
+        match qm.run_calculation(Path::new(&step_a_path)) {
             Ok(_) => {
+                let output_ext = get_output_file_base(input_data.config.program);
                 match qm.read_output(
-                    Path::new(&format!("running_dir/{}_A.log", num)),
+                    Path::new(&format!("job_dir/{}_A.{}", num, output_ext)),
                     config.state1,
                 ) {
                     Ok(state_a) => {
@@ -1817,10 +1879,12 @@ fn run_lst_interpolation(
         }
 
         // Run state B
-        match qm.run_calculation(Path::new(&format!("running_dir/{}_B.gjf", num))) {
+        let step_b_path = format!("job_dir/{}_B.{}", num, ext);
+        match qm.run_calculation(Path::new(&step_b_path)) {
             Ok(_) => {
+                let output_ext = get_output_file_base(input_data.config.program);
                 match qm.read_output(
-                    Path::new(&format!("running_dir/{}_B.log", num)),
+                    Path::new(&format!("job_dir/{}_B.{}", num, output_ext)),
                     config.state2,
                 ) {
                     Ok(state_b) => {
@@ -1884,9 +1948,10 @@ fn run_lst_interpolation(
             min_de,
             min_de * 27.211386
         );
+        let ext = get_input_file_extension(input_data.config.program);
         println!(
-            "Suggested MECP starting geometry: running_dir/{}_A.gjf",
-            min_de_idx + 1
+            "Suggested MECP starting geometry: job_dir/{}_A.{}",
+            min_de_idx + 1, ext
         );
     }
 
@@ -1905,7 +1970,7 @@ fn run_lst_interpolation(
 ///
 /// * `geometry` - The molecular geometry for calculations
 /// * `header_a` - Header string for state A
-/// * `header_b` - Header string for state B  
+/// * `header_b` - Header string for state B
 /// * `input_data` - Complete input data including tails and config
 /// * `qm` - QM interface for running calculations
 /// * `run_mode` - The run mode determining pre-point behavior
@@ -1920,29 +1985,30 @@ fn run_pre_point(
     input_data: &parser::InputData,
     qm: &dyn qm_interface::QMInterface,
     run_mode: config::RunMode,
+    job_dir: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n****Initialization: running the first single point calculations according to the mode****");
-    
+
     // Dispatch to program-specific pre-point implementations
     match input_data.config.program {
         config::QMProgram::Gaussian => {
-            run_pre_point_gaussian(geometry, header_a, header_b, input_data, qm, run_mode)?;
+            run_pre_point_gaussian(geometry, header_a, header_b, input_data, qm, run_mode, job_dir)?;
         }
         config::QMProgram::Orca => {
-            run_pre_point_orca(geometry, header_a, header_b, input_data, qm, run_mode)?;
+            run_pre_point_orca(geometry, header_a, header_b, input_data, qm, run_mode, job_dir)?;
         }
         config::QMProgram::Xtb => {
-            run_pre_point_xtb(geometry, header_a, header_b, input_data, qm, run_mode)?;
+            run_pre_point_xtb(geometry, header_a, header_b, input_data, qm, run_mode, job_dir)?;
         }
         config::QMProgram::Bagel => {
-            run_pre_point_bagel(geometry, header_a, header_b, input_data, qm, run_mode)?;
+            run_pre_point_bagel(geometry, header_a, header_b, input_data, qm, run_mode, job_dir)?;
         }
         config::QMProgram::Custom => {
             // For custom programs, fall back to Gaussian-style pre-point
-            run_pre_point_gaussian(geometry, header_a, header_b, input_data, qm, run_mode)?;
+            run_pre_point_gaussian(geometry, header_a, header_b, input_data, qm, run_mode, job_dir)?;
         }
     }
-    
+
     println!("****Initialization OK, now entering main loop****");
     Ok(())
 }
@@ -1960,24 +2026,31 @@ fn run_pre_point_gaussian(
     input_data: &parser::InputData,
     qm: &dyn qm_interface::QMInterface,
     run_mode: config::RunMode,
+    job_dir: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Write and run state B first (following Python MECP.py B→A order)
+    let ext = get_input_file_extension(input_data.config.program);
+    let pre_b_path = format!("{}/pre_B.{}", job_dir, ext);
+
     qm.write_input(
         geometry,
         header_b,
         &input_data.tail2,
-        Path::new("running_dir/pre_B.gjf"),
+        Path::new(&pre_b_path),
     )?;
-    qm.run_calculation(Path::new("running_dir/pre_B.gjf"))?;
+    qm.run_calculation(Path::new(&pre_b_path))?;
 
     // Handle inter_read mode special case
     if run_mode == config::RunMode::InterRead {
         println!("Inter-read mode: copying state B wavefunction to state A");
-        
+
         // Ensure proper wavefunction copying (b.chk → a.chk for Gaussian)
-        if Path::new("running_dir/pre_B.chk").exists() {
-            validation::log_file_operation("Copy", "running_dir/pre_B.chk", Some("running_dir/a.chk"));
-            std::fs::copy("running_dir/pre_B.chk", "running_dir/a.chk")?;
+        let pre_b_chk = format!("{}/pre_B.chk", job_dir);
+        let a_chk = format!("{}/a.chk", job_dir);
+
+        if Path::new(&pre_b_chk).exists() {
+            validation::log_file_operation("Copy", &pre_b_chk, Some(&a_chk));
+            std::fs::copy(&pre_b_chk, &a_chk)?;
         } else if Path::new("b.chk").exists() {
             validation::log_file_operation("Copy", "b.chk", Some("a.chk"));
             std::fs::copy("b.chk", "a.chk")?;
@@ -1995,25 +2068,28 @@ fn run_pre_point_gaussian(
             header_a_modified = header_a_modified.replace("# ", "# guess=(read,mix) ");
             println!("Added guess=(read,mix) to state A header for inter_read mode");
         }
-        
+
+        let pre_a_path = format!("{}/pre_A.{}", job_dir, ext);
         qm.write_input(
             geometry,
             &header_a_modified,
             &input_data.tail1,
-            Path::new("running_dir/pre_A.gjf"),
+            Path::new(&pre_a_path),
         )?;
     } else {
         // Normal case: use header as-is
+        let pre_a_path = format!("{}/pre_A.{}", job_dir, ext);
         qm.write_input(
             geometry,
             header_a,
             &input_data.tail1,
-            Path::new("running_dir/pre_A.gjf"),
+            Path::new(&pre_a_path),
         )?;
     }
 
     // Run state A
-    qm.run_calculation(Path::new("running_dir/pre_A.gjf"))?;
+    let pre_a_path = format!("{}/pre_A.{}", job_dir, ext);
+    qm.run_calculation(Path::new(&pre_a_path))?;
 
     Ok(())
 }
@@ -2031,35 +2107,36 @@ fn run_pre_point_orca(
     input_data: &parser::InputData,
     qm: &dyn qm_interface::QMInterface,
     run_mode: config::RunMode,
+    _job_dir: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Write and run state B first
     qm.write_input(
         geometry,
         header_b,
         &input_data.tail2,
-        Path::new("running_dir/pre_B.inp"),
+        Path::new("job_dir/pre_B.inp"),
     )?;
-    qm.run_calculation(Path::new("running_dir/pre_B.inp"))?;
+    qm.run_calculation(Path::new("job_dir/pre_B.inp"))?;
 
     // Copy B wavefunction file if it exists
-    if Path::new("running_dir/pre_B.gbw").exists() {
-        validation::log_file_operation("Copy", "running_dir/pre_B.gbw", Some("running_dir/b.gbw"));
-        std::fs::copy("running_dir/pre_B.gbw", "running_dir/b.gbw")?;
+    if Path::new("job_dir/pre_B.gbw").exists() {
+        validation::log_file_operation("Copy", "job_dir/pre_B.gbw", Some("job_dir/b.gbw"));
+        std::fs::copy("job_dir/pre_B.gbw", "job_dir/b.gbw")?;
     }
 
     // Handle inter_read mode
     if run_mode == config::RunMode::InterRead {
         println!("Inter-read mode: copying state B wavefunction to state A");
-        
+
         // Ensure proper wavefunction copying for ORCA
-        if Path::new("running_dir/pre_B.gbw").exists() {
-            validation::log_file_operation("Copy", "running_dir/pre_B.gbw", Some("running_dir/a.gbw"));
-            std::fs::copy("running_dir/pre_B.gbw", "running_dir/a.gbw")?;
+        if Path::new("job_dir/pre_B.gbw").exists() {
+            validation::log_file_operation("Copy", "job_dir/pre_B.gbw", Some("job_dir/a.gbw"));
+            std::fs::copy("job_dir/pre_B.gbw", "job_dir/a.gbw")?;
             println!("Copied pre_B.gbw → a.gbw for inter_read mode");
         } else {
             println!("Warning: No .gbw file found for inter_read mode. Continuing without wavefunction copying.");
         }
-        
+
         // Provide comprehensive user guidance for ORCA inter_read mode
         println!("\n****ORCA Inter-Read Mode Guidance****");
         println!("Note: The inter_read mode is set for ORCA. In Gaussian, the program automatically adds guess=mix for state A,");
@@ -2078,13 +2155,13 @@ fn run_pre_point_orca(
         geometry,
         header_a,
         &input_data.tail1,
-        Path::new("running_dir/pre_A.inp"),
+        Path::new("job_dir/pre_A.inp"),
     )?;
-    qm.run_calculation(Path::new("running_dir/pre_A.inp"))?;
+    qm.run_calculation(Path::new("job_dir/pre_A.inp"))?;
 
     // Copy A wavefunction file if it exists
-    if Path::new("running_dir/pre_A.gbw").exists() {
-        std::fs::copy("running_dir/pre_A.gbw", "running_dir/a.gbw")?;
+    if Path::new("job_dir/pre_A.gbw").exists() {
+        std::fs::copy("job_dir/pre_A.gbw", "job_dir/a.gbw")?;
     }
 
     Ok(())
@@ -2120,33 +2197,34 @@ fn run_pre_point_xtb(
     input_data: &parser::InputData,
     qm: &dyn qm_interface::QMInterface,
     run_mode: config::RunMode,
+    _job_dir: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("Running XTB pre-point calculations");
 
     // Create running directory if it doesn't exist
-    std::fs::create_dir_all("running_dir")?;
+    std::fs::create_dir_all("job_dir")?;
 
     // Write XYZ files for both states (following Python MECP.py pattern)
     qm.write_input(
         geometry,
         header_a,
         &input_data.tail1,
-        Path::new("running_dir/pre_A.xyz"),
+        Path::new("job_dir/pre_A.xyz"),
     )?;
     qm.write_input(
         geometry,
         header_b,
         &input_data.tail2,
-        Path::new("running_dir/pre_B.xyz"),
+        Path::new("job_dir/pre_B.xyz"),
     )?;
 
     // Run XTB calculations for both states
     // Following Python MECP.py: run state B first, then state A
     println!("Running XTB calculation for state B");
-    qm.run_calculation(Path::new("running_dir/pre_B.xyz"))?;
+    qm.run_calculation(Path::new("job_dir/pre_B.xyz"))?;
 
     println!("Running XTB calculation for state A");
-    qm.run_calculation(Path::new("running_dir/pre_A.xyz"))?;
+    qm.run_calculation(Path::new("job_dir/pre_A.xyz"))?;
 
     // XTB doesn't need special handling for different run modes like Gaussian/ORCA
     // The run mode affects mainly the method modification, which is handled elsewhere
@@ -2194,11 +2272,12 @@ fn run_pre_point_bagel(
     input_data: &parser::InputData,
     qm: &dyn qm_interface::QMInterface,
     run_mode: config::RunMode,
+    _job_dir: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("Running BAGEL pre-point calculations");
 
     // Create running directory if it doesn't exist
-    std::fs::create_dir_all("running_dir")?;
+    std::fs::create_dir_all("job_dir")?;
 
     // BAGEL requires a model file - check if it's specified
     if input_data.config.bagel_model.is_empty() {
@@ -2217,7 +2296,7 @@ fn run_pre_point_bagel(
     write_bagel_input(
         geometry,
         &input_data.config.bagel_model,
-        "running_dir/pre_B.json",
+        "job_dir/pre_B.json",
         input_data.config.mult2 as i32,
         input_data.config.state2,
         &geometry.elements,
@@ -2226,7 +2305,7 @@ fn run_pre_point_bagel(
     write_bagel_input(
         geometry,
         &input_data.config.bagel_model,
-        "running_dir/pre_A.json",
+        "job_dir/pre_A.json",
         input_data.config.mult1 as i32,
         input_data.config.state1,
         &geometry.elements,
@@ -2234,13 +2313,13 @@ fn run_pre_point_bagel(
 
     // Run BAGEL calculations for both states
     println!("Running BAGEL calculation for state B");
-    qm.run_calculation(Path::new("running_dir/pre_B.json"))?;
+    qm.run_calculation(Path::new("job_dir/pre_B.json"))?;
 
     println!("Running BAGEL calculation for state A");
-    qm.run_calculation(Path::new("running_dir/pre_A.json"))?;
+    qm.run_calculation(Path::new("job_dir/pre_A.json"))?;
 
     // Write XYZ file for geometry tracking (following Python MECP.py)
-    io::write_xyz(geometry, Path::new("running_dir/pre.xyz"))?;
+    io::write_xyz(geometry, Path::new("job_dir/pre.xyz"))?;
 
     // BAGEL doesn't need special run mode handling like Gaussian/ORCA
     match run_mode {
@@ -2386,8 +2465,8 @@ fn run_xtb_step(
     qm: &dyn qm_interface::QMInterface,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // XTB uses XYZ format - following Python MECP.py pattern
-    let step_name_a = format!("running_dir/{}_A.xyz", step);
-    let step_name_b = format!("running_dir/{}_B.xyz", step);
+    let step_name_a = format!("job_dir/{}_A.xyz", step);
+    let step_name_b = format!("job_dir/{}_B.xyz", step);
 
     // Write XYZ input files
     qm.write_input(
@@ -2436,8 +2515,8 @@ fn run_bagel_step(
     qm: &dyn qm_interface::QMInterface,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // BAGEL uses JSON format - following Python MECP.py pattern
-    let step_name_a = format!("running_dir/{}_A.json", step);
-    let step_name_b = format!("running_dir/{}_B.json", step);
+    let step_name_a = format!("job_dir/{}_A.json", step);
+    let step_name_b = format!("job_dir/{}_B.json", step);
 
     // Write BAGEL JSON input files with model substitution
     write_bagel_input(
@@ -2463,7 +2542,7 @@ fn run_bagel_step(
     qm.run_calculation(Path::new(&step_name_a))?;
 
     // Write XYZ file for geometry tracking (following Python MECP.py)
-    io::write_xyz(geometry, Path::new(&format!("running_dir/{}.xyz", step)))?;
+    io::write_xyz(geometry, Path::new(&format!("job_dir/{}.xyz", step)))?;
 
     Ok(())
 }
@@ -2496,30 +2575,32 @@ fn run_restart(
         println!("\n****Step {}****", step + 1);
 
         // Run calculations with current geometry
-        let step_name = format!("running_dir/{}_A.gjf", step);
+        let ext = get_input_file_extension(input_data.config.program);
+        let step_name_a = format!("job_dir/{}_A.{}", step, ext);
         qm.write_input(
             &geometry,
             &header_a,
             &input_data.tail1,
-            Path::new(&step_name),
+            Path::new(&step_name_a),
         )?;
-        qm.run_calculation(Path::new(&step_name))?;
+        qm.run_calculation(Path::new(&step_name_a))?;
 
-        let step_name = format!("running_dir/{}_B.gjf", step);
+        let step_name_b = format!("job_dir/{}_B.{}", step, ext);
         qm.write_input(
             &geometry,
             &header_b,
             &input_data.tail2,
-            Path::new(&step_name),
+            Path::new(&step_name_b),
         )?;
-        qm.run_calculation(Path::new(&step_name))?;
+        qm.run_calculation(Path::new(&step_name_b))?;
 
+        let output_ext = get_output_file_base(config.program);
         let state1 = qm.read_output(
-            Path::new(&format!("running_dir/{}_A.log", step)),
+            Path::new(&format!("job_dir/{}_A.{}", step, output_ext)),
             config.state1,
         )?;
         let state2 = qm.read_output(
-            Path::new(&format!("running_dir/{}_B.log", step)),
+            Path::new(&format!("job_dir/{}_B.{}", step, output_ext)),
             config.state2,
         )?;
 
@@ -2623,6 +2704,7 @@ fn run_restart(
 fn run_coordinate_driving(
     input_data: parser::InputData,
     qm: &dyn qm_interface::QMInterface,
+    _job_dir: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n****Running Coordinate Driving****");
 
@@ -2692,30 +2774,35 @@ fn run_coordinate_driving(
         println!("Coordinate value: {:.3}", current_value);
 
         // Write input files
+        let ext = get_input_file_extension(input_data.config.program);
+        let drive_a_path = format!("job_dir/drive_{}_A.{}", step, ext);
+        let drive_b_path = format!("job_dir/drive_{}_B.{}", step, ext);
+
         qm.write_input(
             geom,
             &header_a,
             &input_data.tail1,
-            Path::new(&format!("running_dir/drive_{}_A.gjf", step)),
+            Path::new(&drive_a_path),
         )?;
         qm.write_input(
             geom,
             &header_b,
             &input_data.tail2,
-            Path::new(&format!("running_dir/drive_{}_B.gjf", step)),
+            Path::new(&drive_b_path),
         )?;
 
         // Run calculations
-        qm.run_calculation(Path::new(&format!("running_dir/drive_{}_A.gjf", step)))?;
-        qm.run_calculation(Path::new(&format!("running_dir/drive_{}_B.gjf", step)))?;
+        qm.run_calculation(Path::new(&drive_a_path))?;
+        qm.run_calculation(Path::new(&drive_b_path))?;
 
         // Read results
+        let output_ext = get_output_file_base(config.program);
         let state_a = qm.read_output(
-            Path::new(&format!("running_dir/drive_{}_A.log", step)),
+            Path::new(&format!("job_dir/drive_{}_A.{}", step, output_ext)),
             config.state1,
         )?;
         let state_b = qm.read_output(
-            Path::new(&format!("running_dir/drive_{}_B.log", step)),
+            Path::new(&format!("job_dir/drive_{}_B.{}", step, output_ext)),
             config.state2,
         )?;
 
@@ -2826,30 +2913,35 @@ fn run_path_optimization(
         );
 
         // Write input files
+        let ext = get_input_file_extension(input_data.config.program);
+        let neb_a_path = format!("job_dir/neb_{}_A.{}", step, ext);
+        let neb_b_path = format!("job_dir/neb_{}_B.{}", step, ext);
+
         qm.write_input(
             geom,
             &header_a,
             &input_data.tail1,
-            Path::new(&format!("running_dir/neb_{}_A.gjf", step)),
+            Path::new(&neb_a_path),
         )?;
         qm.write_input(
             geom,
             &header_b,
             &input_data.tail2,
-            Path::new(&format!("running_dir/neb_{}_B.gjf", step)),
+            Path::new(&neb_b_path),
         )?;
 
         // Run calculations
-        qm.run_calculation(Path::new(&format!("running_dir/neb_{}_A.gjf", step)))?;
-        qm.run_calculation(Path::new(&format!("running_dir/neb_{}_B.gjf", step)))?;
+        qm.run_calculation(Path::new(&neb_a_path))?;
+        qm.run_calculation(Path::new(&neb_b_path))?;
 
         // Read results
+        let output_ext = get_output_file_base(config.program);
         let state_a = qm.read_output(
-            Path::new(&format!("running_dir/neb_{}_A.log", step)),
+            Path::new(&format!("job_dir/neb_{}_A.{}", step, output_ext)),
             config.state1,
         )?;
         let state_b = qm.read_output(
-            Path::new(&format!("running_dir/neb_{}_B.log", step)),
+            Path::new(&format!("job_dir/neb_{}_B.{}", step, output_ext)),
             config.state2,
         )?;
 

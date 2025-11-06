@@ -131,27 +131,51 @@ fn main() {
 
     match command.as_str() {
         "ci" => {
-            // Create Input template command
+            // Create Input/Settings template command
             if args.len() < 3 {
-                eprintln!("Error: Missing geometry file argument");
-                print_usage(&args[0]);
+                eprintln!("Error: Missing file argument");
+                eprintln!("Usage:");
+                eprintln!("  {} ci <geometry_file> [output_file]  - Create input template", args[0]);
+                eprintln!("  {} ci settings.ini                   - Create settings template", args[0]);
                 process::exit(1);
             }
-            let geometry_path = Path::new(&args[2]);
-            let output_path = args.get(3).map(Path::new);
-
-            match run_create_input(geometry_path, output_path) {
-                Ok(output_file) => {
-                    println!("✓ Template input file created successfully!");
-                    println!("  Output file: {}", output_file.display());
-                    println!("\nNext steps:");
-                    println!("  1. Review and edit the generated template file");
-                    println!("  2. Update parameters (method, basis set, etc.) as needed");
-                    println!("  3. Run OpenMECP: {} {}", args[0], output_file.display());
+            
+            let file_arg = &args[2];
+            
+            // Check if user wants to create settings template
+            if file_arg == "settings.ini" {
+                match run_create_settings_template() {
+                    Ok(()) => {
+                        println!("✓ Settings template created successfully!");
+                        println!("  Output file: settings.ini");
+                        println!("\nNext steps:");
+                        println!("  1. Review and edit the settings.ini file");
+                        println!("  2. Customize file extensions and other parameters as needed");
+                        println!("  3. The settings will be automatically loaded by OpenMECP");
+                    }
+                    Err(e) => {
+                        eprintln!("Error creating settings template: {}", e);
+                        process::exit(1);
+                    }
                 }
-                Err(e) => {
-                    eprintln!("Error creating template: {}", e);
-                    process::exit(1);
+            } else {
+                // Original input template creation
+                let geometry_path = Path::new(file_arg);
+                let output_path = args.get(3).map(Path::new);
+
+                match run_create_input(geometry_path, output_path) {
+                    Ok(output_file) => {
+                        println!("✓ Template input file created successfully!");
+                        println!("  Output file: {}", output_file.display());
+                        println!("\nNext steps:");
+                        println!("  1. Review and edit the generated template file");
+                        println!("  2. Update parameters (method, basis set, etc.) as needed");
+                        println!("  3. Run OpenMECP: {} {}", args[0], output_file.display());
+                    }
+                    Err(e) => {
+                        eprintln!("Error creating template: {}", e);
+                        process::exit(1);
+                    }
                 }
             }
         }
@@ -267,6 +291,9 @@ fn print_usage(program_name: &str) {
     eprintln!("  {} ci <geometry_file> [output_file]", program_name);
     eprintln!("                    Create a template input file from a geometry file");
     eprintln!();
+    eprintln!("  {} ci settings.ini", program_name);
+    eprintln!("                    Create a settings template file for configuration");
+    eprintln!();
     eprintln!("  {} <input_file>", program_name);
     eprintln!("                    Run MECP optimization using the input file");
     eprintln!();
@@ -278,6 +305,7 @@ fn print_usage(program_name: &str) {
     eprintln!("Examples:");
     eprintln!("  {} ci molecule.xyz", program_name);
     eprintln!("  {} ci molecule.xyz custom.inp", program_name);
+    eprintln!("  {} ci settings.ini", program_name);
     eprintln!("  {} my_calculation.inp", program_name);
 }
 
@@ -365,6 +393,42 @@ where
     Ok(output_path)
 }
 
+/// Creates a settings.ini template file with all available configuration options.
+///
+/// This function generates a comprehensive configuration file template that includes:
+/// - All available configuration sections (extensions, general, logging)
+/// - Default values for each parameter with explanations
+/// - Detailed comments explaining each option
+/// - Examples of common customizations
+///
+/// The template is created in the current working directory as 'settings.ini'.
+///
+/// # Returns
+///
+/// Returns a `Result` indicating success or failure of template creation.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The settings.ini file already exists (to prevent accidental overwrite)
+/// - File cannot be written due to permissions or disk space
+/// - Template generation fails
+fn run_create_settings_template() -> Result<(), Box<dyn std::error::Error>> {
+    use omecp::settings::SettingsManager;
+
+    let settings_path = Path::new("settings.ini");
+    
+    // Check if file already exists to prevent accidental overwrite
+    if settings_path.exists() {
+        return Err("settings.ini already exists. Please remove it first or choose a different location.".into());
+    }
+
+    // Create the settings template
+    SettingsManager::create_template(settings_path)?;
+
+    Ok(())
+}
+
 /// Runs MECP optimization using the specified input file.
 ///
 /// This is the main optimization loop that orchestrates the entire MECP calculation.
@@ -424,6 +488,15 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     // Parse input
     let input_data = parser::parse_input(input_path)?;
+
+    // Load settings to get print_level
+    let print_level = match omecp::settings::SettingsManager::load() {
+        Ok(s) => s.general().print_level,
+        Err(_) => {
+            // If settings can't be loaded, use default (quiet mode)
+            0
+        }
+    };
 
     // Extract directory name from input file (e.g., "compound_x.inp" -> "compound_x")
     let job_dir = input_path
@@ -624,18 +697,36 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             config::QMProgram::Orca => {
-                println!("Copying ORCA wavefunction files...");
+                if print_level >= 1 {
+                    println!("Renaming ORCA wavefunction files...");
+                }
                 let pre_a_gbw = format!("{}/pre_A.gbw", job_dir);
                 let pre_b_gbw = format!("{}/pre_B.gbw", job_dir);
                 let state_a_gbw = format!("{}/state_A.gbw", job_dir);
                 let state_b_gbw = format!("{}/state_B.gbw", job_dir);
 
-                // Copy ORCA files like Python MECP.py: cp JOBS/pre_A.gbw JOBS/state_A.gbw
+                // Rename ORCA files (more efficient than copying)
                 if Path::new(&pre_a_gbw).exists() && Path::new(&pre_b_gbw).exists() {
-                    std::fs::copy(&pre_a_gbw, &state_a_gbw)?;
-                    std::fs::copy(&pre_b_gbw, &state_b_gbw)?;
-                    println!("✓ ORCA wavefunction files copied: {} -> {}, {} -> {}",
-                             pre_a_gbw, state_a_gbw, pre_b_gbw, state_b_gbw);
+                    // Remove existing destination files if they exist
+                    if Path::new(&state_a_gbw).exists() {
+                        validation::log_file_operation("Delete", &state_a_gbw, None, print_level);
+                        std::fs::remove_file(&state_a_gbw)?;
+                    }
+                    if Path::new(&state_b_gbw).exists() {
+                        validation::log_file_operation("Delete", &state_b_gbw, None, print_level);
+                        std::fs::remove_file(&state_b_gbw)?;
+                    }
+                    
+                    // Rename the files
+                    validation::log_file_operation("Rename", &pre_a_gbw, Some(&state_a_gbw), print_level);
+                    std::fs::rename(&pre_a_gbw, &state_a_gbw)?;
+                    validation::log_file_operation("Rename", &pre_b_gbw, Some(&state_b_gbw), print_level);
+                    std::fs::rename(&pre_b_gbw, &state_b_gbw)?;
+                    
+                    if print_level >= 1 {
+                        println!("✓ ORCA wavefunction files renamed: {} -> {}, {} -> {}",
+                                 pre_a_gbw, state_a_gbw, pre_b_gbw, state_b_gbw);
+                    }
                 } else {
                     return Err(format!(
                         "Error: ORCA wavefunction files not found after pre-point calculations.\n\
@@ -983,7 +1074,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// This function implements the Python MECP.py logic for ORCA wavefunction file management:
 /// - NoRead mode: Deletes .gbw files to prevent reuse
-/// - Normal/Read modes: Copies .gbw files for reuse in subsequent calculations
+/// - Normal/Read modes: Renames .gbw files for reuse in subsequent calculations (more efficient than copying)
 /// - Writes XYZ files for ORCA (following Python logic)
 ///
 /// # Arguments
@@ -1006,6 +1097,16 @@ fn manage_orca_wavefunction_files(
         return Ok(());
     }
 
+    // Load settings to get print_level
+    let settings = match omecp::settings::SettingsManager::load() {
+        Ok(s) => s,
+        Err(_) => {
+            // If settings can't be loaded, use default (quiet mode)
+            return Ok(());
+        }
+    };
+    let print_level = settings.general().print_level;
+
     let delete_gbw = config.run_mode == config::RunMode::NoRead;
 
     if delete_gbw {
@@ -1014,38 +1115,62 @@ fn manage_orca_wavefunction_files(
         let gbw_b = format!("{}/{}_state_B.gbw", job_dir, step);
 
         if Path::new(&gbw_a).exists() {
-            validation::log_file_operation("Delete", &gbw_a, None);
+            validation::log_file_operation("Delete", &gbw_a, None, print_level);
             std::fs::remove_file(&gbw_a)?;
-            println!("Deleted {} for noread mode", gbw_a);
+            if print_level >= 1 {
+                println!("Deleted {} for noread mode", gbw_a);
+            }
         }
         if Path::new(&gbw_b).exists() {
-            validation::log_file_operation("Delete", &gbw_b, None);
+            validation::log_file_operation("Delete", &gbw_b, None, print_level);
             std::fs::remove_file(&gbw_b)?;
-            println!("Deleted {} for noread mode", gbw_b);
+            if print_level >= 1 {
+                println!("Deleted {} for noread mode", gbw_b);
+            }
         }
     } else {
-        // Copy .gbw files for reuse (following Python logic)
+        // Rename .gbw files for reuse (more efficient than copying)
         let gbw_a = format!("{}/{}_state_A.gbw", job_dir, step);
         let gbw_b = format!("{}/{}_state_B.gbw", job_dir, step);
 
         if Path::new(&gbw_a).exists() {
             let dest_a = format!("{}/state_A.gbw", job_dir);
-            validation::log_file_operation("Copy", &gbw_a, Some(&dest_a));
-            std::fs::copy(&gbw_a, &dest_a)?;
-            println!("Copied {} → {}", gbw_a, dest_a);
+            
+            // Remove existing destination file if it exists
+            if Path::new(&dest_a).exists() {
+                validation::log_file_operation("Delete", &dest_a, None, print_level);
+                std::fs::remove_file(&dest_a)?;
+            }
+            
+            validation::log_file_operation("Rename", &gbw_a, Some(&dest_a), print_level);
+            std::fs::rename(&gbw_a, &dest_a)?;
+            if print_level >= 1 {
+                println!("Renamed {} → {}", gbw_a, dest_a);
+            }
         }
         if Path::new(&gbw_b).exists() {
             let dest_b = format!("{}/state_B.gbw", job_dir);
-            validation::log_file_operation("Copy", &gbw_b, Some(&dest_b));
-            std::fs::copy(&gbw_b, &dest_b)?;
-            println!("Copied {} → {}", gbw_b, dest_b);
+            
+            // Remove existing destination file if it exists
+            if Path::new(&dest_b).exists() {
+                validation::log_file_operation("Delete", &dest_b, None, print_level);
+                std::fs::remove_file(&dest_b)?;
+            }
+            
+            validation::log_file_operation("Rename", &gbw_b, Some(&dest_b), print_level);
+            std::fs::rename(&gbw_b, &dest_b)?;
+            if print_level >= 1 {
+                println!("Renamed {} → {}", gbw_b, dest_b);
+            }
         }
     }
 
     // Write XYZ file for ORCA (following Python logic)
     let xyz_file = format!("{}/{}.xyz", job_dir, step);
     io::write_xyz(geometry, Path::new(&xyz_file))?;
-    println!("Wrote XYZ file: {}", xyz_file);
+    if print_level >= 1 {
+        println!("Wrote XYZ file: {}", xyz_file);
+    }
 
     Ok(())
 }
@@ -1531,6 +1656,11 @@ fn run_single_optimization(
     qm: &dyn qm_interface::QMInterface,
     job_dir: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Load settings to get print_level
+    let print_level = match omecp::settings::SettingsManager::load() {
+        Ok(s) => s.general().print_level,
+        Err(_) => 0, // Default to quiet mode if settings can't be loaded
+    };
 
     // Phase 1: Pre-point calculations for Normal mode (following Python MECP.py logic)
     if config.run_mode == config::RunMode::Normal {
@@ -1576,18 +1706,29 @@ fn run_single_optimization(
                 println!("✓ Gaussian checkpoint files ready for main optimization loop");
             }
             config::QMProgram::Orca => {
-                println!("Copying ORCA wavefunction files...");
+                if print_level >= 1 {
+                    println!("Preparing ORCA wavefunction files...");
+                }
                 let pre_a_gbw = format!("{}/pre_A.gbw", job_dir);
                 let pre_b_gbw = format!("{}/pre_B.gbw", job_dir);
                 let a_gbw = format!("{}/a.gbw", job_dir);
                 let b_gbw = format!("{}/b.gbw", job_dir);
 
+                // Copy pre_ files to a.gbw and b.gbw (these are template files, so copy is appropriate)
+                validation::log_file_operation("Copy", &pre_a_gbw, Some(&a_gbw), print_level);
                 std::fs::copy(&pre_a_gbw, &a_gbw)?;
+                validation::log_file_operation("Copy", &pre_b_gbw, Some(&b_gbw), print_level);
                 std::fs::copy(&pre_b_gbw, &b_gbw)?;
+                
                 // Also copy to root directory for compatibility
+                validation::log_file_operation("Copy", &a_gbw, Some("a.gbw"), print_level);
                 let _ = std::fs::copy(&a_gbw, "a.gbw");
+                validation::log_file_operation("Copy", &b_gbw, Some("b.gbw"), print_level);
                 let _ = std::fs::copy(&b_gbw, "b.gbw");
-                println!("✓ ORCA wavefunction files ready for main optimization loop");
+                
+                if print_level >= 1 {
+                    println!("✓ ORCA wavefunction files ready for main optimization loop");
+                }
             }
             config::QMProgram::Xtb => {
                 println!("XTB pre-point calculations completed");
@@ -2028,6 +2169,16 @@ fn run_pre_point_gaussian(
     run_mode: config::RunMode,
     job_dir: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Load settings to get print_level
+    let settings = match omecp::settings::SettingsManager::load() {
+        Ok(s) => s,
+        Err(_) => {
+            // If settings can't be loaded, use default (quiet mode)
+            return Ok(());
+        }
+    };
+    let print_level = settings.general().print_level;
+
     // Write and run state B first (following Python MECP.py B→A order)
     let ext = get_input_file_extension(input_data.config.program);
     let pre_b_path = format!("{}/pre_B.{}", job_dir, ext);
@@ -2049,10 +2200,10 @@ fn run_pre_point_gaussian(
         let a_chk = format!("{}/a.chk", job_dir);
 
         if Path::new(&pre_b_chk).exists() {
-            validation::log_file_operation("Copy", &pre_b_chk, Some(&a_chk));
+            validation::log_file_operation("Copy", &pre_b_chk, Some(&a_chk), print_level);
             std::fs::copy(&pre_b_chk, &a_chk)?;
         } else if Path::new("b.chk").exists() {
-            validation::log_file_operation("Copy", "b.chk", Some("a.chk"));
+            validation::log_file_operation("Copy", "b.chk", Some("a.chk"), print_level);
             std::fs::copy("b.chk", "a.chk")?;
         } else {
             println!("Warning: No checkpoint file found for inter_read mode. Continuing without wavefunction copying.");
@@ -2109,6 +2260,16 @@ fn run_pre_point_orca(
     run_mode: config::RunMode,
     _job_dir: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Load settings to get print_level
+    let settings = match omecp::settings::SettingsManager::load() {
+        Ok(s) => s,
+        Err(_) => {
+            // If settings can't be loaded, use default (quiet mode)
+            return Ok(());
+        }
+    };
+    let print_level = settings.general().print_level;
+
     // Write and run state B first
     qm.write_input(
         geometry,
@@ -2120,7 +2281,7 @@ fn run_pre_point_orca(
 
     // Copy B wavefunction file if it exists
     if Path::new("job_dir/pre_B.gbw").exists() {
-        validation::log_file_operation("Copy", "job_dir/pre_B.gbw", Some("job_dir/b.gbw"));
+        validation::log_file_operation("Copy", "job_dir/pre_B.gbw", Some("job_dir/b.gbw"), print_level);
         std::fs::copy("job_dir/pre_B.gbw", "job_dir/b.gbw")?;
     }
 
@@ -2130,9 +2291,11 @@ fn run_pre_point_orca(
 
         // Ensure proper wavefunction copying for ORCA
         if Path::new("job_dir/pre_B.gbw").exists() {
-            validation::log_file_operation("Copy", "job_dir/pre_B.gbw", Some("job_dir/a.gbw"));
+            validation::log_file_operation("Copy", "job_dir/pre_B.gbw", Some("job_dir/a.gbw"), print_level);
             std::fs::copy("job_dir/pre_B.gbw", "job_dir/a.gbw")?;
-            println!("Copied pre_B.gbw → a.gbw for inter_read mode");
+            if print_level >= 1 {
+                println!("Copied pre_B.gbw → a.gbw for inter_read mode");
+            }
         } else {
             println!("Warning: No .gbw file found for inter_read mode. Continuing without wavefunction copying.");
         }

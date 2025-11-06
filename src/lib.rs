@@ -167,6 +167,8 @@ pub mod qm_interface;
 pub mod optimizer;
 pub mod constraints;
 pub mod io;
+/// Configuration management system
+pub mod settings;
 /// Linear synchronous transit interpolation
 pub mod lst;
 /// Restart functionality

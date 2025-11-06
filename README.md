@@ -21,7 +21,7 @@ A high-performance Rust implementation of the MECP (Minimum Energy Crossing Poin
 
 ## Important Note
 
-### **The program is under active development and not ready for production use. Bugs might be around**
+### **The program is under active development and not ready for production use. Bugs might be around. All supported features are not fully tested well (-‿-")**
 
 **Status**: Alpha testing phase
 
@@ -41,7 +41,7 @@ OpenMECP locates the minimum energy crossing point between two potential energy 
 - Conical intersections
 - Non-adiabatic dynamics
 
-The program implements the Harvey et al. algorithm (Chem. Phys. Lett. 1994) with modern optimizers and supports multiple quantum chemistry programs.
+The program implements the algorithm reported by Harvey et al. in Theor Chem Acc 99, 95–99 (1998) with modern optimizers and supports multiple quantum chemistry programs.
 
 ### Key Algorithm
 
@@ -208,7 +208,7 @@ omecp ci --help
 # export directory where omecp is copied
 export /path/to/your/dir/
 module load gaussian (or Orca) // Check your HPC system
-omecp input.inp
+omecp input.inp > output.log 
 ```
 
 ### 5. Check Results
@@ -297,10 +297,22 @@ H  1.2  0.0  0.5
 | `program` | string  | QM program to use            | `gaussian`, `orca` |
 | `method`  | string  | QM method and basis set      | `B3LYP/6-31G*`     |
 | `nprocs`  | integer | Number of processors         | `4`                |
-| `mem`     | string  | Memory allocation            | `4GB`              |
+| `mem`     | string  | Memory allocation            | `4GB` `4000`       |
 | `charge`  | integer | Molecular charge             | `0`                |
 | `mult1`   | integer | Spin multiplicity of state 1 | `1`                |
 | `mult2`   | integer | Spin multiplicity of state 2 | `3`                |
+
+**Note**: method and mem should be specific for Gaussian and Orca. For example: 
+- Gaussian: 
+```
+mem = 8GB
+method = n scf(maxcycle=500,xqc) uwb97xd/def2svpp scrf=(smd,solvent=acetonitrile)
+```
+-Orca: 
+```
+memthod = B3LYP SV CPCM(2-octanone) VeryTightSCF --> All keyword after ! in Orca input
+mem = 8000 --> (memory 8000 MB for each core <=> %maxcore 8000)
+```
 
 ### Optional Keywords
 
@@ -1327,4 +1339,4 @@ OpenMECP is licensed under the **MIT License**.
 **OpenMECP v0.0.1** - A Rust implementation of the MECP optimizer
 Developed by Le Nhan Pham | [GitHub](https://github.com/lenhanpham/OpenMECP)
 
-For more information, visit the project documentation or use `OpenMECP --help`
+For more information, visit the project documentation or use `omecp --help`

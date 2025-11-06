@@ -675,12 +675,15 @@ pub fn print_global_help() {
     println!("MECP - Minimum Energy Crossing Point Optimization Tool");
     println!();
     println!("USAGE:");
-    println!("    mecp [OPTIONS] <COMMAND>");
+    println!("    omecp [OPTIONS] <COMMAND>");
     println!();
     println!("COMMANDS:");
     println!("    ci <geometry_file> [output_file]");
     println!("                        Create a template input file from a geometry file");
     println!("                        Supported formats: .xyz, .log, .gjf");
+    println!();
+    println!("    ci settings.ini");
+    println!("                        Create a settings template file for configuration");
     println!();
     println!("    <input_file>");
     println!("                        Run MECP optimization using the input file");
@@ -689,12 +692,13 @@ pub fn print_global_help() {
     println!("    -h, --help [topic]   Show help. Topics: keywords, methods, features, examples");
     println!();
     println!("EXAMPLES:");
-    println!("    Create template:     mecp ci molecule.xyz");
-    println!("    Create with name:    mecp ci molecule.xyz custom.inp");
-    println!("    Run MECP:            mecp calculation.inp");
-    println!("    View keywords:       mecp --help keywords");
-    println!("    View methods:        mecp --help methods");
-    println!("    View features:       mecp --help features");
+    println!("    Create template:     omecp ci molecule.xyz");
+    println!("    Create with name:    omecp ci molecule.xyz custom.inp");
+    println!("    Run MECP:            omecp input.inp > output.log");
+    println!("    Create settings:     omecp ci settings.ini");
+    println!("    View keywords:       omecp --help keywords");
+    println!("    View methods:        omecp --help methods");
+    println!("    View features:       omecp --help features");
     println!();
 }
 
@@ -704,7 +708,7 @@ pub fn print_ci_help() {
     println!("═════════════════════════════════════");
     println!();
     println!("USAGE:");
-    println!("    mecp ci <geometry_file> [output_file]");
+    println!("    omecp ci <geometry_file> [output_file]");
     println!();
     println!("DESCRIPTION:");
     println!("    Generates a template MECP input file from a geometry file.");
@@ -722,10 +726,10 @@ pub fn print_ci_help() {
     println!("                        Default: <geometry_stem>.inp");
     println!();
     println!("EXAMPLES:");
-    println!("    mecp ci molecule.xyz");
+    println!("    omecp ci molecule.xyz");
     println!("                        Creates 'molecule.inp' with '@molecule.xyz' reference");
     println!();
-    println!("    mecp ci calc.log custom.inp");
+    println!("    omecp ci calc.log custom.inp");
     println!("                        Creates 'custom.inp' with '@calc.log' reference");
     println!();
     println!("OUTPUT FORMAT:");
@@ -915,15 +919,15 @@ pub fn print_examples() {
     println!("{}", "─".repeat(76));
     println!();
     println!("1. Create template from XYZ file:");
-    println!("   $ mecp ci water.xyz");
+    println!("   $ omecp ci water.xyz");
     println!("   → Creates water.inp with @water.xyz reference");
     println!();
     println!("2. Run MECP optimization:");
-    println!("   $ mecp calculation.inp");
+    println!("   $ omecp calculation.inp");
     println!();
     println!("3. View help:");
-    println!("   $ mecp --help");
-    println!("   $ mecp --help keywords");
+    println!("   $ omecp --help");
+    println!("   $ omecp --help keywords");
     println!();
 
     println!("INPUT FILE EXAMPLE");

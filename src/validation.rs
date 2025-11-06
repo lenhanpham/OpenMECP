@@ -515,19 +515,38 @@ pub fn log_mode_transition(from_mode: RunMode, to_mode: RunMode, reason: &str) {
 /// * `operation` - Description of the file operation
 /// * `source` - Source file path
 /// * `destination` - Destination file path (optional)
-pub fn log_file_operation(operation: &str, source: &str, destination: Option<&str>) {
-    match destination {
-        Some(dest) => {
-            println!("File Operation: {} - {} -> {}", operation, source, dest);
-            if !Path::new(source).exists() {
-                println!("Warning: Source file '{}' does not exist", source);
+/// * `print_level` - Print level (0=quiet, 1=normal, 2=verbose)
+pub fn log_file_operation(operation: &str, source: &str, destination: Option<&str>, print_level: u32) {
+    // Only print file operations if print_level is 2 (verbose)
+    if print_level >= 2 {
+        match destination {
+            Some(dest) => {
+                println!("File Operation: {} - {} -> {}", operation, source, dest);
+                if !Path::new(source).exists() {
+                    println!("Warning: Source file '{}' does not exist", source);
+                }
             }
-        }
-        None => {
-            println!("File Operation: {} - {}", operation, source);
-            if !Path::new(source).exists() {
-                println!("Warning: File '{}' does not exist", source);
+            None => {
+                println!("File Operation: {} - {}", operation, source);
+                if !Path::new(source).exists() {
+                    println!("Warning: File '{}' does not exist", source);
+                }
             }
         }
     }
+}
+
+/// Logs file operations for debugging and validation purposes (legacy version).
+/// 
+/// This function maintains backward compatibility by defaulting to verbose output.
+/// New code should use `log_file_operation` with explicit print_level.
+///
+/// # Arguments
+///
+/// * `operation` - Description of the file operation
+/// * `source` - Source file path
+/// * `destination` - Destination file path (optional)
+#[deprecated(note = "Use log_file_operation with explicit print_level parameter")]
+pub fn log_file_operation_legacy(operation: &str, source: &str, destination: Option<&str>) {
+    log_file_operation(operation, source, destination, 2); // Default to verbose for backward compatibility
 }

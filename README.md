@@ -308,7 +308,7 @@ H  1.2  0.0  0.5
 mem = 8GB
 method = n scf(maxcycle=500,xqc) uwb97xd/def2svpp scrf=(smd,solvent=acetonitrile)
 ```
--Orca: 
+- Orca: 
 ```
 memthod = B3LYP SV CPCM(2-octanone) VeryTightSCF --> All keyword after ! in Orca input
 mem = 8000 --> (memory 8000 MB for each core <=> %maxcore 8000)

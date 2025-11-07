@@ -44,9 +44,9 @@
 //! - `.gjf` - Gaussian input files
 
 use nalgebra::{DMatrix, DVector};
+use omecp::qm_interface::get_output_file_base;
 use omecp::*;
 use omecp::{checkpoint, lst, validation};
-use omecp::qm_interface::get_output_file_base;
 use std::env;
 use std::path::Path;
 use std::process;
@@ -135,13 +135,19 @@ fn main() {
             if args.len() < 3 {
                 eprintln!("Error: Missing file argument");
                 eprintln!("Usage:");
-                eprintln!("  {} ci <geometry_file> [output_file]  - Create input template", args[0]);
-                eprintln!("  {} ci settings.ini                   - Create settings template", args[0]);
+                eprintln!(
+                    "  {} ci <geometry_file> [output_file]  - Create input template",
+                    args[0]
+                );
+                eprintln!(
+                    "  {} ci settings.ini                   - Create settings template",
+                    args[0]
+                );
                 process::exit(1);
             }
-            
+
             let file_arg = &args[2];
-            
+
             // Check if user wants to create settings template
             if file_arg == "settings.ini" {
                 match run_create_settings_template() {
@@ -286,6 +292,8 @@ fn print_mecp_help(input_file: &str) {
 /// ```
 fn print_usage(program_name: &str) {
     eprintln!("OpenMECP - Minimum Energy Crossing Point optimization");
+    eprintln!("--------------Developed by Le Nhan Pham--------------");
+    eprintln!("           https://github.com/lenhanpham");
     eprintln!();
     eprintln!("Usage:");
     eprintln!("  {} ci <geometry_file> [output_file]", program_name);
@@ -417,10 +425,13 @@ fn run_create_settings_template() -> Result<(), Box<dyn std::error::Error>> {
     use omecp::settings::SettingsManager;
 
     let settings_path = Path::new("settings.ini");
-    
+
     // Check if file already exists to prevent accidental overwrite
     if settings_path.exists() {
-        return Err("settings.ini already exists. Please remove it first or choose a different location.".into());
+        return Err(
+            "settings.ini already exists. Please remove it first or choose a different location."
+                .into(),
+        );
     }
 
     // Create the settings template
@@ -514,20 +525,55 @@ fn print_convergence_details(
     let bohr_to_angstrom = 0.529177;
 
     println!("Step {}: Convergence Status", step);
-    println!("┌─────────────────────────────────┬──────────────┬──────────────┬─────────┐");
-    println!("│ Criteria                        │   Current    │   Threshold  │  Pass   │");
-    println!("├─────────────────────────────────┼──────────────┼──────────────┼─────────┤");
-    println!("│ 1. Energy difference            │ {:>12.8}     │ {:>12.8}     │  [{}]   │",
-             de, config.thresholds.de, if conv.de_converged { "YES" } else { "NO " });
-    println!("│ 2. RMS gradient                 │ {:>12.8}     │ {:>12.8}     │  [{}]   │",
-             rms_grad, config.thresholds.rms_g, if conv.rms_grad_converged { "YES" } else { "NO " });
-    println!("│ 3. Max gradient                 │ {:>12.8}     │ {:>12.8}     │  [{}]   │",
-             max_grad, config.thresholds.max_g, if conv.max_grad_converged { "YES" } else { "NO " });
-    println!("│ 4. RMS displacement             │ {:>12.8}     │ {:>12.8}     │  [{}]   │",
-             rms_disp * bohr_to_angstrom, config.thresholds.rms, if conv.rms_disp_converged { "YES" } else { "NO " });
-    println!("│ 5. Max displacement             │ {:>12.8}     │ {:>12.8}     │  [{}]   │",
-             max_disp * bohr_to_angstrom, config.thresholds.max_dis, if conv.max_disp_converged { "YES" } else { "NO " });
-    println!("└─────────────────────────────────┴──────────────┴──────────────┴─────────┘");
+    println!(" Criteria                            Current           Threshold        Pass");
+    println!("----------------------------------------------------------------------------");
+    println!(
+        "  1. Energy difference             {:>12.8}      {:>12.8}       {}   ",
+        de,
+        config.thresholds.de,
+        if conv.de_converged { "YES" } else { "NO " }
+    );
+    println!(
+        "  2. RMS gradient                  {:>12.8}      {:>12.8}       {}   ",
+        rms_grad,
+        config.thresholds.rms_g,
+        if conv.rms_grad_converged {
+            "YES"
+        } else {
+            "NO "
+        }
+    );
+    println!(
+        "  3. Max gradient                  {:>12.8}      {:>12.8}       {}   ",
+        max_grad,
+        config.thresholds.max_g,
+        if conv.max_grad_converged {
+            "YES"
+        } else {
+            "NO "
+        }
+    );
+    println!(
+        "  4. RMS displacement              {:>12.8}      {:>12.8}       {}   ",
+        rms_disp * bohr_to_angstrom,
+        config.thresholds.rms,
+        if conv.rms_disp_converged {
+            "YES"
+        } else {
+            "NO "
+        }
+    );
+    println!(
+        "  5. Max displacement              {:>12.8}      {:>12.8}       {}   ",
+        max_disp * bohr_to_angstrom,
+        config.thresholds.max_dis,
+        if conv.max_disp_converged {
+            "YES"
+        } else {
+            "NO "
+        }
+    );
+    println!("----------------------------------------------------------------------------");
     println!();
 }
 
@@ -685,12 +731,28 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     if original_run_mode == config::RunMode::Normal {
         // Normal Mode: Phase 1 - Pre-point calculations (following Python MECP.py logic)
-        println!("****Normal Mode: Phase 1 - Pre-point calculations to generate checkpoint files****");
+        println!(
+            "****Normal Mode: Phase 1 - Pre-point calculations to generate checkpoint files****"
+        );
 
         // Build RAW headers WITHOUT any modifications (matching Python buildHeader)
         // This means NO force, NO guess=read, just the basic method
-        let pre_header_a = build_raw_program_header(&input_data.config, input_data.config.charge1, input_data.config.mult1, &input_data.config.td1, input_data.config.state1, "state_A.chk");
-        let pre_header_b = build_raw_program_header(&input_data.config, input_data.config.charge2, input_data.config.mult2, &input_data.config.td2, input_data.config.state2, "state_B.chk");
+        let pre_header_a = build_raw_program_header(
+            &input_data.config,
+            input_data.config.charge1,
+            input_data.config.mult1,
+            &input_data.config.td1,
+            input_data.config.state1,
+            "state_A.chk",
+        );
+        let pre_header_b = build_raw_program_header(
+            &input_data.config,
+            input_data.config.charge2,
+            input_data.config.mult2,
+            &input_data.config.td2,
+            input_data.config.state2,
+            "state_B.chk",
+        );
 
         println!("Pre-point headers (raw, no modifications):");
         println!("State A: {}", pre_header_a.lines().nth(2).unwrap_or(""));
@@ -701,8 +763,18 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let pre_a_path = format!("{}/pre_A.{}", job_dir, ext);
         let pre_b_path = format!("{}/pre_B.{}", job_dir, ext);
 
-        qm.write_input(&input_data.geometry, &pre_header_a, &input_data.tail1, Path::new(&pre_a_path))?;
-        qm.write_input(&input_data.geometry, &pre_header_b, &input_data.tail2, Path::new(&pre_b_path))?;
+        qm.write_input(
+            &input_data.geometry,
+            &pre_header_a,
+            &input_data.tail1,
+            Path::new(&pre_a_path),
+        )?;
+        qm.write_input(
+            &input_data.geometry,
+            &pre_header_b,
+            &input_data.tail2,
+            Path::new(&pre_b_path),
+        )?;
 
         println!("Running pre-point calculation for state B...");
         let pre_b_result = qm.run_calculation(Path::new(&pre_b_path));
@@ -735,7 +807,10 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 let state_b_chk = "state_B.chk";
 
                 if Path::new(state_a_chk).exists() && Path::new(state_b_chk).exists() {
-                    println!("✓ Gaussian checkpoint files found: {} and {}", state_a_chk, state_b_chk);
+                    println!(
+                        "✓ Gaussian checkpoint files found: {} and {}",
+                        state_a_chk, state_b_chk
+                    );
                 } else {
                     return Err(format!(
                         "Error: Gaussian checkpoint files not found after pre-point calculations.\n\
@@ -765,16 +840,28 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                         validation::log_file_operation("Delete", &state_b_gbw, None, print_level);
                         std::fs::remove_file(&state_b_gbw)?;
                     }
-                    
+
                     // Rename the files
-                    validation::log_file_operation("Rename", &pre_a_gbw, Some(&state_a_gbw), print_level);
+                    validation::log_file_operation(
+                        "Rename",
+                        &pre_a_gbw,
+                        Some(&state_a_gbw),
+                        print_level,
+                    );
                     std::fs::rename(&pre_a_gbw, &state_a_gbw)?;
-                    validation::log_file_operation("Rename", &pre_b_gbw, Some(&state_b_gbw), print_level);
+                    validation::log_file_operation(
+                        "Rename",
+                        &pre_b_gbw,
+                        Some(&state_b_gbw),
+                        print_level,
+                    );
                     std::fs::rename(&pre_b_gbw, &state_b_gbw)?;
-                    
+
                     if print_level >= 1 {
-                        println!("✓ ORCA wavefunction files renamed: {} -> {}, {} -> {}",
-                                 pre_a_gbw, state_a_gbw, pre_b_gbw, state_b_gbw);
+                        println!(
+                            "✓ ORCA wavefunction files renamed: {} -> {}, {} -> {}",
+                            pre_a_gbw, state_a_gbw, pre_b_gbw, state_b_gbw
+                        );
                     }
                 } else {
                     return Err(format!(
@@ -787,10 +874,15 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
             config::QMProgram::Xtb => {
                 println!("XTB pre-point calculations completed");
-                println!("✓ XTB doesn't require checkpoint files - ready for main optimization loop");
+                println!(
+                    "✓ XTB doesn't require checkpoint files - ready for main optimization loop"
+                );
             }
             _ => {
-                println!("Pre-point calculations completed for {:?}", input_data.config.program);
+                println!(
+                    "Pre-point calculations completed for {:?}",
+                    input_data.config.program
+                );
             }
         }
 
@@ -826,7 +918,6 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         );
 
         println!("Headers rebuilt for read mode with force and guess=read");
-
     } else if original_run_mode == config::RunMode::Stable
         || original_run_mode == config::RunMode::InterRead
     {
@@ -844,7 +935,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         validation::log_mode_transition(
             original_run_mode,
             config::RunMode::Read,
-            "Pre-point calculations completed, switching to read mode for main optimization"
+            "Pre-point calculations completed, switching to read mode for main optimization",
         );
         config.run_mode = config::RunMode::Read;
 
@@ -948,13 +1039,23 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Apply constraint forces if constraints are present
         if !constraints.is_empty() {
             println!("Applying constraint forces using Lagrange multipliers");
-            match constraints::add_constraint_lagrange(&geometry, grad.clone(), constraints, &mut opt_state.lambdas) {
+            match constraints::add_constraint_lagrange(
+                &geometry,
+                grad.clone(),
+                constraints,
+                &mut opt_state.lambdas,
+            ) {
                 Ok(constrained_grad) => {
                     grad = constrained_grad;
                     println!("Constraint forces applied successfully");
 
                     // Report constraint status
-                    constraints::report_constraint_status(&geometry, constraints, &opt_state.lambdas, step + 1);
+                    constraints::report_constraint_status(
+                        &geometry,
+                        constraints,
+                        &opt_state.lambdas,
+                        step + 1,
+                    );
                 }
                 Err(e) => {
                     println!("Warning: Failed to apply constraint forces: {}. Using unconstrained gradient.", e);
@@ -978,14 +1079,26 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             if config.switch_step >= config.max_steps {
                 println!("Using BFGS optimizer (BFGS-only mode)");
             } else {
-                println!("Using BFGS optimizer (step {} < switch point {})", step + 1, config.switch_step);
+                println!(
+                    "Using BFGS optimizer (step {} < switch point {})",
+                    step + 1,
+                    config.switch_step
+                );
             }
             optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
         } else if config.use_gediis {
-            println!("Using GEDIIS optimizer (step {} >= switch point {})", step + 1, config.switch_step);
+            println!(
+                "Using GEDIIS optimizer (step {} >= switch point {})",
+                step + 1,
+                config.switch_step
+            );
             optimizer::gediis_step(&opt_state, &config)
         } else {
-            println!("Using GDIIS optimizer (step {} >= switch point {})", step + 1, config.switch_step);
+            println!(
+                "Using GDIIS optimizer (step {} >= switch point {})",
+                step + 1,
+                config.switch_step
+            );
             optimizer::gdiis_step(&opt_state, &config)
         };
 
@@ -1019,11 +1132,25 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
             config::QMProgram::Xtb => {
                 // XTB-specific workflow
-                run_xtb_step(&geometry, step + 1, &header_a, &header_b, &input_data.tail1, &input_data.tail2, qm.as_ref())?;
+                run_xtb_step(
+                    &geometry,
+                    step + 1,
+                    &header_a,
+                    &header_b,
+                    &input_data.tail1,
+                    &input_data.tail2,
+                    qm.as_ref(),
+                )?;
             }
             config::QMProgram::Bagel => {
                 // BAGEL-specific workflow
-                run_bagel_step(&geometry, step + 1, &config, &geometry.elements, qm.as_ref())?;
+                run_bagel_step(
+                    &geometry,
+                    step + 1,
+                    &config,
+                    &geometry.elements,
+                    qm.as_ref(),
+                )?;
             }
         }
 
@@ -1075,12 +1202,20 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         // Apply constraint forces to new gradient as well
         if !constraints.is_empty() {
-            match constraints::add_constraint_lagrange(&geometry, grad_new.clone(), constraints, &mut opt_state.lambdas) {
+            match constraints::add_constraint_lagrange(
+                &geometry,
+                grad_new.clone(),
+                constraints,
+                &mut opt_state.lambdas,
+            ) {
                 Ok(constrained_grad_new) => {
                     grad_new = constrained_grad_new;
                 }
                 Err(e) => {
-                    println!("Warning: Failed to apply constraint forces to new gradient: {}", e);
+                    println!(
+                        "Warning: Failed to apply constraint forces to new gradient: {}",
+                        e
+                    );
                 }
             }
         }
@@ -1097,7 +1232,15 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         // Calculate displacement for printing
         let disp = &x_new - &x_old;
-        print_convergence_details(step + 1, &conv, state1_new.energy, state2_new.energy, &disp, &grad_new, &config);
+        print_convergence_details(
+            step + 1,
+            &conv,
+            state1_new.energy,
+            state2_new.energy,
+            &disp,
+            &grad_new,
+            &config,
+        );
 
         println!(
             "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
@@ -1203,13 +1346,13 @@ fn manage_orca_wavefunction_files(
 
         if Path::new(&gbw_a).exists() {
             let dest_a = format!("{}/state_A.gbw", job_dir);
-            
+
             // Remove existing destination file if it exists
             if Path::new(&dest_a).exists() {
                 validation::log_file_operation("Delete", &dest_a, None, print_level);
                 std::fs::remove_file(&dest_a)?;
             }
-            
+
             validation::log_file_operation("Rename", &gbw_a, Some(&dest_a), print_level);
             std::fs::rename(&gbw_a, &dest_a)?;
             if print_level >= 1 {
@@ -1218,13 +1361,13 @@ fn manage_orca_wavefunction_files(
         }
         if Path::new(&gbw_b).exists() {
             let dest_b = format!("{}/state_B.gbw", job_dir);
-            
+
             // Remove existing destination file if it exists
             if Path::new(&dest_b).exists() {
                 validation::log_file_operation("Delete", &dest_b, None, print_level);
                 std::fs::remove_file(&dest_b)?;
             }
-            
+
             validation::log_file_operation("Rename", &gbw_b, Some(&dest_b), print_level);
             std::fs::rename(&gbw_b, &dest_b)?;
             if print_level >= 1 {
@@ -1317,7 +1460,11 @@ fn run_pes_scan(
         scan_vars[1].push(-1.0); // Dummy value for 1D scans
     }
 
-    println!("Scan grid: {} x {} points", scan_vars[0].len(), scan_vars[1].len());
+    println!(
+        "Scan grid: {} x {} points",
+        scan_vars[0].len(),
+        scan_vars[1].len()
+    );
 
     // Collect scan results for analysis (Task 6.2)
     let mut scan_results = Vec::new();
@@ -1411,17 +1558,14 @@ fn run_pes_scan(
 
             // Save scan results with Python MECP.py naming convention
             if converged {
-                save_scan_results(
-                    &config,
-                    &geometry,
-                    converged_step,
-                    val1,
-                    val2,
-                )?;
+                save_scan_results(&config, &geometry, converged_step, val1, val2)?;
             }
 
             let scan_duration = scan_start_time.elapsed();
-            println!("Scan point completed in {:.2}s", scan_duration.as_secs_f64());
+            println!(
+                "Scan point completed in {:.2}s",
+                scan_duration.as_secs_f64()
+            );
 
             // Remove second scan constraint if it was added
             if scan2.num_points > 0 {
@@ -1667,7 +1811,7 @@ fn build_raw_program_header(
                 chk_file,
                 config.nprocs,
                 config.mem,
-                config.method,  // Original method, NO modifications
+                config.method, // Original method, NO modifications
                 td,
                 charge,
                 mult
@@ -1679,7 +1823,7 @@ fn build_raw_program_header(
                 "%pal nprocs {} end\n%maxcore {}\n! {}\n\n*xyz {} {}",
                 config.nprocs,
                 config.mem,
-                config.method,  // Original method, NO modifications
+                config.method, // Original method, NO modifications
                 charge,
                 mult
             )
@@ -1689,7 +1833,7 @@ fn build_raw_program_header(
             format!(
                 "$chrg {}\n$uhf {}\n$end",
                 charge,
-                mult.saturating_sub(1)  // UHF = multiplicity - 1
+                mult.saturating_sub(1) // UHF = multiplicity - 1
             )
         }
         config::QMProgram::Bagel => {
@@ -1706,7 +1850,7 @@ fn build_raw_program_header(
                 "%chk=calc.chk\n%nprocshared={}\n%mem={}\n# {} nosymm\n\nTitle Card\n\n{} {}",
                 config.nprocs,
                 config.mem,
-                config.method,  // Original method, NO modifications
+                config.method, // Original method, NO modifications
                 charge,
                 mult
             )
@@ -1732,12 +1876,28 @@ fn run_single_optimization(
 
     // Phase 1: Pre-point calculations for Normal mode (following Python MECP.py logic)
     if config.run_mode == config::RunMode::Normal {
-        println!("****Normal Mode: Phase 1 - Pre-point calculations to generate checkpoint files****");
+        println!(
+            "****Normal Mode: Phase 1 - Pre-point calculations to generate checkpoint files****"
+        );
 
         // Build RAW headers WITHOUT any modifications (matching Python buildHeader)
         // This means NO force, NO guess=read, just the basic method
-        let pre_header_a = build_raw_program_header(config, config.charge1, config.mult1, &config.td1, config.state1, "a.chk");
-        let pre_header_b = build_raw_program_header(config, config.charge2, config.mult2, &config.td2, config.state2, "b.chk");
+        let pre_header_a = build_raw_program_header(
+            config,
+            config.charge1,
+            config.mult1,
+            &config.td1,
+            config.state1,
+            "a.chk",
+        );
+        let pre_header_b = build_raw_program_header(
+            config,
+            config.charge2,
+            config.mult2,
+            &config.td2,
+            config.state2,
+            "b.chk",
+        );
 
         println!("Pre-point headers (raw, no modifications):");
         println!("State A: {}", pre_header_a.lines().nth(2).unwrap_or(""));
@@ -1787,20 +1947,22 @@ fn run_single_optimization(
                 std::fs::copy(&pre_a_gbw, &a_gbw)?;
                 validation::log_file_operation("Copy", &pre_b_gbw, Some(&b_gbw), print_level);
                 std::fs::copy(&pre_b_gbw, &b_gbw)?;
-                
+
                 // Also copy to root directory for compatibility
                 validation::log_file_operation("Copy", &a_gbw, Some("a.gbw"), print_level);
                 let _ = std::fs::copy(&a_gbw, "a.gbw");
                 validation::log_file_operation("Copy", &b_gbw, Some("b.gbw"), print_level);
                 let _ = std::fs::copy(&b_gbw, "b.gbw");
-                
+
                 if print_level >= 1 {
                     println!("✓ ORCA wavefunction files ready for main optimization loop");
                 }
             }
             config::QMProgram::Xtb => {
                 println!("XTB pre-point calculations completed");
-                println!("✓ XTB doesn't require checkpoint files - ready for main optimization loop");
+                println!(
+                    "✓ XTB doesn't require checkpoint files - ready for main optimization loop"
+                );
                 // XTB doesn't use persistent checkpoint files like Gaussian/ORCA
                 // The pre-point calculations establish the initial geometry and energy
             }
@@ -1822,8 +1984,20 @@ fn run_single_optimization(
     }
 
     // Phase 2: Main optimization loop with proper headers (including guess=read for Normal mode)
-    let header_a = io::build_program_header(config, config.charge1, config.mult1, &config.td1, config.state1);
-    let header_b = io::build_program_header(config, config.charge2, config.mult2, &config.td2, config.state2);
+    let header_a = io::build_program_header(
+        config,
+        config.charge1,
+        config.mult1,
+        &config.td1,
+        config.state1,
+    );
+    let header_b = io::build_program_header(
+        config,
+        config.charge2,
+        config.mult2,
+        &config.td2,
+        config.state2,
+    );
 
     // For Normal mode, we start from step 0 but with checkpoint reading enabled
     // For other modes, this is the initial calculation
@@ -1905,18 +2079,8 @@ fn run_single_optimization(
         let step_a_path = format!("job_dir/{}_A.{}", step + 1, ext);
         let step_b_path = format!("job_dir/{}_B.{}", step + 1, ext);
 
-        qm.write_input(
-            geometry,
-            &header_a,
-            tail1,
-            Path::new(&step_a_path),
-        )?;
-        qm.write_input(
-            geometry,
-            &header_b,
-            tail2,
-            Path::new(&step_b_path),
-        )?;
+        qm.write_input(geometry, &header_a, tail1, Path::new(&step_a_path))?;
+        qm.write_input(geometry, &header_b, tail2, Path::new(&step_b_path))?;
         qm.run_calculation(Path::new(&step_a_path))?;
         qm.run_calculation(Path::new(&step_b_path))?;
 
@@ -1942,7 +2106,15 @@ fn run_single_optimization(
 
         // Calculate displacement for printing
         let disp = &x_new - &x_old;
-        print_convergence_details(step + 1, &conv, state1_new.energy, state2_new.energy, &disp, &grad_new, &config);
+        print_convergence_details(
+            step + 1,
+            &conv,
+            state1_new.energy,
+            state2_new.energy,
+            &disp,
+            &grad_new,
+            &config,
+        );
 
         if conv.is_converged() {
             return Ok(());
@@ -2022,8 +2194,20 @@ fn run_lst_interpolation(
     lst::print_geometry_preview(&geometries);
 
     // Build headers
-    let header_a = io::build_program_header(config, config.charge1, config.mult1, &config.td1, config.state1);
-    let header_b = io::build_program_header(config, config.charge2, config.mult2, &config.td2, config.state2);
+    let header_a = io::build_program_header(
+        config,
+        config.charge1,
+        config.mult1,
+        &config.td1,
+        config.state1,
+    );
+    let header_b = io::build_program_header(
+        config,
+        config.charge2,
+        config.mult2,
+        &config.td2,
+        config.state2,
+    );
 
     // Write input files
     for (i, geom) in geometries.iter().enumerate() {
@@ -2032,18 +2216,8 @@ fn run_lst_interpolation(
         let step_a_path = format!("job_dir/{}_A.{}", num, ext);
         let step_b_path = format!("job_dir/{}_B.{}", num, ext);
 
-        qm.write_input(
-            geom,
-            &header_a,
-            &input_data.tail1,
-            Path::new(&step_a_path),
-        )?;
-        qm.write_input(
-            geom,
-            &header_b,
-            &input_data.tail2,
-            Path::new(&step_b_path),
-        )?;
+        qm.write_input(geom, &header_a, &input_data.tail1, Path::new(&step_a_path))?;
+        qm.write_input(geom, &header_b, &input_data.tail2, Path::new(&step_b_path))?;
     }
 
     println!(
@@ -2178,7 +2352,8 @@ fn run_lst_interpolation(
         let ext = get_input_file_extension(input_data.config.program);
         println!(
             "Suggested MECP starting geometry: job_dir/{}_A.{}",
-            min_de_idx + 1, ext
+            min_de_idx + 1,
+            ext
         );
     }
 
@@ -2219,20 +2394,30 @@ fn run_pre_point(
     // Dispatch to program-specific pre-point implementations
     match input_data.config.program {
         config::QMProgram::Gaussian => {
-            run_pre_point_gaussian(geometry, header_a, header_b, input_data, qm, run_mode, job_dir)?;
+            run_pre_point_gaussian(
+                geometry, header_a, header_b, input_data, qm, run_mode, job_dir,
+            )?;
         }
         config::QMProgram::Orca => {
-            run_pre_point_orca(geometry, header_a, header_b, input_data, qm, run_mode, job_dir)?;
+            run_pre_point_orca(
+                geometry, header_a, header_b, input_data, qm, run_mode, job_dir,
+            )?;
         }
         config::QMProgram::Xtb => {
-            run_pre_point_xtb(geometry, header_a, header_b, input_data, qm, run_mode, job_dir)?;
+            run_pre_point_xtb(
+                geometry, header_a, header_b, input_data, qm, run_mode, job_dir,
+            )?;
         }
         config::QMProgram::Bagel => {
-            run_pre_point_bagel(geometry, header_a, header_b, input_data, qm, run_mode, job_dir)?;
+            run_pre_point_bagel(
+                geometry, header_a, header_b, input_data, qm, run_mode, job_dir,
+            )?;
         }
         config::QMProgram::Custom => {
             // For custom programs, fall back to Gaussian-style pre-point
-            run_pre_point_gaussian(geometry, header_a, header_b, input_data, qm, run_mode, job_dir)?;
+            run_pre_point_gaussian(
+                geometry, header_a, header_b, input_data, qm, run_mode, job_dir,
+            )?;
         }
     }
 
@@ -2367,7 +2552,12 @@ fn run_pre_point_orca(
 
     // Copy B wavefunction file if it exists
     if Path::new("job_dir/pre_B.gbw").exists() {
-        validation::log_file_operation("Copy", "job_dir/pre_B.gbw", Some("job_dir/b.gbw"), print_level);
+        validation::log_file_operation(
+            "Copy",
+            "job_dir/pre_B.gbw",
+            Some("job_dir/b.gbw"),
+            print_level,
+        );
         std::fs::copy("job_dir/pre_B.gbw", "job_dir/b.gbw")?;
     }
 
@@ -2377,7 +2567,12 @@ fn run_pre_point_orca(
 
         // Ensure proper wavefunction copying for ORCA
         if Path::new("job_dir/pre_B.gbw").exists() {
-            validation::log_file_operation("Copy", "job_dir/pre_B.gbw", Some("job_dir/a.gbw"), print_level);
+            validation::log_file_operation(
+                "Copy",
+                "job_dir/pre_B.gbw",
+                Some("job_dir/a.gbw"),
+                print_level,
+            );
             std::fs::copy("job_dir/pre_B.gbw", "job_dir/a.gbw")?;
             if print_level >= 1 {
                 println!("Copied pre_B.gbw → a.gbw for inter_read mode");
@@ -2485,7 +2680,9 @@ fn run_pre_point_xtb(
             println!("XTB pre-point completed (stable mode - XTB handles stability internally)");
         }
         config::RunMode::InterRead => {
-            println!("XTB pre-point completed (inter_read mode - no special handling needed for XTB)");
+            println!(
+                "XTB pre-point completed (inter_read mode - no special handling needed for XTB)"
+            );
         }
         _ => {
             println!("XTB pre-point completed");
@@ -2535,7 +2732,11 @@ fn run_pre_point_bagel(
 
     // Check if model file exists
     if !Path::new(&input_data.config.bagel_model).exists() {
-        return Err(format!("BAGEL model file '{}' not found", input_data.config.bagel_model).into());
+        return Err(format!(
+            "BAGEL model file '{}' not found",
+            input_data.config.bagel_model
+        )
+        .into());
     }
 
     println!("Using BAGEL model file: {}", input_data.config.bagel_model);
@@ -2718,18 +2919,8 @@ fn run_xtb_step(
     let step_name_b = format!("job_dir/{}_B.xyz", step);
 
     // Write XYZ input files
-    qm.write_input(
-        geometry,
-        header_a,
-        tail1,
-        Path::new(&step_name_a),
-    )?;
-    qm.write_input(
-        geometry,
-        header_b,
-        tail2,
-        Path::new(&step_name_b),
-    )?;
+    qm.write_input(geometry, header_a, tail1, Path::new(&step_name_a))?;
+    qm.write_input(geometry, header_b, tail2, Path::new(&step_name_b))?;
 
     // Run XTB calculations (following Python MECP.py order: B first, then A)
     qm.run_calculation(Path::new(&step_name_b))?;
@@ -2815,8 +3006,20 @@ fn run_restart(
     let fixed_atoms = &input_data.fixed_atoms;
 
     // Build headers
-    let header_a = io::build_program_header(&config, config.charge1, config.mult1, &config.td1, config.state1);
-    let header_b = io::build_program_header(&config, config.charge2, config.mult2, &config.td2, config.state2);
+    let header_a = io::build_program_header(
+        &config,
+        config.charge1,
+        config.mult1,
+        &config.td1,
+        config.state1,
+    );
+    let header_b = io::build_program_header(
+        &config,
+        config.charge2,
+        config.mult2,
+        &config.td2,
+        config.state2,
+    );
 
     // Continue optimization from the next step
     let start_step = step + 1;
@@ -2898,14 +3101,26 @@ fn run_restart(
                 if config.switch_step >= config.max_steps {
                     println!("Using BFGS optimizer (BFGS-only mode)");
                 } else {
-                    println!("Using BFGS optimizer (step {} < switch point {})", step + 1, config.switch_step);
+                    println!(
+                        "Using BFGS optimizer (step {} < switch point {})",
+                        step + 1,
+                        config.switch_step
+                    );
                 }
                 optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
             } else if config.use_gediis {
-                println!("Using GEDIIS optimizer (step {} >= switch point {})", step + 1, config.switch_step);
+                println!(
+                    "Using GEDIIS optimizer (step {} >= switch point {})",
+                    step + 1,
+                    config.switch_step
+                );
                 optimizer::gediis_step(&opt_state, &config)
             } else {
-                println!("Using GDIIS optimizer (step {} >= switch point {})", step + 1, config.switch_step);
+                println!(
+                    "Using GDIIS optimizer (step {} >= switch point {})",
+                    step + 1,
+                    config.switch_step
+                );
                 optimizer::gdiis_step(&opt_state, &config)
             }
         };
@@ -2925,7 +3140,15 @@ fn run_restart(
 
         // Calculate displacement for printing
         let disp = &x_new - &x_old;
-        print_convergence_details(step + 1, &conv, state1.energy, state2.energy, &disp, &grad, &config);
+        print_convergence_details(
+            step + 1,
+            &conv,
+            state1.energy,
+            state2.energy,
+            &disp,
+            &grad,
+            &config,
+        );
 
         println!(
             "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
@@ -2953,7 +3176,15 @@ fn run_restart(
 
         // Calculate displacement for printing
         let disp = &x_new - &x_old;
-        print_convergence_details(step + 1, &conv, state1.energy, state2.energy, &disp, &grad, &config);
+        print_convergence_details(
+            step + 1,
+            &conv,
+            state1.energy,
+            state2.energy,
+            &disp,
+            &grad,
+            &config,
+        );
 
         println!(
             "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
@@ -3034,8 +3265,20 @@ fn run_coordinate_driving(
     );
 
     // Build headers
-    let header_a = io::build_program_header(config, config.charge1, config.mult1, &config.td1, config.state1);
-    let header_b = io::build_program_header(config, config.charge2, config.mult2, &config.td2, config.state2);
+    let header_a = io::build_program_header(
+        config,
+        config.charge1,
+        config.mult1,
+        &config.td1,
+        config.state1,
+    );
+    let header_b = io::build_program_header(
+        config,
+        config.charge2,
+        config.mult2,
+        &config.td2,
+        config.state2,
+    );
 
     // Run calculations along the path
     let mut energies_a = Vec::new();
@@ -3054,18 +3297,8 @@ fn run_coordinate_driving(
         let drive_a_path = format!("job_dir/drive_{}_A.{}", step, ext);
         let drive_b_path = format!("job_dir/drive_{}_B.{}", step, ext);
 
-        qm.write_input(
-            geom,
-            &header_a,
-            &input_data.tail1,
-            Path::new(&drive_a_path),
-        )?;
-        qm.write_input(
-            geom,
-            &header_b,
-            &input_data.tail2,
-            Path::new(&drive_b_path),
-        )?;
+        qm.write_input(geom, &header_a, &input_data.tail1, Path::new(&drive_a_path))?;
+        qm.write_input(geom, &header_b, &input_data.tail2, Path::new(&drive_b_path))?;
 
         // Run calculations
         qm.run_calculation(Path::new(&drive_a_path))?;
@@ -3173,8 +3406,20 @@ fn run_path_optimization(
     );
 
     // Build headers for QM calculations
-    let header_a = io::build_program_header(config, config.charge1, config.mult1, &config.td1, config.state1);
-    let header_b = io::build_program_header(config, config.charge2, config.mult2, &config.td2, config.state2);
+    let header_a = io::build_program_header(
+        config,
+        config.charge1,
+        config.mult1,
+        &config.td1,
+        config.state1,
+    );
+    let header_b = io::build_program_header(
+        config,
+        config.charge2,
+        config.mult2,
+        &config.td2,
+        config.state2,
+    );
 
     // Run calculations along the optimized path
     let mut energies_a = Vec::new();
@@ -3193,18 +3438,8 @@ fn run_path_optimization(
         let neb_a_path = format!("job_dir/neb_{}_A.{}", step, ext);
         let neb_b_path = format!("job_dir/neb_{}_B.{}", step, ext);
 
-        qm.write_input(
-            geom,
-            &header_a,
-            &input_data.tail1,
-            Path::new(&neb_a_path),
-        )?;
-        qm.write_input(
-            geom,
-            &header_b,
-            &input_data.tail2,
-            Path::new(&neb_b_path),
-        )?;
+        qm.write_input(geom, &header_a, &input_data.tail1, Path::new(&neb_a_path))?;
+        qm.write_input(geom, &header_b, &input_data.tail2, Path::new(&neb_b_path))?;
 
         // Run calculations
         qm.run_calculation(Path::new(&neb_a_path))?;

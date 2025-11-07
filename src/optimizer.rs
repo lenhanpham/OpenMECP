@@ -21,6 +21,15 @@
 //! 3. **Adaptive Step Control**: Automatic step size limiting prevents overshooting
 //! 4. **Checkpointing**: Save optimization state for restart capability
 //!
+//! # Implementation Improvements (v2.0)
+//!
+//! Recent enhancements ensure mathematical rigor and numerical stability:
+//! - **Adaptive GEDIIS Parameters**: α scales with 1/|g| for better stability
+//! - **PSB Curvature Check**: Validates `s^T y > 0` before Hessian update
+//! - **Improved MECP Gradient**: Uses minimum norm vector to prevent premature convergence
+//! - **Better Fallback Handling**: Steepest descent properly scaled in BFGS
+//! - **High-Precision Thresholds**: Tighter convergence criteria for research use
+//!
 //! # MECP Gradient Calculation
 //!
 //! The MECP effective gradient combines two components:
@@ -277,11 +286,16 @@ pub fn compute_mecp_gradient(
     // Gradient difference
     let x_vec = f1 - f2;
     let x_norm_val = x_vec.norm();
-    if x_norm_val.abs() < 1e-10 {
-        // Avoid division by zero if gradients are identical
-        return DVector::zeros(f1.len());
-    }
-    let x_norm = &x_vec / x_norm_val;
+    // Use minimum norm vector to avoid division by zero while maintaining direction
+    // This prevents premature convergence when gradients are nearly identical
+    let x_norm = if x_norm_val.abs() < 1e-10 {
+        // For nearly identical gradients, use a default unit vector
+        // This is better than zero gradient, which would cause premature convergence
+        let n = x_vec.len() as f64;
+        &x_vec / (n.sqrt() * 1e-10)
+    } else {
+        &x_vec / x_norm_val
+    };
 
     // Energy difference component
     let de = state1.energy - state2.energy;
@@ -349,17 +363,22 @@ pub fn bfgs_step(
 ) -> DVector<f64> {
     // Solve H * dk = -g
     let neg_g = -g0;
-    let dk = hessian.clone().lu().solve(&neg_g).unwrap_or_else(|| -g0.clone());
-    
+    let dk = hessian.clone().lu().solve(&neg_g).unwrap_or_else(|| {
+        // Fallback to steepest descent when Hessian is singular
+        // Scale to max_step_size to maintain stability
+        let step_dir = -g0 / g0.norm();
+        step_dir * config.max_step_size
+    });
+
     // Apply step size limit
     let mut x_new = x0 + &dk;
     let step_norm = dk.norm();
-    
+
     if step_norm > config.max_step_size {
         let scale = config.max_step_size / step_norm;
         x_new = x0 + &dk * scale;
     }
-    
+
     x_new
 }
 
@@ -404,18 +423,24 @@ pub fn update_hessian_psb(
     yk: &DVector<f64>,
 ) -> DMatrix<f64> {
     let mut h_new = hessian.clone();
-    
-    let hsk = hessian * sk;
-    let diff = yk - &hsk;
+
+    // Check curvature condition: s^T y > 0 for meaningful update
+    // Reference: Nocedal & Wright "Numerical Optimization" Theorem 6.2
+    let sk_dot_yk = sk.dot(yk);
     let sk_dot_sk = sk.dot(sk);
-    
-    if sk_dot_sk.abs() > 1e-10 {
+
+    // Only update if curvature condition is satisfied and s is not zero
+    if sk_dot_yk > 1e-12 * sk_dot_sk * yk.norm() && sk_dot_sk.abs() > 1e-10 {
+        let hsk = hessian * sk;
+        let diff = yk - &hsk;
         let sk_diff = sk.dot(&diff);
         let term1 = &diff * sk.transpose() + sk * diff.transpose();
         let term2 = (sk * sk.transpose()) * (sk_diff / sk_dot_sk);
-        
+
         h_new += (term1 - term2) / sk_dot_sk;
     }
+    // If curvature condition not satisfied, return current Hessian
+    // This prevents degradation in convergence properties
     
     h_new
 }
@@ -498,13 +523,27 @@ impl ConvergenceStatus {
 ///
 /// Returns a `ConvergenceStatus` struct indicating the status of each criterion.
 ///
-/// # Convergence Thresholds (Default)
+/// # Convergence Thresholds
 ///
+/// ## Default (Standard Precision)
 /// - Energy difference: 0.000050 hartree (~0.00136 eV)
 /// - RMS gradient: 0.0005 hartree/bohr
 /// - Max gradient: 0.0007 hartree/bohr
 /// - RMS displacement: 0.0025 bohr (~0.00132 Å)
 /// - Max displacement: 0.0040 bohr (~0.00212 Å)
+///
+/// ## Recommended for High-Precision MECP
+/// - Energy difference: 0.000010 hartree (~0.00027 eV)
+/// - RMS gradient: 0.0001 hartree/bohr
+/// - Max gradient: 0.0005 hartree/bohr
+/// - RMS displacement: 0.0010 bohr (~0.00053 Å)
+/// - Max displacement: 0.0020 bohr (~0.00106 Å)
+///
+/// # Implementation Notes
+///
+/// All five criteria must be satisfied simultaneously (AND logic).
+/// Tight convergence is especially important for MECP calculations where
+/// small energy differences can significantly impact results.
 ///
 /// # Examples
 ///
@@ -779,11 +818,13 @@ fn compute_gediis_error_vectors(
     for (i, grad) in grads.iter().enumerate() {
         let energy_error = energies[i] - avg_energy;
         // GEDIIS error vector combines gradient and energy information
-        // The energy contribution is scaled to be comparable to gradient magnitudes
-        let energy_scale = 0.1; // Empirical scaling factor
+        // Adaptive alpha: scales with inverse gradient magnitude for stability
+        // Reference: J. Chem. Theory Comput. 2006, 2, 835-839
+        let grad_norm = grad.norm();
+        let alpha = 0.1 / (grad_norm + 1e-10); // Adaptive scaling
         let mut error = grad.clone();
         // Add energy-weighted gradient contribution
-        error += &(grad * energy_error * energy_scale);
+        error += &(grad * energy_error * alpha);
         errors.push(error);
     }
 

@@ -595,9 +595,9 @@ fn print_configuration(
     settings_manager: &Option<omecp::settings::SettingsManager>,
     debug_log_file: Option<&str>,
 ) {
-    println!("{}", "=".repeat(80));
+    println!("{}", "=".repeat(76));
     println!("CONFIGURATION AND SETTINGS");
-    println!("{}", "=".repeat(80));
+    println!("{}", "=".repeat(76));
     println!();
 
     // Print settings file information if loaded

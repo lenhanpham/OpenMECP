@@ -84,7 +84,6 @@ fn get_input_file_extension(program: config::QMProgram) -> &'static str {
 /// Different QM programs create output files with different extensions.
 /// This function returns the base name that should be passed to the
 // Use get_output_file_base from qm_interface module
-
 /// Main entry point for OpenMECP program.
 ///
 /// Initializes the logger, parses command-line arguments, and dispatches to the
@@ -777,7 +776,7 @@ fn print_configuration(
 
 fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("**** OpenMECP: Minimum Energy Crossing Point Optimizer****");
-    println!("     Version {}  Release date: 2025", env!("CARGO_PKG_VERSION"));
+    println!("              Version {}  Release date: 2025", env!("CARGO_PKG_VERSION"));
     println!("               ****Developer Le Nhan Pham****             ");
     println!("           https://github.com/lenhanpham/OpenMECP        \n");
 

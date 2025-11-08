@@ -95,6 +95,29 @@ Where `x_norm = (f1 - f2) / |f1 - f2|` is the normalized gradient difference.
 - **Run Modes**: Normal, Read, NoRead, Stable, InterRead
 - **Pre-point Calculations**: For difficult SCF convergence
 
+### Configuration Management
+
+- **Hierarchical Configuration**: Support for multiple configuration file locations with precedence
+- **Configuration File**: `omecp_config.cfg` (avoiding confusion with other programs' settings.ini)
+- **Configuration Sources** (in order of precedence):
+  1. `./omecp_config.cfg` (local directory - highest priority)
+  2. `~/.config/omecp/omecp_config.cfg` (user configuration)
+  3. `/etc/omecp/omecp_config.cfg` (system configuration)
+  4. Built-in defaults (fallback)
+- **Customizable Settings**:
+  - File extensions for different QM programs
+  - Memory and processor defaults
+  - Logging levels and debug file configuration
+  - Cleanup behavior and frequency
+- **Parameter Display**: Prints all configuration parameters and settings source at startup
+- **Debug Logging**: Optional file-based debug logging with dynamic filenames (`omecp_debug_<input_basename>.log`)
+
+To create a configuration template:
+
+```bash
+omecp ci omecp_config.cfg
+```
+
 ## Installation
 
 ### Prerequisites
@@ -217,6 +240,77 @@ omecp input.inp > output.log
 - Intermediate geometries: `running_dir/` directory
 - Convergence information: stdout
 
+## Configuration File
+
+### Create Configuration File
+
+OpenMECP uses a configuration file `omecp_config.cfg` to customize program behavior. Create a template:
+
+```bash
+omecp ci omecp_config.cfg
+```
+
+This creates a comprehensive configuration template with all available options and detailed comments.
+
+### Configuration File Format
+
+The configuration file uses INI format with the following sections:
+
+```ini
+[extensions]
+# Output file extensions for different QM programs
+gaussian = log
+orca = out
+xtb = out
+bagel = json
+custom = log
+
+[general]
+# General program settings
+max_memory = 4GB
+default_nprocs = 4
+print_level = 0
+
+[logging]
+# Logging configuration
+level = info
+file_logging = false
+
+[cleanup]
+# Automatic file cleanup configuration
+enabled = true
+preserve_extensions = xyz,backup
+verbose = 1
+cleanup_frequency = 5
+```
+
+### Configuration Precedence
+
+Configuration files are loaded in hierarchical order (local settings override system settings):
+
+1. **Local**: `./omecp_config.cfg` (current directory)
+2. **User**: `~/.config/omecp/omecp_config.cfg` (Unix) or `%APPDATA%/omecp/omecp_config.cfg` (Windows)
+3. **System**: `/etc/omecp/omecp_config.cfg` (Unix) or `%PROGRAMDATA%/omecp/omecp_config.cfg` (Windows)
+4. **Built-in defaults**: Used if no configuration file is found
+
+### Key Configuration Options
+
+- **File Logging**: Enable with `file_logging = true` to create debug log files with dynamic names (`omecp_debug_<input_basename>.log`)
+- **Print Level**: Control verbosity (`0=quiet`, `1=normal`, `2=verbose`)
+- **Cleanup Frequency**: Set how often to clean up temporary files during optimization
+- **Preserve Extensions**: Add custom file extensions to preserve during cleanup
+
+### Configuration Display
+
+When OpenMECP starts, it automatically displays:
+
+- The source of configuration (which file was loaded, or built-in defaults)
+- All input parameters with their values
+- All convergence thresholds
+- All configuration file settings
+
+This ensures users always know what settings are being used.
+
 ## Input File Format
 
 The input file consists of several sections marked by `*SECTION` and terminated by `*`.
@@ -303,16 +397,19 @@ H  1.2  0.0  0.5
 | `mult2`   | integer | Spin multiplicity of state 2 | `3`                |
 
 **Note**: method and mem should be specific for Gaussian and Orca. For example: 
+
 - Gaussian: 
-```
-mem = 8GB
-method = n scf(maxcycle=500,xqc) uwb97xd/def2svpp scrf=(smd,solvent=acetonitrile)
-```
+  
+  ```
+  mem = 8GB
+  method = n scf(maxcycle=500,xqc) uwb97xd/def2svpp scrf=(smd,solvent=acetonitrile)
+  ```
 - Orca: 
-```
-memthod = B3LYP SV CPCM(2-octanone) VeryTightSCF --> All keyword after ! in Orca input
-mem = 8000 --> (memory 8000 MB for each core <=> %maxcore 8000)
-```
+  
+  ```
+  memthod = B3LYP SV CPCM(2-octanone) VeryTightSCF --> All keyword after ! in Orca input
+  mem = 8000 --> (memory 8000 MB for each core <=> %maxcore 8000)
+  ```
 
 ### Optional Keywords
 
@@ -349,16 +446,19 @@ The `switch_step` parameter provides full control over the optimizer switching s
 **Three Optimization Modes:**
 
 1. **Hybrid Mode (Default)**: `switch_step = 3`
+   
    - Uses BFGS for the first 3 steps to build curvature information
    - Switches to DIIS (GDIIS or GEDIIS) for faster convergence
    - Recommended for most calculations
 
 2. **DIIS-Only Mode**: `switch_step = 0`
+   
    - Uses DIIS from the first step
    - Faster but may be less stable for difficult cases
    - Requires good initial geometry
 
 3. **BFGS-Only Mode**: `switch_step >= max_steps`
+   
    - Uses only BFGS throughout the optimization
    - Most stable but slower convergence
    - Recommended for very difficult optimizations
@@ -373,6 +473,7 @@ switch_step = 999   # Pure BFGS (most stable)
 ```
 
 **Performance Comparison:**
+
 - BFGS: Baseline convergence rate
 - GDIIS: ~2-3x faster than BFGS
 - GEDIIS: ~2-4x faster than GDIIS (enable with `use_gediis = true`)
@@ -478,68 +579,6 @@ end
 **Output Files**: `.log` and `.engrad` files in `running_dir/` directory
 
 **Checkpoint Files**: `state_A.gbw` (state A), `state_B.gbw` (state B)
-
-### Custom QM Interface
-
-**Supported Methods**: Any QM program with configurable input/output
-
-**Configuration**: JSON configuration file defining input templates and output parsing
-
-**Example**:
-
-```
-program = custom
-custom_interface_file = my_qm_interface.json
-```
-
-**Configuration File** (`my_qm_interface.json`):
-
-```json
-{
-  "name": "My Custom QM Program",
-  "command": "my_qm_exe",
-  "input_template": "{header}\n{geometry}\n{tail}",
-  "output_extension": "out",
-  "energy_parser": {
-    "pattern": "Total Energy:\\s*(-?\\d+\\.\\d+)",
-    "unit_factor": 1.0
-  },
-  "forces_parser": {
-    "pattern": "Forces:\\s*(-?\\d+\\.\\d+)\\s+(-?\\d+\\.\\d+)\\s+(-?\\d+\\.\\d+)"
-  }
-}
-```
-
-**Additional Configuration Options**:
-
-```json
-{
-  "name": "Advanced QM Program",
-  "command": "advanced_qm",
-  "input_template": "$control\n$geometry\n$end\n$tail",
-  "output_extension": "log",
-  "energy_parser": {
-    "pattern": "FINAL ENERGY =\\s*(-?\\d+\\.\\d+)",
-    "unit_factor": 27.2114
-  },
-  "forces_parser": {
-    "pattern": "GRADIENT\\s+X=\\s*(-?\\d+\\.\\d+)\\s+Y=\\s*(-?\\d+\\.\\d+)\\s+Z=\\s*(-?\\d+\\.\\d+)"
-  },
-  "checkpoint_parser": {
-    "pattern": "CHECKPOINT FILE:\\s*(.+)",
-    "extension": "chk"
-  }
-}
-```
-
-**Template Placeholders**:
-
-- `{geometry}`: Replaced with XYZ-format geometry
-- `{header}`: Replaced with state-specific header
-- `{tail}`: Replaced with additional keywords
-- Alternative placeholders: `$control`, `$geometry`, `$end`, `$tail` (program-dependent)
-
-**Output Files**: Files with configured extension in `running_dir/` directory
 
 ## Run Modes
 

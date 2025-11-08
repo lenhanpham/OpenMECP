@@ -4,9 +4,9 @@
 //! program behavior through INI-format configuration files. The system supports
 //! hierarchical configuration with the following precedence:
 //!
-//! 1. Local configuration (`./settings.ini`)
-//! 2. User configuration (`~/.config/omecp/settings.ini`)
-//! 3. System configuration (`/etc/omecp/settings.ini`)
+//! 1. Local configuration (`./omecp_config.cfg`)
+//! 2. User configuration (`~/.config/omecp/omecp_config.cfg`)
+//! 3. System configuration (`/etc/omecp/omecp_config.cfg`)
 //! 4. Built-in defaults
 //!
 //! # Configuration File Format
@@ -24,11 +24,10 @@
 //! [general]
 //! max_memory = 4GB
 //! default_nprocs = 4
-//! temp_directory = /tmp/omecp
 //!
 //! [logging]
 //! level = info
-//! file = omecp.log
+//! file_logging = false
 //! ```
 //!
 //! # Usage
@@ -76,6 +75,8 @@ pub struct Settings {
     pub general: GeneralSettings,
     /// Logging configuration
     pub logging: LoggingSettings,
+    /// Cleanup configuration
+    pub cleanup: CleanupSettings,
 }
 
 impl Default for Settings {
@@ -84,6 +85,7 @@ impl Default for Settings {
             extensions: ExtensionSettings::default(),
             general: GeneralSettings::default(),
             logging: LoggingSettings::default(),
+            cleanup: CleanupSettings::default(),
         }
     }
 }
@@ -122,8 +124,6 @@ pub struct GeneralSettings {
     pub max_memory: String,
     /// Default number of processors (default: 4)
     pub default_nprocs: u32,
-    /// Temporary directory for calculations (default: "/tmp/omecp")
-    pub temp_directory: String,
     /// Print level for file operations and verbose output (default: 0)
     /// 0 = quiet (minimal output), 1 = normal, 2 = verbose (show all file operations)
     pub print_level: u32,
@@ -134,7 +134,6 @@ impl Default for GeneralSettings {
         Self {
             max_memory: "4GB".to_string(),
             default_nprocs: 4,
-            temp_directory: "/tmp/omecp".to_string(),
             print_level: 0, // Default to quiet mode
         }
     }
@@ -145,15 +144,45 @@ impl Default for GeneralSettings {
 pub struct LoggingSettings {
     /// Log level (default: "info")
     pub level: String,
-    /// Log file path (default: "omecp.log")
-    pub file: String,
+    /// Enable file-based logging (default: false)
+    /// When enabled, creates omecp_debug_<input_basename>.log with detailed debug info
+    pub file_logging: bool,
 }
 
 impl Default for LoggingSettings {
     fn default() -> Self {
         Self {
             level: "info".to_string(),
-            file: "omecp.log".to_string(),
+            file_logging: false,
+        }
+    }
+}
+
+/// Cleanup configuration settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanupSettings {
+    /// Enable or disable automatic cleanup (default: true)
+    pub enabled: bool,
+    /// Additional file extensions to preserve (comma-separated, optional)
+    /// These are extensions beyond the program's default output extension
+    /// Example: "xyz,backup,tmp"
+    pub preserve_extensions: Vec<String>,
+    /// Verbosity level for cleanup operations (default: 1)
+    /// 0 = quiet, 1 = normal, 2 = verbose
+    pub verbose: u32,
+    /// Perform cleanup every N optimization steps (default: 5)
+    /// Set to 0 to disable periodic cleanup
+    /// Example: 5 means cleanup after steps 5, 10, 15, etc.
+    pub cleanup_frequency: u32,
+}
+
+impl Default for CleanupSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            preserve_extensions: Vec::new(),
+            verbose: 1,
+            cleanup_frequency: 5,
         }
     }
 }
@@ -168,9 +197,9 @@ impl SettingsManager {
     /// Loads configuration from available configuration files.
     ///
     /// Searches for configuration files in the following order:
-    /// 1. `./settings.ini` (current working directory)
-    /// 2. `~/.config/omecp/settings.ini` (user configuration)
-    /// 3. `/etc/omecp/settings.ini` (system configuration)
+    /// 1. `./omecp_config.cfg` (current working directory)
+    /// 2. `~/.config/omecp/omecp_config.cfg` (user configuration)
+    /// 3. `/etc/omecp/omecp_config.cfg` (system configuration)
     /// 4. Built-in defaults (fallback)
     ///
     /// # Returns
@@ -199,6 +228,15 @@ impl SettingsManager {
     /// Returns the source of the loaded configuration.
     pub fn config_source(&self) -> &str {
         &self.config_source
+    }
+
+    /// Gets a reference to the settings.
+    ///
+    /// # Returns
+    ///
+    /// Returns a reference to the internal Settings struct
+    pub fn settings(&self) -> &Settings {
+        &self.settings
     }
 
     /// Gets the output file extension for the specified QM program.
@@ -246,6 +284,11 @@ impl SettingsManager {
         &self.settings.extensions
     }
 
+    /// Gets the cleanup settings.
+    pub fn cleanup(&self) -> &CleanupSettings {
+        &self.settings.cleanup
+    }
+
     /// Loads configuration from files with hierarchical precedence.
     fn load_from_files() -> Result<(Settings, String), ConfigError> {
         let mut settings = Settings::default();
@@ -284,7 +327,7 @@ impl SettingsManager {
         }
 
         // Try to load local configuration (overrides user)
-        let local_path = PathBuf::from("settings.ini");
+        let local_path = PathBuf::from("omecp_config.cfg");
         if local_path.exists() {
             match Self::load_config(&local_path) {
                 Ok(local_config) => {
@@ -325,6 +368,11 @@ impl SettingsManager {
             settings.logging = Self::parse_logging(logging_map)?;
         }
 
+        // Load cleanup section
+        if let Some(cleanup_map) = ini.get_map_ref().get("cleanup") {
+            settings.cleanup = Self::parse_cleanup(cleanup_map)?;
+        }
+
         Ok(settings)
     }
 
@@ -362,9 +410,6 @@ impl SettingsManager {
             general.default_nprocs = default_nprocs.parse()
                 .map_err(|_| ConfigError::InvalidValue(format!("Invalid default_nprocs: {}", default_nprocs)))?;
         }
-        if let Some(Some(temp_directory)) = section.get("temp_directory") {
-            general.temp_directory = temp_directory.clone();
-        }
         if let Some(Some(print_level)) = section.get("print_level") {
             general.print_level = print_level.parse()
                 .map_err(|_| ConfigError::InvalidValue(format!("Invalid print_level: {}", print_level)))?;
@@ -380,25 +425,57 @@ impl SettingsManager {
         if let Some(Some(level)) = section.get("level") {
             logging.level = level.clone();
         }
-        if let Some(Some(file)) = section.get("file") {
-            logging.file = file.clone();
+        if let Some(Some(file_logging)) = section.get("file_logging") {
+            logging.file_logging = file_logging.parse()
+                .map_err(|_| ConfigError::InvalidValue(format!("Invalid file_logging value: {}", file_logging)))?;
         }
 
         Ok(logging)
+    }
+
+    /// Parses the cleanup section from INI configuration.
+    fn parse_cleanup(section: &std::collections::HashMap<String, Option<String>>) -> Result<CleanupSettings, ConfigError> {
+        let mut cleanup = CleanupSettings::default();
+
+        if let Some(Some(enabled)) = section.get("enabled") {
+            cleanup.enabled = enabled.parse()
+                .map_err(|_| ConfigError::InvalidValue(format!("Invalid enabled value: {}", enabled)))?;
+        }
+
+        if let Some(Some(preserve_extensions)) = section.get("preserve_extensions") {
+            // Parse comma-separated extensions
+            cleanup.preserve_extensions = preserve_extensions
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
+
+        if let Some(Some(verbose)) = section.get("verbose") {
+            cleanup.verbose = verbose.parse()
+                .map_err(|_| ConfigError::InvalidValue(format!("Invalid verbose value: {}", verbose)))?;
+        }
+
+        if let Some(Some(cleanup_frequency)) = section.get("cleanup_frequency") {
+            cleanup.cleanup_frequency = cleanup_frequency.parse()
+                .map_err(|_| ConfigError::InvalidValue(format!("Invalid cleanup_frequency value: {}", cleanup_frequency)))?;
+        }
+
+        Ok(cleanup)
     }
 
     /// Gets the system configuration file path.
     fn get_system_config_path() -> Option<PathBuf> {
         #[cfg(unix)]
         {
-            Some(PathBuf::from("/etc/omecp/settings.ini"))
+            Some(PathBuf::from("/etc/omecp/omecp_config.cfg"))
         }
         #[cfg(windows)]
         {
             // On Windows, use ProgramData directory
             std::env::var("PROGRAMDATA")
                 .ok()
-                .map(|pd| PathBuf::from(pd).join("omecp").join("settings.ini"))
+                .map(|pd| PathBuf::from(pd).join("omecp").join("omecp_config.cfg"))
         }
     }
 
@@ -408,19 +485,19 @@ impl SettingsManager {
         {
             std::env::var("HOME")
                 .ok()
-                .map(|home| PathBuf::from(home).join(".config").join("omecp").join("settings.ini"))
+                .map(|home| PathBuf::from(home).join(".config").join("omecp").join("omecp_config.cfg"))
         }
         #[cfg(windows)]
         {
             std::env::var("APPDATA")
                 .ok()
-                .map(|appdata| PathBuf::from(appdata).join("omecp").join("settings.ini"))
+                .map(|appdata| PathBuf::from(appdata).join("omecp").join("omecp_config.cfg"))
         }
     }
 }
 
 impl SettingsManager {
-    /// Creates a default settings.ini file with all available configuration options.
+    /// Creates a default omecp_config.cfg file with all available configuration options.
     ///
     /// This function generates a comprehensive configuration file template with:
     /// - All available configuration sections and parameters
@@ -430,7 +507,7 @@ impl SettingsManager {
     ///
     /// # Arguments
     ///
-    /// * `path` - Path where the settings.ini file should be created
+    /// * `path` - Path where the omecp_config.cfg file should be created
     ///
     /// # Returns
     ///
@@ -442,7 +519,7 @@ impl SettingsManager {
     /// use omecp::settings::SettingsManager;
     /// use std::path::Path;
     ///
-    /// SettingsManager::create_template(Path::new("settings.ini"))?;
+    /// SettingsManager::create_template(Path::new("omecp_config.cfg"))?;
     /// ```
     pub fn create_template(path: &Path) -> Result<(), ConfigError> {
         let template_content = Self::generate_template_content();
@@ -451,7 +528,7 @@ impl SettingsManager {
         Ok(())
     }
 
-    /// Generates the content for a settings.ini template file.
+    /// Generates the content for a omecp_config.cfg template file.
     fn generate_template_content() -> String {
         format!(
 r#"# OpenMECP Configuration File
@@ -459,9 +536,9 @@ r#"# OpenMECP Configuration File
 # This file allows you to customize OpenMECP behavior without modifying source code.
 # Configuration files are loaded in hierarchical order with local settings taking precedence:
 #
-# 1. Current working directory (./settings.ini) - highest priority
-# 2. User config directory (~/.config/omecp/settings.ini on Unix, %APPDATA%/omecp/settings.ini on Windows)
-# 3. System config directory (/etc/omecp/settings.ini on Unix, %PROGRAMDATA%/omecp/settings.ini on Windows)
+# 1. Current working directory (./omecp_config.cfg) - highest priority
+# 2. User config directory (~/.config/omecp/omecp_config.cfg on Unix, %APPDATA%/omecp/omecp_config.cfg on Windows)
+# 3. System config directory (/etc/omecp/omecp_config.cfg on Unix, %PROGRAMDATA%/omecp/omecp_config.cfg on Windows)
 # 4. Built-in defaults (fallback)
 #
 # Any missing sections or values will use the built-in defaults shown below.
@@ -496,10 +573,6 @@ max_memory = {}
 # Should match your system's CPU core count for optimal performance
 default_nprocs = {}
 
-# Temporary directory for calculations (default: /tmp/omecp)
-# Make sure this directory exists and has sufficient space
-temp_directory = {}
-
 # Print level for file operations and verbose output (default: 0)
 # 0 = quiet (minimal output, recommended for clean logs)
 # 1 = normal (standard output with key information)
@@ -516,9 +589,38 @@ print_level = {}
 # - error: Only error messages
 level = {}
 
-# Log file path (default: omecp.log)
-# Use absolute path or relative to working directory
-file = {}
+# Enable file-based logging (default: false)
+# When enabled, creates omecp_debug_<input_basename>.log with detailed debug info
+# Log messages go to file only (not console) for cleaner output
+# Useful for debugging and keeping detailed records of calculations
+file_logging = {}
+
+[cleanup]
+# Automatic file cleanup configuration
+# The cleanup system automatically removes temporary files after QM calculations
+# while preserving important output files (.out, .gbw, .engrad, etc.)
+
+# Enable or disable automatic cleanup (default: true)
+# Set to false to disable all automatic cleanup
+enabled = {}
+
+# Additional file extensions to preserve (comma-separated, optional)
+# These are extensions beyond the program's default output extension
+# Example: preserve_extensions = xyz,backup,important
+# Leave empty to only preserve program default extensions
+preserve_extensions = {}
+
+# Verbose logging for cleanup operations (default: 1)
+# 0 = quiet (minimal output)
+# 1 = normal (show cleanup summary)
+# 2 = verbose (show each file that is cleaned or preserved)
+verbose = {}
+
+# Perform cleanup every N optimization steps (default: 5)
+# Set to 0 to disable periodic cleanup during optimization
+# Example: 5 means cleanup after steps 5, 10, 15, etc.
+# This helps prevent file accumulation during long MECP optimization runs
+cleanup_frequency = {}
 
 # Example custom configurations:
 #
@@ -531,10 +633,10 @@ file = {}
 # max_memory = 32GB
 # default_nprocs = 16
 #
-# For debugging calculations:
+# For debugging calculations with file logging:
 # [logging]
 # level = debug
-# file = debug.log
+# file_logging = true
 #
 # For custom XTB output format:
 # [extensions]
@@ -543,6 +645,14 @@ file = {}
 # For BAGEL with different output format:
 # [extensions]
 # bagel = out
+#
+# To disable automatic cleanup:
+# [cleanup]
+# enabled = false
+#
+# To preserve additional file types:
+# [cleanup]
+# preserve_extensions = xyz,backup
 "#,
             // Extension defaults
             ExtensionSettings::default().gaussian,
@@ -553,11 +663,16 @@ file = {}
             // General defaults
             GeneralSettings::default().max_memory,
             GeneralSettings::default().default_nprocs,
-            GeneralSettings::default().temp_directory,
             GeneralSettings::default().print_level,
             // Logging defaults
             LoggingSettings::default().level,
-            LoggingSettings::default().file,
+            LoggingSettings::default().file_logging,
+            // Cleanup defaults
+            CleanupSettings::default().enabled,
+            // preserve_extensions is a Vec, convert to comma-separated string
+            CleanupSettings::default().preserve_extensions.join(","),
+            CleanupSettings::default().verbose,
+            CleanupSettings::default().cleanup_frequency,
         )
     }
 }
@@ -589,9 +704,6 @@ impl Settings {
         if other.general.default_nprocs > 0 {
             self.general.default_nprocs = other.general.default_nprocs;
         }
-        if !other.general.temp_directory.is_empty() {
-            self.general.temp_directory = other.general.temp_directory;
-        }
         if other.general.print_level > 0 {
             self.general.print_level = other.general.print_level;
         }
@@ -600,8 +712,15 @@ impl Settings {
         if !other.logging.level.is_empty() {
             self.logging.level = other.logging.level;
         }
-        if !other.logging.file.is_empty() {
-            self.logging.file = other.logging.file;
+        self.logging.file_logging = other.logging.file_logging;
+
+        // Merge cleanup settings
+        self.cleanup.enabled = other.cleanup.enabled;
+        if !other.cleanup.preserve_extensions.is_empty() {
+            self.cleanup.preserve_extensions = other.cleanup.preserve_extensions.clone();
+        }
+        if other.cleanup.verbose > 0 {
+            self.cleanup.verbose = other.cleanup.verbose;
         }
     }
 }

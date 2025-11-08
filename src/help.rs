@@ -605,6 +605,24 @@ pub const FEATURES: &[FeatureInfo] = &[
         example: Some("checkpoint = \"restart.chk\"\nrestart = true"),
     },
     FeatureInfo {
+        name: "Configuration File (omecp_config.cfg)",
+        description: "Hierarchical configuration system with local/user/system precedence",
+        usage: "Create template: omecp ci omecp_config.cfg",
+        example: Some("# See omecp_config.cfg template for all options"),
+    },
+    FeatureInfo {
+        name: "Parameter Display",
+        description: "Automatic display of all configuration parameters and settings source at startup",
+        usage: "Enabled by default, shows which config file is loaded",
+        example: Some("Displays: source file, all parameters, thresholds, settings"),
+    },
+    FeatureInfo {
+        name: "Debug Logging",
+        description: "Optional file-based debug logging with dynamic filenames",
+        usage: "Enable in omecp_config.cfg: file_logging = true",
+        example: Some("Creates: omecp_debug_<input_basename>.log"),
+    },
+    FeatureInfo {
         name: "BFGS Optimizer",
         description: "Quasi-Newton method used for first 3 steps",
         usage: "Used automatically for initial steps",
@@ -696,8 +714,9 @@ pub fn print_global_help() {
     println!("                        Create a template input file from a geometry file");
     println!("                        Supported formats: .xyz, .log, .gjf");
     println!();
-    println!("    ci settings.ini");
-    println!("                        Create a settings template file for configuration");
+    println!("    ci omecp_config.cfg");
+    println!("                        Create a configuration template file");
+    println!("                        See 'Configuration File' section below");
     println!();
     println!("    <input_file>");
     println!("                        Run MECP optimization using the input file");
@@ -705,11 +724,21 @@ pub fn print_global_help() {
     println!("OPTIONS:");
     println!("    -h, --help [topic]   Show help. Topics: keywords, methods, features, examples");
     println!();
+    println!("CONFIGURATION FILE:");
+    println!("    OpenMECP uses 'omecp_config.cfg' for program configuration.");
+    println!("    Create template:     omecp ci omecp_config.cfg");
+    println!("    Supported locations:");
+    println!("      - ./omecp_config.cfg (local, highest priority)");
+    println!("      - ~/.config/omecp/omecp_config.cfg (user)");
+    println!("      - /etc/omecp/omecp_config.cfg (system)");
+    println!("    Features: file extensions, logging, cleanup, debug output");
+    println!("    Parameters are automatically displayed at startup");
+    println!();
     println!("EXAMPLES:");
     println!("    Create template:     omecp ci molecule.xyz");
     println!("    Create with name:    omecp ci molecule.xyz custom.inp");
     println!("    Run MECP:            omecp input.inp > output.log");
-    println!("    Create settings:     omecp ci settings.ini");
+    println!("    Create settings:     omecp ci omecp_config.cfg");
     println!("    View keywords:       omecp --help keywords");
     println!("    View methods:        omecp --help methods");
     println!("    View features:       omecp --help features");

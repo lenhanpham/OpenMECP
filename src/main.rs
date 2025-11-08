@@ -116,7 +116,12 @@ fn get_input_file_extension(program: config::QMProgram) -> &'static str {
 /// }
 /// ```
 fn main() {
-    env_logger::init();
+    // Initialize console logger for all commands
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Info)
+        .target(env_logger::Target::Stdout)
+        .format_timestamp_millis()
+        .init();
 
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -140,7 +145,7 @@ fn main() {
                     args[0]
                 );
                 eprintln!(
-                    "  {} ci settings.ini                   - Create settings template",
+                    "  {} ci omecp_config.cfg               - Create settings template",
                     args[0]
                 );
                 process::exit(1);
@@ -149,13 +154,13 @@ fn main() {
             let file_arg = &args[2];
 
             // Check if user wants to create settings template
-            if file_arg == "settings.ini" {
+            if file_arg == "omecp_config.cfg" {
                 match run_create_settings_template() {
                     Ok(()) => {
                         println!("✓ Settings template created successfully!");
-                        println!("  Output file: settings.ini");
+                        println!("  Output file: omecp_config.cfg");
                         println!("\nNext steps:");
-                        println!("  1. Review and edit the settings.ini file");
+                        println!("  1. Review and edit the omecp_config.cfg file");
                         println!("  2. Customize file extensions and other parameters as needed");
                         println!("  3. The settings will be automatically loaded by OpenMECP");
                     }
@@ -299,7 +304,7 @@ fn print_usage(program_name: &str) {
     eprintln!("  {} ci <geometry_file> [output_file]", program_name);
     eprintln!("                    Create a template input file from a geometry file");
     eprintln!();
-    eprintln!("  {} ci settings.ini", program_name);
+    eprintln!("  {} ci omecp_config.cfg", program_name);
     eprintln!("                    Create a settings template file for configuration");
     eprintln!();
     eprintln!("  {} <input_file>", program_name);
@@ -313,7 +318,7 @@ fn print_usage(program_name: &str) {
     eprintln!("Examples:");
     eprintln!("  {} ci molecule.xyz", program_name);
     eprintln!("  {} ci molecule.xyz custom.inp", program_name);
-    eprintln!("  {} ci settings.ini", program_name);
+    eprintln!("  {} ci omecp_config.cfg", program_name);
     eprintln!("  {} my_calculation.inp", program_name);
 }
 
@@ -401,7 +406,7 @@ where
     Ok(output_path)
 }
 
-/// Creates a settings.ini template file with all available configuration options.
+/// Creates a omecp_config.cfg template file with all available configuration options.
 ///
 /// This function generates a comprehensive configuration file template that includes:
 /// - All available configuration sections (extensions, general, logging)
@@ -409,7 +414,7 @@ where
 /// - Detailed comments explaining each option
 /// - Examples of common customizations
 ///
-/// The template is created in the current working directory as 'settings.ini'.
+/// The template is created in the current working directory as 'omecp_config.cfg'.
 ///
 /// # Returns
 ///
@@ -418,18 +423,18 @@ where
 /// # Errors
 ///
 /// Returns an error if:
-/// - The settings.ini file already exists (to prevent accidental overwrite)
+/// - The omecp_config.cfg file already exists (to prevent accidental overwrite)
 /// - File cannot be written due to permissions or disk space
 /// - Template generation fails
 fn run_create_settings_template() -> Result<(), Box<dyn std::error::Error>> {
     use omecp::settings::SettingsManager;
 
-    let settings_path = Path::new("settings.ini");
+    let settings_path = Path::new("omecp_config.cfg");
 
     // Check if file already exists to prevent accidental overwrite
     if settings_path.exists() {
         return Err(
-            "settings.ini already exists. Please remove it first or choose a different location."
+            "omecp_config.cfg already exists. Please remove it first or choose a different location."
                 .into(),
         );
     }
@@ -577,21 +582,253 @@ fn print_convergence_details(
     println!();
 }
 
+/// Prints all configuration parameters and settings information to the output.
+///
+/// This function displays:
+/// 1. Settings file location and source (if loaded)
+/// 2. All input configuration parameters
+/// 3. Settings from omecp_config.cfg
+/// 4. Debug log file information (if file logging is enabled)
+///
+/// This helps users understand what parameters are being used and where they come from.
+fn print_configuration(
+    input_config: &config::Config,
+    settings_manager: &Option<omecp::settings::SettingsManager>,
+    debug_log_file: Option<&str>,
+) {
+    println!("{}", "=".repeat(80));
+    println!("CONFIGURATION AND SETTINGS");
+    println!("{}", "=".repeat(80));
+    println!();
+
+    // Print settings file information if loaded
+    if let Some(ref settings) = settings_manager {
+        println!("Settings Configuration:");
+        println!("  Source: {}", settings.config_source());
+        println!();
+    }
+
+    // Print input file configuration parameters
+    println!("Input File Parameters:");
+    println!("  Program:                    {:?}", input_config.program);
+    println!("  Method:                     {}", input_config.method);
+    println!("  Memory:                     {}", input_config.mem);
+    println!("  Processors:                 {}", input_config.nprocs);
+    println!("  Charge (State 1):           {}", input_config.charge1);
+    println!("  Charge (State 2):           {}", input_config.charge2);
+    println!("  Multiplicity (State 1):     {}", input_config.mult1);
+    println!("  Multiplicity (State 2):     {}", input_config.mult2);
+    println!("  Run Mode:                   {:?}", input_config.run_mode);
+
+    if !input_config.td1.is_empty() {
+        println!("  TD-DFT (State 1):           {}", input_config.td1);
+    }
+    if !input_config.td2.is_empty() {
+        println!("  TD-DFT (State 2):           {}", input_config.td2);
+    }
+
+    println!("  Max Steps:                  {}", input_config.max_steps);
+    println!(
+        "  Max Step Size (Bohr):       {}",
+        input_config.max_step_size
+    );
+    println!("  Use GEDIIS:                 {}", input_config.use_gediis);
+    println!("  Switch Step:                {}", input_config.switch_step);
+    println!("  Restart Mode:               {}", input_config.restart);
+
+    if !input_config.bagel_model.is_empty() {
+        println!("  BAGEL Model:                {}", input_config.bagel_model);
+    }
+
+    if !input_config.custom_interface_file.is_empty() {
+        println!(
+            "  Custom Interface File:      {}",
+            input_config.custom_interface_file
+        );
+    }
+
+    if input_config.state1 > 0 || input_config.state2 > 0 {
+        println!("  TD-DFT State (State 1):     {}", input_config.state1);
+        println!("  TD-DFT State (State 2):     {}", input_config.state2);
+    }
+
+    if input_config.is_oniom {
+        println!(
+            "  ONIOM Layer Info:           {:?}",
+            input_config.oniom_layer_info.join(",")
+        );
+        println!(
+            "  ONIOM Charge/Mult 1:        {}",
+            input_config.charge_and_mult_oniom1
+        );
+        println!(
+            "  ONIOM Charge/Mult 2:        {}",
+            input_config.charge_and_mult_oniom2
+        );
+    }
+
+    if !input_config.drive_type.is_empty() {
+        println!("  Drive Type:                 {}", input_config.drive_type);
+        println!(
+            "  Drive Atoms:                {:?}",
+            input_config.drive_atoms
+        );
+        println!("  Drive Start:                {}", input_config.drive_start);
+        println!("  Drive End:                  {}", input_config.drive_end);
+        println!("  Drive Steps:                {}", input_config.drive_steps);
+    }
+
+    // Print thresholds
+    println!("\nConvergence Thresholds:");
+    println!(
+        "  Energy Difference (ΔE):     {:>12.8} hartree",
+        input_config.thresholds.de
+    );
+    println!(
+        "  RMS Gradient:               {:>12.8} hartree/bohr",
+        input_config.thresholds.rms_g
+    );
+    println!(
+        "  Max Gradient:               {:>12.8} hartree/bohr",
+        input_config.thresholds.max_g
+    );
+    println!(
+        "  RMS Displacement:           {:>12.8} bohr",
+        input_config.thresholds.rms
+    );
+    println!(
+        "  Max Displacement:           {:>12.8} bohr",
+        input_config.thresholds.max_dis
+    );
+
+    // Print settings from omecp_config.cfg if loaded
+    if let Some(ref settings) = settings_manager {
+        println!("\nConfiguration File Settings (omecp_config.cfg):");
+
+        // Print file extensions
+        println!("  Output File Extensions:");
+        println!(
+            "    Gaussian:                  {}",
+            settings.extensions().gaussian
+        );
+        println!(
+            "    ORCA:                      {}",
+            settings.extensions().orca
+        );
+        //println!("    XTB:                       {}", settings.extensions().xtb);
+        //println!("    BAGEL:                     {}", settings.extensions().bagel);
+        //println!("    Custom:                    {}", settings.extensions().custom);
+
+        // Print general settings
+        println!("  General Settings:");
+        println!(
+            "    Max Memory:                {}",
+            settings.general().max_memory
+        );
+        println!(
+            "    Default Processors:        {}",
+            settings.general().default_nprocs
+        );
+        println!(
+            "    Print Level:               {}",
+            settings.general().print_level
+        );
+
+        // Print cleanup settings
+        println!("  Cleanup Settings:");
+        println!(
+            "    Enabled:                   {}",
+            settings.cleanup().enabled
+        );
+        println!(
+            "    Verbose:                   {}",
+            settings.cleanup().verbose
+        );
+        println!(
+            "    Cleanup Frequency:         {} steps",
+            settings.cleanup().cleanup_frequency
+        );
+        if !settings.cleanup().preserve_extensions.is_empty() {
+            println!(
+                "    Preserve Extensions:       {:?}",
+                settings.cleanup().preserve_extensions
+            );
+        }
+
+        // Print logging settings
+        println!("  Logging Settings:");
+        println!(
+            "    Level:                     {}",
+            settings.logging().level
+        );
+        println!(
+            "    File Logging Enabled:      {}",
+            settings.logging().file_logging
+        );
+        if let Some(log_file) = debug_log_file {
+            println!("    Debug Log File:            {}", log_file);
+        }
+    }
+
+    println!();
+    println!("{}", "=".repeat(80));
+    println!();
+}
+
 fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    println!("**** MECP in Rust****");
-    println!("****By Le Nhan Pham****\n");
+    println!("**** OpenMECP: Minimum Energy Crossing Point Optimizer****");
+    println!("     Version {}  Release date: 2025", env!("CARGO_PKG_VERSION"));
+    println!("               ****Developer Le Nhan Pham****             ");
+    println!("           https://github.com/lenhanpham/OpenMECP        \n");
 
     // Parse input
     let input_data = parser::parse_input(input_path)?;
 
-    // Load settings to get print_level
-    let print_level = match omecp::settings::SettingsManager::load() {
-        Ok(s) => s.general().print_level,
-        Err(_) => {
-            // If settings can't be loaded, use default (quiet mode)
-            0
-        }
+    // Load settings (for print_level, cleanup, and parameter display)
+    let settings_manager = omecp::settings::SettingsManager::load().ok();
+
+    let print_level = if let Some(settings) = settings_manager.as_ref() {
+        settings.general().print_level
+    } else {
+        // If settings can't be loaded, use default (quiet mode)
+        0
     };
+
+    // Generate debug log filename if file logging is enabled
+    let debug_log_file = if let Some(settings) = settings_manager.as_ref() {
+        if settings.logging().file_logging {
+            let input_stem = input_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("job");
+            Some(format!("omecp_debug_{}.log", input_stem))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Set up file-based logging if enabled in settings
+    if let Some(settings) = settings_manager.as_ref() {
+        if let Some(log_file) = debug_log_file.as_ref() {
+            if settings.logging().file_logging {
+                // Write a startup message to the debug log file
+                use std::io::Write;
+                let mut file = std::fs::File::create(log_file)
+                    .map_err(|e| format!("Failed to create log file {}: {}", log_file, e))?;
+                writeln!(file, "OpenMECP debug log started")
+                    .map_err(|e| format!("Failed to write to log file: {}", e))?;
+            }
+        }
+    }
+
+    // Print all configuration and settings information
+    print_configuration(
+        &input_data.config,
+        &settings_manager,
+        debug_log_file.as_deref(),
+    );
 
     // Extract directory name from input file (e.g., "compound_x.inp" -> "compound_x")
     let job_dir = input_path
@@ -604,6 +841,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         "Program: {:?}, Mode: {:?}",
         input_data.config.program, input_data.config.run_mode
     );
+    println!();
 
     // Validate run mode compatibility (Task 7.1)
     if let Err(e) = validation::validate_run_mode_compatibility(&input_data.config) {
@@ -613,6 +851,22 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     // Provide user guidance and warnings (Task 7.2)
     validation::provide_user_guidance(&input_data.config);
+
+    // Create cleanup manager if settings were loaded
+    let cleanup_manager = if let Some(settings) = settings_manager.as_ref() {
+        omecp::cleanup::CleanupManager::new(
+            omecp::cleanup::CleanupConfig::from_settings_manager(
+                settings,
+                input_data.config.program,
+            ),
+            input_data.config.program,
+        )
+    } else {
+        omecp::cleanup::CleanupManager::new(
+            omecp::cleanup::CleanupConfig::default(),
+            input_data.config.program,
+        )
+    };
 
     // Create QM interface
     let qm: Box<dyn qm_interface::QMInterface> = match input_data.config.program {
@@ -779,14 +1033,14 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         println!("Running pre-point calculation for state B...");
         let pre_b_result = qm.run_calculation(Path::new(&pre_b_path));
         if let Err(e) = &pre_b_result {
-            println!("⚠ Warning: Pre-point calculation for state B failed: {}", e);
+            println!("  Warning: Pre-point calculation for state B failed: {}", e);
             println!("  This is expected if the QM program is not installed");
         }
 
         println!("Running pre-point calculation for state A...");
         let pre_a_result = qm.run_calculation(Path::new(&pre_a_path));
         if let Err(e) = &pre_a_result {
-            println!("⚠ Warning: Pre-point calculation for state A failed: {}", e);
+            println!(" Warning: Pre-point calculation for state A failed: {}", e);
             println!("  This is expected if the QM program is not installed");
         }
 
@@ -795,7 +1049,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         if pre_calculations_successful {
             println!("✓ Pre-point calculations completed successfully");
         } else {
-            println!("⚠ Pre-point calculations failed - continuing without checkpoint files");
+            println!("  Pre-point calculations failed - continuing without checkpoint files");
         }
 
         // Check checkpoint files exactly like Python MECP.py
@@ -1252,6 +1506,12 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         if conv.is_converged() {
             println!("\nConverged at step {}", step + 1);
             io::write_xyz(&geometry, Path::new("final.xyz"))?;
+
+            // Clean up temporary files after successful convergence
+            if let Err(e) = cleanup_manager.cleanup_directory(Path::new(job_dir)) {
+                println!("Warning: Failed to clean up temporary files: {}", e);
+            }
+
             return Ok(());
         }
 
@@ -1275,7 +1535,24 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             checkpoint::Checkpoint::new(step, &geometry, &x_new, &hessian, &opt_state, &config);
         checkpoint.save(Path::new(&checkpoint_filename))?;
 
+        // Periodic cleanup during optimization to prevent file accumulation
+        let cleanup_freq = cleanup_manager.config().cleanup_frequency();
+        if cleanup_freq > 0 && (step + 1) % cleanup_freq as usize == 0 {
+            println!(
+                "Performing periodic cleanup (every {} steps)...",
+                cleanup_freq
+            );
+            if let Err(e) = cleanup_manager.cleanup_directory(Path::new(job_dir)) {
+                println!("Warning: Failed to clean up temporary files: {}", e);
+            }
+        }
+
         x_old = x_new;
+    }
+
+    // Clean up temporary files even if optimization didn't converge
+    if let Err(e) = cleanup_manager.cleanup_directory(Path::new(job_dir)) {
+        println!("Warning: Failed to clean up temporary files: {}", e);
     }
 
     Err("Maximum steps exceeded".into())
@@ -1630,6 +1907,7 @@ fn create_scan_constraint(scan_type: &config::ScanType, value: f64) -> constrain
 /// # Returns
 ///
 /// Returns a tuple of (converged_step, final_geometry) on successful convergence.
+#[allow(clippy::too_many_arguments)]
 fn execute_pes_scan_point(
     config: &config::Config,
     geometry: &mut geometry::Geometry,
@@ -1640,8 +1918,14 @@ fn execute_pes_scan_point(
     qm: &dyn qm_interface::QMInterface,
     job_dir: &str,
 ) -> Result<(usize, geometry::Geometry), Box<dyn std::error::Error>> {
-    // Use the existing run_single_optimization function
-    // This handles the complete MECP optimization with constraints
+    // Delegate the actual work to the single-optimization routine which performs
+    // the full constrained MECP optimization. This keeps logic centralized.
+    //
+    // The clippy warning about too many arguments is suppressed for this wrapper
+    // because callers pass the same separate pieces of data that map naturally
+    // to the underlying optimization routine. Grouping these would require
+    // broader changes across call sites; suppressing the lint here is the
+    // minimal, local fix to address the diagnostics.
     run_single_optimization(
         config,
         geometry,
@@ -1653,8 +1937,11 @@ fn execute_pes_scan_point(
         job_dir,
     )?;
 
-    // For now, return a dummy converged step and the final geometry
-    // In a full implementation, this would track the actual convergence step
+    // The single-optimization routine returns () on success. It performs the
+    // full optimization and writes outputs (including any checkpoint files).
+    // For compatibility with the scan loop we return a conservative converged
+    // step value. If more detailed step information is needed in future, the
+    // single-optimization interface should be extended to report it.
     Ok((1, geometry.clone()))
 }
 
@@ -1858,6 +2145,7 @@ fn build_raw_program_header(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_single_optimization(
     config: &config::Config,
     geometry: &mut geometry::Geometry,
@@ -2113,10 +2401,26 @@ fn run_single_optimization(
             state2_new.energy,
             &disp,
             &grad_new,
-            &config,
+            config,
         );
 
         if conv.is_converged() {
+            // Clean up temporary files after successful convergence
+            let settings_manager = omecp::settings::SettingsManager::load().ok();
+            let cleanup_manager = if let Some(ref settings) = settings_manager {
+                omecp::cleanup::CleanupManager::new(
+                    omecp::cleanup::CleanupConfig::from_settings_manager(settings, config.program),
+                    config.program,
+                )
+            } else {
+                omecp::cleanup::CleanupManager::new(
+                    omecp::cleanup::CleanupConfig::default(),
+                    config.program,
+                )
+            };
+            if let Err(e) = cleanup_manager.cleanup_directory(Path::new(job_dir)) {
+                println!("Warning: Failed to clean up temporary files: {}", e);
+            }
             return Ok(());
         }
 
@@ -2866,17 +3170,20 @@ fn write_bagel_input(
 ///
 /// Returns a `String` containing the JSON-formatted geometry.
 fn geometry_to_json(elements: &[String], geometry: &geometry::Geometry) -> String {
+    // Use iterator with enumerate to satisfy clippy's needless_range_loop diagnostic.
+    // Ensure we only iterate over the minimum of provided element labels and geometry atoms.
+    let n = std::cmp::min(geometry.num_atoms, elements.len());
     let mut result = String::from("\"geometry\" : [\n");
 
-    for i in 0..geometry.num_atoms {
+    for (i, elem) in elements.iter().enumerate().take(n) {
         let coords = geometry.get_atom_coords(i);
         result.push_str(&format!(
             "{{ \"atom\" : \"{}\", \"xyz\" : [ {:.6}, {:.6}, {:.6} ]}}",
-            elements[i], coords[0], coords[1], coords[2]
+            elem, coords[0], coords[1], coords[2]
         ));
 
         // Add comma for all but the last atom
-        if i != geometry.num_atoms - 1 {
+        if i != n - 1 {
             result.push(',');
         }
         result.push('\n');
@@ -2997,8 +3304,13 @@ fn run_restart(
     // Load checkpoint with dynamic filename based on input file
     let checkpoint_filename = format!("{}.json", job_dir);
     let checkpoint_path = Path::new(&checkpoint_filename);
-    let (step, mut geometry, x_old, hessian, mut opt_state, config) =
-        checkpoint::Checkpoint::load(checkpoint_path)?;
+    let checkpoint_load = checkpoint::Checkpoint::load(checkpoint_path)?;
+    let step = checkpoint_load.step;
+    let mut geometry = checkpoint_load.geometry;
+    let x_old = checkpoint_load.x_old;
+    let hessian = checkpoint_load.hessian;
+    let mut opt_state = checkpoint_load.opt_state;
+    let config = checkpoint_load.config;
 
     println!("Loaded checkpoint from step {}", step);
 

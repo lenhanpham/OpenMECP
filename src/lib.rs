@@ -183,6 +183,8 @@ pub mod template_generator;
 pub mod help;
 /// Run mode validation and compatibility checking
 pub mod validation;
+/// Automated file cleanup for quantum chemistry calculations
+pub mod cleanup;
 
 pub use config::Config;
 pub use geometry::Geometry;

@@ -178,6 +178,29 @@ pub struct Checkpoint {
     pub config: Config,
 }
 
+/// Loaded checkpoint contents returned by `Checkpoint::load`.
+///
+/// This struct contains the fully reconstructed runtime types converted from the
+/// serialized `Checkpoint` representation. It includes everything required to
+/// resume an optimization: the step counter, the molecular geometry, previous
+/// coordinates used for gradient differences, the current approximate Hessian,
+/// the optimization state (with DIIS/history structures), and the calculation
+/// configuration.
+pub struct CheckpointLoad {
+    /// Optimization step number at the time of saving.
+    pub step: usize,
+    /// Molecular geometry reconstructed from the checkpoint.
+    pub geometry: Geometry,
+    /// Previous geometry coordinates (flattened) used for finite differences.
+    pub x_old: DVector<f64>,
+    /// Hessian matrix (approximate) reconstructed as a nalgebra `DMatrix`.
+    pub hessian: DMatrix<f64>,
+    /// Optimization state including history, lambdas, and other runtime data.
+    pub opt_state: OptimizationState,
+    /// Calculation configuration used when the checkpoint was created.
+    pub config: Config,
+}
+
 impl Checkpoint {
     /// Create a new checkpoint from current optimization state.
     ///
@@ -293,7 +316,7 @@ impl Checkpoint {
     ///
     /// # Returns
     ///
-    /// Returns a tuple containing:
+    /// Returns a `CheckpointLoad` struct containing:
     /// - `step`: Optimization step number
     /// - `geometry`: Molecular geometry
     /// - `x_old`: Previous geometry coordinates
@@ -311,7 +334,7 @@ impl Checkpoint {
     /// # Examples
     ///
     /// ```
-    /// use omecp::checkpoint::Checkpoint;
+    /// use omecp::checkpoint::{Checkpoint, CheckpointLoad};
     /// use std::path::Path;
     /// use omecp::geometry::Geometry;
     /// use omecp::optimizer::OptimizationState;
@@ -338,25 +361,35 @@ impl Checkpoint {
     ///
     ///     checkpoint.save(Path::new("mecp.chk"))?;
     ///
-    ///     let (step, geometry, x_old, hessian, opt_state, config) =
-    ///         Checkpoint::load(Path::new("mecp.chk"))?;
+    ///     let loaded: CheckpointLoad = Checkpoint::load(Path::new("mecp.chk"))?;
     ///
     ///     std::fs::remove_file("mecp.chk")?;
     ///     Ok(())
     /// }
     /// ```
-    pub fn load(path: &Path) -> Result<(usize, Geometry, DVector<f64>, DMatrix<f64>, OptimizationState, Config), Box<dyn std::error::Error>> {
+    pub fn load(path: &Path) -> Result<CheckpointLoad, Box<dyn std::error::Error>> {
         let content = fs::read_to_string(path)?;
         let checkpoint: Checkpoint = serde_json::from_str(&content)?;
 
         let geometry = Geometry::from(checkpoint.geometry);
         let x_old = DVector::from_vec(checkpoint.x_old);
         let nrows = checkpoint.hessian.len();
-        let ncols = checkpoint.hessian[0].len();
+        let ncols = if nrows > 0 { checkpoint.hessian[0].len() } else { 0 };
         let hess_flat: Vec<f64> = checkpoint.hessian.into_iter().flatten().collect();
-        let hessian = DMatrix::from_row_slice(nrows, ncols, &hess_flat);
+        let hessian = if nrows > 0 && ncols > 0 {
+            DMatrix::from_row_slice(nrows, ncols, &hess_flat)
+        } else {
+            DMatrix::from_row_slice(0, 0, &[])
+        };
         let opt_state = OptimizationState::from(checkpoint.opt_state);
 
-        Ok((checkpoint.step, geometry, x_old, hessian, opt_state, checkpoint.config))
+        Ok(CheckpointLoad {
+            step: checkpoint.step,
+            geometry,
+            x_old,
+            hessian,
+            opt_state,
+            config: checkpoint.config,
+        })
     }
 }

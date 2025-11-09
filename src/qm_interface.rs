@@ -52,7 +52,7 @@
 //! - Forces/gradients (in hartree/bohr)
 //! - Final geometry
 
-use crate::geometry::{Geometry, State};
+use crate::geometry::{Geometry, State, angstrom_to_bohr};
 use crate::io;
 use lazy_static::lazy_static;
 use nalgebra::DVector;
@@ -378,11 +378,11 @@ impl QMInterface for GaussianInterface {
                 geom_coords.len()
             )));
         }
-        
+
         let state = State {
             energy,
             forces: DVector::from_vec(forces),
-            geometry: Geometry::new(elements, geom_coords),
+            geometry: Geometry::new(elements, angstrom_to_bohr(&nalgebra::DVector::from_vec(geom_coords)).data.as_vec().clone()),
         };
 
         // Validate the state to ensure meaningful data

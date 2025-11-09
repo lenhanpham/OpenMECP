@@ -1,19 +1,22 @@
-use std::path::{Path, PathBuf};
 use std::fs;
 use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 /// Template generator for creating MECP input files from geometry files
 ///
 /// Generate a template input file from a geometry file
 /// Supports .xyz, .log, and .gjf formats
-pub fn generate_template_from_file<P: AsRef<Path>>(geometry_file: P) -> Result<String, Box<dyn std::error::Error>> {
+pub fn generate_template_from_file<P: AsRef<Path>>(
+    geometry_file: P,
+) -> Result<String, Box<dyn std::error::Error>> {
     let geometry_file = geometry_file.as_ref();
 
     if !geometry_file.exists() {
         return Err(format!("File not found: {}", geometry_file.display()).into());
     }
 
-    let extension = geometry_file.extension()
+    let extension = geometry_file
+        .extension()
         .and_then(|s| s.to_str())
         .unwrap_or("");
 
@@ -30,7 +33,9 @@ pub fn generate_template_from_file<P: AsRef<Path>>(geometry_file: P) -> Result<S
 }
 
 /// Extract geometry from XYZ file
-fn extract_geometry_from_xyz(path: &Path) -> Result<(Vec<String>, Vec<f64>), Box<dyn std::error::Error>> {
+fn extract_geometry_from_xyz(
+    path: &Path,
+) -> Result<(Vec<String>, Vec<f64>), Box<dyn std::error::Error>> {
     let content = fs::read_to_string(path)?;
     let lines: Vec<&str> = content.lines().collect();
 
@@ -38,7 +43,9 @@ fn extract_geometry_from_xyz(path: &Path) -> Result<(Vec<String>, Vec<f64>), Box
         return Err("Invalid XYZ file: not enough lines".into());
     }
 
-    let num_atoms = lines[0].trim().parse::<usize>()
+    let num_atoms = lines[0]
+        .trim()
+        .parse::<usize>()
         .map_err(|_| "Invalid XYZ file: cannot parse number of atoms")?;
 
     let mut elements = Vec::new();
@@ -64,7 +71,9 @@ fn extract_geometry_from_xyz(path: &Path) -> Result<(Vec<String>, Vec<f64>), Box
 }
 
 /// Extract geometry from Gaussian .log file
-fn extract_geometry_from_log(path: &Path) -> Result<(Vec<String>, Vec<f64>), Box<dyn std::error::Error>> {
+fn extract_geometry_from_log(
+    path: &Path,
+) -> Result<(Vec<String>, Vec<f64>), Box<dyn std::error::Error>> {
     let content = fs::read_to_string(path)?;
 
     // Find "Input orientation" section
@@ -106,7 +115,9 @@ fn extract_geometry_from_log(path: &Path) -> Result<(Vec<String>, Vec<f64>), Box
 }
 
 /// Extract geometry from Gaussian .gjf file
-fn extract_geometry_from_gjf(path: &Path) -> Result<(Vec<String>, Vec<f64>), Box<dyn std::error::Error>> {
+fn extract_geometry_from_gjf(
+    path: &Path,
+) -> Result<(Vec<String>, Vec<f64>), Box<dyn std::error::Error>> {
     let content = fs::read_to_string(path)?;
     let lines: Vec<&str> = content.lines().collect();
 
@@ -171,11 +182,13 @@ fn extract_geometry_from_gjf(path: &Path) -> Result<(Vec<String>, Vec<f64>), Box
 
 /// Generate the template input file content
 fn generate_template(_elements: Vec<String>, _coords: &Vec<f64>, geometry_path: &Path) -> String {
-    let geom_filename = geometry_path.file_name()
+    let geom_filename = geometry_path
+        .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("geometry.xyz");
 
-    format!(r#"#This subset is required. It controls your quantum chemistry tasks.
+    format!(
+        r#"#This subset is required. It controls your quantum chemistry tasks.
 nprocs = 30 #processors
 mem = 120GB # memory to be used. change this into the maxcore value if you want to use ORCA
 method = n scf(maxcycle=500,xqc) uwb97xd/def2svpp scrf=(smd,solvent=acetonitrile) # your keywords line. It will be presented in the job files. Don't write guess=mix or stable=opt; they will be added automatically.
@@ -196,6 +209,11 @@ rms_g_thresh = 0.0005
 max_steps = 300
 max_step_size = 0.1
 reduced_factor = 0.5 # the gdiis stepsize will be reduced by this factor when rms_gradient is close to converge
+
+# Optimization settings
+switch_step = 3
+use_gediis = false
+use_hybrid_gediis = true  # 50% GDIIS + 50% GEDIIS (matches Python)
 
 # This subset controls which program you are using, and how to call them
 program = gaussian  #gaussian, orca, xtb, bagel
@@ -231,7 +249,9 @@ bagel_model = model.inp
 #S R 2 3 1.5 10 0.1 # you can at most set a 2D-scan
 *
 
-"#, geom_filename = geom_filename)
+"#,
+        geom_filename = geom_filename
+    )
 }
 
 /// Write template to file
@@ -253,7 +273,8 @@ pub fn write_template_to_file<P: AsRef<Path>>(
 /// Get default output filename based on input geometry file
 pub fn get_default_output_path<P: AsRef<Path>>(geometry_file: P) -> PathBuf {
     let geometry_file = geometry_file.as_ref();
-    let stem = geometry_file.file_stem()
+    let stem = geometry_file
+        .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("template");
 

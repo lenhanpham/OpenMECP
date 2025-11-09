@@ -63,8 +63,8 @@
 //! - Henkelman, G.; Uberuaga, B. P.; Jónsson, H. *J. Chem. Phys.* **2000**, 113, 9901-9904.
 //! - Sheppard, D.; Terrell, R.; Henkelman, G. *J. Chem. Phys.* **2008**, 128, 134106.
 
+use crate::constraints::{evaluate_constraints, Constraint};
 use crate::geometry::Geometry;
-use crate::constraints::{Constraint, evaluate_constraints};
 
 /// Types of geometric coordinates that can be driven during reaction path exploration.
 ///
@@ -122,14 +122,14 @@ pub enum CoordinateType {
     /// in Angstroms (Å) or Bohr radii. This is the most common reaction
     /// coordinate for bond formation and dissociation processes.
     Bond,
-    
+
     /// Bond angle coordinate between three atoms.
     ///
     /// Measures the angle formed by atoms i-j-k, where j is the central atom.
     /// Units are in radians internally, but often displayed in degrees.
     /// Useful for studying angular deformations and ring strain.
     Angle,
-    
+
     /// Dihedral (torsion) angle coordinate between four atoms.
     ///
     /// Measures the torsion angle around the j-k bond in the sequence i-j-k-l.
@@ -200,7 +200,7 @@ pub struct DriveCoordinate {
     /// value and its derivatives. This affects how the constraint forces
     /// are computed during optimization.
     pub coord_type: CoordinateType,
-    
+
     /// Vector of atom indices (0-based) defining the coordinate.
     ///
     /// The length and interpretation depend on the coordinate type:
@@ -208,7 +208,7 @@ pub struct DriveCoordinate {
     /// - **Angle**: `[atom1, atom2, atom3]` - 3 atoms (atom2 is vertex)
     /// - **Dihedral**: `[atom1, atom2, atom3, atom4]` - 4 atoms (rotation around bond 2-3)
     pub atoms: Vec<usize>,
-    
+
     /// The target value for the coordinate.
     ///
     /// Units depend on coordinate type:
@@ -316,17 +316,17 @@ impl DriveCoordinate {
     /// ```
     pub fn to_constraint(&self) -> Constraint {
         match self.coord_type {
-            CoordinateType::Bond => Constraint::Bond { 
-                atoms: (self.atoms[0], self.atoms[1]), 
-                target: self.target_value 
+            CoordinateType::Bond => Constraint::Bond {
+                atoms: (self.atoms[0], self.atoms[1]),
+                target: self.target_value,
             },
-            CoordinateType::Angle => Constraint::Angle { 
-                atoms: (self.atoms[0], self.atoms[1], self.atoms[2]), 
-                target: self.target_value 
+            CoordinateType::Angle => Constraint::Angle {
+                atoms: (self.atoms[0], self.atoms[1], self.atoms[2]),
+                target: self.target_value,
             },
-            CoordinateType::Dihedral => Constraint::Dihedral { 
-                atoms: (self.atoms[0], self.atoms[1], self.atoms[2], self.atoms[3]), 
-                target: self.target_value 
+            CoordinateType::Dihedral => Constraint::Dihedral {
+                atoms: (self.atoms[0], self.atoms[1], self.atoms[2], self.atoms[3]),
+                target: self.target_value,
             },
         }
     }
@@ -365,17 +365,17 @@ impl DriveCoordinate {
     /// ```
     pub fn to_constraint_with_value(&self, target_value: f64) -> Constraint {
         match self.coord_type {
-            CoordinateType::Bond => Constraint::Bond { 
-                atoms: (self.atoms[0], self.atoms[1]), 
-                target: target_value 
+            CoordinateType::Bond => Constraint::Bond {
+                atoms: (self.atoms[0], self.atoms[1]),
+                target: target_value,
             },
-            CoordinateType::Angle => Constraint::Angle { 
-                atoms: (self.atoms[0], self.atoms[1], self.atoms[2]), 
-                target: target_value 
+            CoordinateType::Angle => Constraint::Angle {
+                atoms: (self.atoms[0], self.atoms[1], self.atoms[2]),
+                target: target_value,
             },
-            CoordinateType::Dihedral => Constraint::Dihedral { 
-                atoms: (self.atoms[0], self.atoms[1], self.atoms[2], self.atoms[3]), 
-                target: target_value 
+            CoordinateType::Dihedral => Constraint::Dihedral {
+                atoms: (self.atoms[0], self.atoms[1], self.atoms[2], self.atoms[3]),
+                target: target_value,
             },
         }
     }
@@ -496,7 +496,12 @@ pub fn drive_coordinate(
 
     for i in 1..num_steps {
         let target_value = start_value + step_size * i as f64;
-        println!("Driving coordinate to {:.3} (step {}/{})", target_value, i + 1, num_steps);
+        println!(
+            "Driving coordinate to {:.3} (step {}/{})",
+            target_value,
+            i + 1,
+            num_steps
+        );
 
         // Create constraint for the target coordinate value
         let constraint = drive_coord.to_constraint_with_value(target_value);
@@ -505,7 +510,7 @@ pub fn drive_coordinate(
         current_geom = constrained_coordinate_driving(
             &current_geom,
             &[constraint],
-            50, // max iterations for coordinate driving
+            50,   // max iterations for coordinate driving
             1e-4, // convergence threshold
         );
 
@@ -525,7 +530,7 @@ pub fn drive_coordinate(
 ///
 /// The method solves the constrained optimization problem:
 /// ```text
-/// minimize ||g(x) - target||² 
+/// minimize ||g(x) - target||²
 /// ```
 /// where g(x) represents the constraint functions and target are the desired values.
 ///
@@ -623,12 +628,19 @@ fn constrained_coordinate_driving(
 
         // Check convergence
         if total_violation < convergence_threshold {
-            println!("Coordinate driving converged after {} iterations", iteration + 1);
+            println!(
+                "Coordinate driving converged after {} iterations",
+                iteration + 1
+            );
             break;
         }
 
         if iteration % 10 == 0 {
-            println!("Coordinate driving iteration {}: violation = {:.6}", iteration + 1, total_violation);
+            println!(
+                "Coordinate driving iteration {}: violation = {:.6}",
+                iteration + 1,
+                total_violation
+            );
         }
     }
 
@@ -743,12 +755,18 @@ fn calculate_constraint_violation(geometry: &Geometry, constraint: &Constraint) 
 /// - **Fixed step size**: Not adaptive to constraint type or system size
 /// - **No second derivatives**: Cannot account for constraint curvature
 /// - **Proportional control**: Simple linear relationship between violation and force
-fn calculate_constraint_force(geometry: &Geometry, constraint: &Constraint, violation: f64) -> Vec<f64> {
+fn calculate_constraint_force(
+    geometry: &Geometry,
+    constraint: &Constraint,
+    violation: f64,
+) -> Vec<f64> {
     let mut force = vec![0.0; geometry.coords.len()];
     let force_magnitude = -violation * 10.0; // Simple proportional control
 
     match constraint {
-        Constraint::Bond { atoms: (a1, a2), .. } => {
+        Constraint::Bond {
+            atoms: (a1, a2), ..
+        } => {
             // Force along the bond vector
             let pos1 = geometry.get_atom_coords(*a1);
             let pos2 = geometry.get_atom_coords(*a2);
@@ -951,7 +969,11 @@ pub fn optimize_reaction_path(
                 // This would need proper constrained optimization
                 // For now, just apply the constraints directly
                 for constraint in constraints {
-                    if let Constraint::Bond { atoms: (a1, a2), target } = constraint {
+                    if let Constraint::Bond {
+                        atoms: (a1, a2),
+                        target,
+                    } = constraint
+                    {
                         // Simple bond constraint application
                         let current_dist = calculate_distance(&new_geometry, *a1, *a2);
                         if (current_dist - *target).abs() > 0.01 {
@@ -980,7 +1002,11 @@ pub fn optimize_reaction_path(
         }
 
         if iteration % 10 == 0 {
-            println!("NEB iteration {}: max force = {:.6}", iteration + 1, max_force);
+            println!(
+                "NEB iteration {}: max force = {:.6}",
+                iteration + 1,
+                max_force
+            );
         }
     }
 
@@ -1058,8 +1084,16 @@ fn calculate_neb_force(path: &[Geometry], image_index: usize, spring_constant: f
     let current = &path[image_index];
 
     // Get neighboring images
-    let prev = if image_index > 0 { Some(&path[image_index - 1]) } else { None };
-    let next = if image_index < n_images - 1 { Some(&path[image_index + 1]) } else { None };
+    let prev = if image_index > 0 {
+        Some(&path[image_index - 1])
+    } else {
+        None
+    };
+    let next = if image_index < n_images - 1 {
+        Some(&path[image_index + 1])
+    } else {
+        None
+    };
 
     // Calculate tangent vector
     let tangent = calculate_tangent(prev, current, next);
@@ -1167,7 +1201,11 @@ fn calculate_neb_force(path: &[Geometry], image_index: usize, spring_constant: f
 /// - **Spring force direction**: Springs act along τ̂
 /// - **Force projection**: True forces projected perpendicular to τ̂
 /// - **Path characterization**: Tangent describes local path geometry
-fn calculate_tangent(prev: Option<&Geometry>, current: &Geometry, next: Option<&Geometry>) -> Vec<f64> {
+fn calculate_tangent(
+    prev: Option<&Geometry>,
+    current: &Geometry,
+    next: Option<&Geometry>,
+) -> Vec<f64> {
     let mut tangent = vec![0.0; current.coords.len()];
 
     match (prev, next) {
@@ -1309,7 +1347,10 @@ fn calculate_rmsd(geom1: &Geometry, geom2: &Geometry) -> f64 {
 /// - **Negative components**: Atom moved in negative coordinate direction
 /// - **Zero components**: No movement in that coordinate direction
 fn subtract_geometries(geom1: &Geometry, geom2: &Geometry) -> Vec<f64> {
-    geom1.coords.iter().zip(geom2.coords.iter())
+    geom1
+        .coords
+        .iter()
+        .zip(geom2.coords.iter())
         .map(|(a, b)| a - b)
         .collect()
 }
@@ -1369,7 +1410,7 @@ fn get_average_spacing(path: &[Geometry]) -> f64 {
 
     let mut total_distance = 0.0;
     for i in 1..path.len() {
-        total_distance += calculate_rmsd(&path[i], &path[i-1]);
+        total_distance += calculate_rmsd(&path[i], &path[i - 1]);
     }
 
     total_distance / (path.len() - 1) as f64
@@ -1619,7 +1660,7 @@ fn adjust_bond_length(geometry: &mut Geometry, atom1: usize, atom2: usize, targe
 /// println!("Path analysis:");
 /// println!("  Total length: {:.3} Å", stats.path_length);
 /// println!("  Number of images: {}", stats.num_points);
-/// println!("  Average spacing: {:.3} Å", 
+/// println!("  Average spacing: {:.3} Å",
 ///          stats.path_length / (stats.num_points - 1) as f64);
 /// ```
 ///
@@ -1647,7 +1688,7 @@ pub fn analyze_reaction_path(geometries: &[Geometry]) -> PathStatistics {
     // Calculate path length
     let mut path_length = 0.0;
     for i in 1..geometries.len() {
-        let coords1 = geometry_to_coords(&geometries[i-1]);
+        let coords1 = geometry_to_coords(&geometries[i - 1]);
         let coords2 = geometry_to_coords(&geometries[i]);
 
         let mut segment_length = 0.0;

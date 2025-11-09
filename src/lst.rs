@@ -72,14 +72,14 @@ pub enum InterpolationMethod {
     /// This is the most commonly used method and provides a straight-line
     /// path in Cartesian coordinate space after optimal alignment.
     Linear,
-    
+
     /// Quadratic Synchronous Transit (QST) interpolation.
     ///
     /// Uses quadratic interpolation with three geometries: two endpoints and
     /// one intermediate structure. If only two geometries are provided, a
     /// midpoint geometry is automatically generated.
     Quadratic,
-    
+
     /// Energy-weighted interpolation method.
     ///
     /// **Note**: This is a placeholder for future implementation. Currently
@@ -134,14 +134,19 @@ pub enum InterpolationMethod {
 /// - For [`InterpolationMethod::Linear`]: Uses Kabsch algorithm for optimal alignment
 /// - For [`InterpolationMethod::Quadratic`]: Automatically generates midpoint if needed
 /// - For [`InterpolationMethod::EnergyWeighted`]: Currently falls back to linear interpolation
-pub fn interpolate(geom1: &Geometry, geom2: &Geometry, num_points: usize, method: InterpolationMethod) -> Vec<Geometry> {
+pub fn interpolate(
+    geom1: &Geometry,
+    geom2: &Geometry,
+    num_points: usize,
+    method: InterpolationMethod,
+) -> Vec<Geometry> {
     match method {
         InterpolationMethod::Linear => interpolate_linear(geom1, geom2, num_points),
         InterpolationMethod::Quadratic => {
             // For QST, we need a third geometry (midpoint approximation)
             let midpoint = create_midpoint_geometry(geom1, geom2);
             interpolate_quadratic(geom1, &midpoint, geom2, num_points)
-        },
+        }
         InterpolationMethod::EnergyWeighted => {
             // For now, fall back to linear (would need energy values)
             interpolate_linear(geom1, geom2, num_points)
@@ -321,7 +326,12 @@ pub fn interpolate_linear(geom1: &Geometry, geom2: &Geometry, num_points: usize)
 ///   at least chemically reasonable
 /// - If no intermediate geometry is available, use [`create_midpoint_geometry`]
 ///   to generate a simple midpoint structure
-pub fn interpolate_quadratic(geom1: &Geometry, geom_mid: &Geometry, geom2: &Geometry, num_points: usize) -> Vec<Geometry> {
+pub fn interpolate_quadratic(
+    geom1: &Geometry,
+    geom_mid: &Geometry,
+    geom2: &Geometry,
+    num_points: usize,
+) -> Vec<Geometry> {
     if geom1.num_atoms != geom2.num_atoms || geom1.num_atoms != geom_mid.num_atoms {
         panic!("All geometries must have same number of atoms");
     }
@@ -341,8 +351,8 @@ pub fn interpolate_quadratic(geom1: &Geometry, geom_mid: &Geometry, geom2: &Geom
         let mut coords = Vec::new();
         for j in 0..coords1.len() {
             let val = (1.0 - t).powi(2) * coords1[j]
-                    + 2.0 * (1.0 - t) * t * coords_mid[j]
-                    + t.powi(2) * coords2[j];
+                + 2.0 * (1.0 - t) * t * coords_mid[j]
+                + t.powi(2) * coords2[j];
             coords.push(val);
         }
 
@@ -510,11 +520,17 @@ pub fn validate_geometries(geometries: &[Geometry]) -> Result<(), String> {
 
     for (i, geom) in geometries.iter().enumerate() {
         if geom.num_atoms != num_atoms {
-            return Err(format!("Geometry {} has {} atoms, expected {}", i, geom.num_atoms, num_atoms));
+            return Err(format!(
+                "Geometry {} has {} atoms, expected {}",
+                i, geom.num_atoms, num_atoms
+            ));
         }
 
         if geom.elements != *elements {
-            return Err(format!("Geometry {} has different elements than reference", i));
+            return Err(format!(
+                "Geometry {} has different elements than reference",
+                i
+            ));
         }
 
         // Check for NaN or infinite coordinates
@@ -522,7 +538,10 @@ pub fn validate_geometries(geometries: &[Geometry]) -> Result<(), String> {
             let coords = geom.get_atom_coords(j);
             for &coord in &coords {
                 if !coord.is_finite() {
-                    return Err(format!("Geometry {} atom {} has non-finite coordinate: {}", i, j, coord));
+                    return Err(format!(
+                        "Geometry {} atom {} has non-finite coordinate: {}",
+                        i, j, coord
+                    ));
                 }
             }
         }
@@ -532,7 +551,10 @@ pub fn validate_geometries(geometries: &[Geometry]) -> Result<(), String> {
             let coords = geom.get_atom_coords(j);
             for &coord in &coords {
                 if coord.abs() > 1000.0 {
-                    return Err(format!("Geometry {} atom {} has unreasonably large coordinate: {}", i, j, coord));
+                    return Err(format!(
+                        "Geometry {} atom {} has unreasonably large coordinate: {}",
+                        i, j, coord
+                    ));
                 }
             }
         }
@@ -594,7 +616,7 @@ pub fn calculate_path_length(geometries: &[Geometry]) -> f64 {
     let mut total_length = 0.0;
 
     for i in 1..geometries.len() {
-        let coords1 = geometry_to_coords(&geometries[i-1]);
+        let coords1 = geometry_to_coords(&geometries[i - 1]);
         let coords2 = geometry_to_coords(&geometries[i]);
 
         let mut segment_length = 0.0;
@@ -683,10 +705,13 @@ pub fn print_geometry_preview(geometries: &[Geometry]) {
         if idx < geometries.len() {
             println!("\n--- Geometry {} ---", idx + 1);
             let geom = &geometries[idx];
-            for i in 0..geom.num_atoms.min(5) {  // Show first 5 atoms
+            for i in 0..geom.num_atoms.min(5) {
+                // Show first 5 atoms
                 let coords = geom.get_atom_coords(i);
-                println!("{:>2} {:>8.3} {:>8.3} {:>8.3}",
-                        geom.elements[i], coords[0], coords[1], coords[2]);
+                println!(
+                    "{:>2} {:>8.3} {:>8.3} {:>8.3}",
+                    geom.elements[i], coords[0], coords[1], coords[2]
+                );
             }
             if geom.num_atoms > 5 {
                 println!("... ({} more atoms)", geom.num_atoms - 5);

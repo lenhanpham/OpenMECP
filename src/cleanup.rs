@@ -97,7 +97,7 @@
 //! the main calculation workflow.
 
 use crate::config::QMProgram;
-use log::{debug, info, warn, error};
+use log::{debug, error, info, warn};
 use regex::Regex;
 use std::fs;
 use std::path::Path;
@@ -164,7 +164,10 @@ impl CleanupConfig {
     /// # Returns
     ///
     /// Returns a CleanupConfig with the whitelist of files to preserve
-    pub fn from_settings_manager(settings_manager: &crate::settings::SettingsManager, program: QMProgram) -> Self {
+    pub fn from_settings_manager(
+        settings_manager: &crate::settings::SettingsManager,
+        program: QMProgram,
+    ) -> Self {
         let settings = &settings_manager.settings();
 
         // Get base config from settings
@@ -306,14 +309,20 @@ impl CleanupManager {
     pub fn cleanup_directory(&self, directory: &Path) -> Result<()> {
         if !self.config.enabled {
             if self.config.should_log(1) {
-                info!("Cleanup is disabled, skipping directory: {}", directory.display());
+                info!(
+                    "Cleanup is disabled, skipping directory: {}",
+                    directory.display()
+                );
             }
             return Ok(());
         }
 
         if !directory.exists() {
             if self.config.should_log(2) {
-                debug!("Directory does not exist, skipping: {}", directory.display());
+                debug!(
+                    "Directory does not exist, skipping: {}",
+                    directory.display()
+                );
             }
             return Ok(());
         }
@@ -328,20 +337,26 @@ impl CleanupManager {
         if self.config.should_log(1) {
             info!("Starting cleanup in directory: {}", directory.display());
             if self.config.should_log(2) {
-                info!("Preserving files with extensions: {:?}", self.config.preserve_extensions);
+                info!(
+                    "Preserving files with extensions: {:?}",
+                    self.config.preserve_extensions
+                );
             }
         }
 
         // Read all directory entries
-        let entries = fs::read_dir(directory)
-            .map_err(CleanupError::Io)?;
+        let entries = fs::read_dir(directory).map_err(CleanupError::Io)?;
 
         let mut all_files = Vec::new();
         for entry in entries {
             match entry {
                 Ok(entry) => {
                     let path = entry.path();
-                    let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                    let filename = path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("")
+                        .to_string();
 
                     // Skip hidden files and directories
                     if !filename.starts_with('.') && !path.is_dir() {
@@ -362,9 +377,7 @@ impl CleanupManager {
         let mut errors = Vec::new();
 
         for (path, filename) in all_files {
-            let extension = path.extension()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
+            let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
             // Check if this file should be preserved
             if self.should_preserve_file(extension, &path, &filename, max_step) {
@@ -451,7 +464,8 @@ impl CleanupManager {
     /// Returns Some(step_number) if the filename matches the pattern, None otherwise
     fn extract_step_from_engrad(&self, filename: &str) -> Option<usize> {
         let engrad_regex = Regex::new(r"^(\d+)_state_[AB]\.engrad$").unwrap();
-        engrad_regex.captures(filename)
+        engrad_regex
+            .captures(filename)
             .and_then(|caps| caps[1].parse::<usize>().ok())
     }
 
@@ -473,7 +487,13 @@ impl CleanupManager {
     /// # Returns
     ///
     /// Returns `true` if the file should be preserved, `false` otherwise
-    fn should_preserve_file(&self, extension: &str, _path: &Path, filename: &str, max_step: usize) -> bool {
+    fn should_preserve_file(
+        &self,
+        extension: &str,
+        _path: &Path,
+        filename: &str,
+        max_step: usize,
+    ) -> bool {
         // Always preserve essential file types
         if extension == "out" || extension == "log" || extension == "in" || extension == "inp" {
             return true;
@@ -495,7 +515,12 @@ impl CleanupManager {
         }
 
         // Whitelist check: preserve if extension is in our list
-        if self.config.preserve_extensions.iter().any(|ext| ext == extension) {
+        if self
+            .config
+            .preserve_extensions
+            .iter()
+            .any(|ext| ext == extension)
+        {
             return true;
         }
 
@@ -540,13 +565,9 @@ impl CleanupManager {
             return Ok(false);
         }
 
-        let filename = file_path.file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let filename = file_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
-        let extension = file_path.extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let extension = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
         // For .engrad files, conservatively delete them unless we can determine
         // they should be preserved (use cleanup_directory for step-based filtering)
@@ -554,7 +575,10 @@ impl CleanupManager {
             // .engrad files are deleted by default (not in preserve_extensions)
             // unless cleanup_directory determines they should be kept
             if self.config.should_log(2) {
-                debug!("Deleting .engrad file (use cleanup_directory for step-based filtering): {}", file_path.display());
+                debug!(
+                    "Deleting .engrad file (use cleanup_directory for step-based filtering): {}",
+                    file_path.display()
+                );
             }
             match fs::remove_file(file_path) {
                 Ok(_) => {
@@ -614,7 +638,12 @@ impl CleanupManager {
         }
 
         // Whitelist check: preserve if extension is in our list
-        if self.config.preserve_extensions.iter().any(|ext| ext == extension) {
+        if self
+            .config
+            .preserve_extensions
+            .iter()
+            .any(|ext| ext == extension)
+        {
             return true;
         }
 
@@ -643,13 +672,9 @@ impl CleanupManager {
             return false;
         }
 
-        let filename = file_path.file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let filename = file_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
-        let extension = file_path.extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let extension = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
         // For .engrad files, conservatively return false
         if extension == "engrad" {
@@ -712,18 +737,58 @@ mod tests {
 
         // With max_step = 60
         // These .engrad files should be PRESERVED (from latest step)
-        assert!(manager.should_preserve_file("engrad", Path::new("60_state_A.engrad"), "60_state_A.engrad", 60));
-        assert!(manager.should_preserve_file("engrad", Path::new("60_state_B.engrad"), "60_state_B.engrad", 60));
+        assert!(manager.should_preserve_file(
+            "engrad",
+            Path::new("60_state_A.engrad"),
+            "60_state_A.engrad",
+            60
+        ));
+        assert!(manager.should_preserve_file(
+            "engrad",
+            Path::new("60_state_B.engrad"),
+            "60_state_B.engrad",
+            60
+        ));
 
         // These .engrad files should be DELETED (from old steps)
-        assert!(!manager.should_preserve_file("engrad", Path::new("59_state_A.engrad"), "59_state_A.engrad", 60));
-        assert!(!manager.should_preserve_file("engrad", Path::new("59_state_B.engrad"), "59_state_B.engrad", 60));
-        assert!(!manager.should_preserve_file("engrad", Path::new("45_state_A.engrad"), "45_state_A.engrad", 60));
-        assert!(!manager.should_preserve_file("engrad", Path::new("10_state_B.engrad"), "10_state_B.engrad", 60));
+        assert!(!manager.should_preserve_file(
+            "engrad",
+            Path::new("59_state_A.engrad"),
+            "59_state_A.engrad",
+            60
+        ));
+        assert!(!manager.should_preserve_file(
+            "engrad",
+            Path::new("59_state_B.engrad"),
+            "59_state_B.engrad",
+            60
+        ));
+        assert!(!manager.should_preserve_file(
+            "engrad",
+            Path::new("45_state_A.engrad"),
+            "45_state_A.engrad",
+            60
+        ));
+        assert!(!manager.should_preserve_file(
+            "engrad",
+            Path::new("10_state_B.engrad"),
+            "10_state_B.engrad",
+            60
+        ));
 
         // .engrad files that don't match the pattern should be DELETED
-        assert!(!manager.should_preserve_file("engrad", Path::new("test.engrad"), "test.engrad", 60));
-        assert!(!manager.should_preserve_file("engrad", Path::new("random.engrad"), "random.engrad", 60));
+        assert!(!manager.should_preserve_file(
+            "engrad",
+            Path::new("test.engrad"),
+            "test.engrad",
+            60
+        ));
+        assert!(!manager.should_preserve_file(
+            "engrad",
+            Path::new("random.engrad"),
+            "random.engrad",
+            60
+        ));
     }
 
     #[test]
@@ -732,11 +797,11 @@ mod tests {
         let dir_path = temp_dir.path().to_path_buf();
 
         // Create test files
-        let _ = File::create(dir_path.join("test.out")).unwrap();     // Should be preserved
-        let _ = File::create(dir_path.join("test.gbw")).unwrap();     // Should be preserved
-        let _ = File::create(dir_path.join("test.tmp")).unwrap();     // Should be deleted
-        let _ = File::create(dir_path.join("test.scf")).unwrap();     // Should be deleted
-        let _ = File::create(dir_path.join("test.trash")).unwrap();   // Should be deleted
+        let _ = File::create(dir_path.join("test.out")).unwrap(); // Should be preserved
+        let _ = File::create(dir_path.join("test.gbw")).unwrap(); // Should be preserved
+        let _ = File::create(dir_path.join("test.tmp")).unwrap(); // Should be deleted
+        let _ = File::create(dir_path.join("test.scf")).unwrap(); // Should be deleted
+        let _ = File::create(dir_path.join("test.trash")).unwrap(); // Should be deleted
 
         let config = create_test_cleanup_config();
         let manager = CleanupManager::new(config, QMProgram::Orca);

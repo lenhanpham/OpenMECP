@@ -91,11 +91,13 @@ fn generate_scan_summary(
 
     // Basic statistics
     summary.push_str(&format!("Total scan points: {}\n", scan_results.len()));
-    
+
     let converged_count = scan_results.iter().filter(|r| r.converged).count();
     summary.push_str(&format!("Converged points: {}\n", converged_count));
-    summary.push_str(&format!("Convergence rate: {:.1}%\n\n", 
-        100.0 * converged_count as f64 / scan_results.len() as f64));
+    summary.push_str(&format!(
+        "Convergence rate: {:.1}%\n\n",
+        100.0 * converged_count as f64 / scan_results.len() as f64
+    ));
 
     // Energy statistics (only for converged points)
     let converged_results: Vec<_> = scan_results.iter().filter(|r| r.converged).collect();
@@ -109,21 +111,35 @@ fn generate_scan_summary(
         let min_b = energies_b.iter().fold(f64::INFINITY, |a, &b| a.min(b));
         let max_b = energies_b.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
         let min_diff = energy_diffs.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-        let max_diff = energy_diffs.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+        let max_diff = energy_diffs
+            .iter()
+            .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
         summary.push_str("Energy Statistics (Hartree, converged points only):\n");
         summary.push_str(&format!("State A: {:.6} to {:.6}\n", min_a, max_a));
         summary.push_str(&format!("State B: {:.6} to {:.6}\n", min_b, max_b));
-        summary.push_str(&format!("Energy Difference: {:.6} to {:.6}\n\n", min_diff, max_diff));
+        summary.push_str(&format!(
+            "Energy Difference: {:.6} to {:.6}\n\n",
+            min_diff, max_diff
+        ));
 
         // Find minimum energy difference point
-        if let Some(min_diff_result) = converged_results.iter().min_by(|a, b| 
-            a.energy_diff.abs().partial_cmp(&b.energy_diff.abs()).unwrap()) {
+        if let Some(min_diff_result) = converged_results.iter().min_by(|a, b| {
+            a.energy_diff
+                .abs()
+                .partial_cmp(&b.energy_diff.abs())
+                .unwrap()
+        }) {
             summary.push_str("Minimum |ΔE| Point:\n");
-            summary.push_str(&format!("Coordinates: ({:.4}, {:.4})\n", 
-                min_diff_result.coord1, min_diff_result.coord2));
-            summary.push_str(&format!("Energy difference: {:.6} Hartree ({:.3} eV)\n\n", 
-                min_diff_result.energy_diff, min_diff_result.energy_diff * 27.211386));
+            summary.push_str(&format!(
+                "Coordinates: ({:.4}, {:.4})\n",
+                min_diff_result.coord1, min_diff_result.coord2
+            ));
+            summary.push_str(&format!(
+                "Energy difference: {:.6} Hartree ({:.3} eV)\n\n",
+                min_diff_result.energy_diff,
+                min_diff_result.energy_diff * 27.211386
+            ));
         }
     }
 
@@ -147,13 +163,7 @@ fn generate_scan_summary(
         } else {
             summary.push_str(&format!(
                 "{:8.4} {:8.4} {:>12} {:>12} {:>12} {:4} {:5}\n",
-                result.coord1,
-                result.coord2,
-                "FAILED",
-                "FAILED",
-                "FAILED",
-                "No",
-                result.num_steps
+                result.coord1, result.coord2, "FAILED", "FAILED", "FAILED", "No", result.num_steps
             ));
         }
     }
@@ -192,17 +202,12 @@ fn generate_energy_surface_data(
         if result.converged {
             data.push_str(&format!(
                 "{:.6} {:.6} {:.8} {:.8} {:.8} 1\n",
-                result.coord1,
-                result.coord2,
-                result.energy_a,
-                result.energy_b,
-                result.energy_diff
+                result.coord1, result.coord2, result.energy_a, result.energy_b, result.energy_diff
             ));
         } else {
             data.push_str(&format!(
                 "{:.6} {:.6} NaN NaN NaN 0\n",
-                result.coord1,
-                result.coord2
+                result.coord1, result.coord2
             ));
         }
     }
@@ -241,8 +246,10 @@ fn generate_convergence_report(
     report.push_str(&format!("Total scan points: {}\n", total_points));
     report.push_str(&format!("Successfully converged: {}\n", converged_points));
     report.push_str(&format!("Failed to converge: {}\n", failed_points));
-    report.push_str(&format!("Success rate: {:.1}%\n\n", 
-        100.0 * converged_points as f64 / total_points as f64));
+    report.push_str(&format!(
+        "Success rate: {:.1}%\n\n",
+        100.0 * converged_points as f64 / total_points as f64
+    ));
 
     // Step count statistics (only for converged points)
     let converged_results: Vec<_> = scan_results.iter().filter(|r| r.converged).collect();
@@ -266,9 +273,7 @@ fn generate_convergence_report(
         for result in scan_results.iter().filter(|r| !r.converged) {
             report.push_str(&format!(
                 "{:8.4} {:8.4} {:5}\n",
-                result.coord1,
-                result.coord2,
-                result.num_steps
+                result.coord1, result.coord2, result.num_steps
             ));
         }
     } else {

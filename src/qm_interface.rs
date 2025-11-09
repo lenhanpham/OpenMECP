@@ -52,7 +52,7 @@
 //! - Forces/gradients (in hartree/bohr)
 //! - Final geometry
 
-use crate::geometry::{Geometry, State, angstrom_to_bohr};
+use crate::geometry::{angstrom_to_bohr, Geometry, State};
 use crate::io;
 use lazy_static::lazy_static;
 use nalgebra::DVector;
@@ -241,7 +241,10 @@ impl QMInterface for GaussianInterface {
         for i in 0..geom.num_atoms {
             let coords = geom.get_atom_coords(i);
             // Convert from Bohrs to Angstroms for QM input
-            let angstrom_coords = crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![coords[0], coords[1], coords[2]]));
+            let angstrom_coords =
+                crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![
+                    coords[0], coords[1], coords[2],
+                ]));
             content.push_str(&format!(
                 "{}  {:.8}  {:.8}  {:.8}\n",
                 geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
@@ -382,7 +385,13 @@ impl QMInterface for GaussianInterface {
         let state = State {
             energy,
             forces: DVector::from_vec(forces),
-            geometry: Geometry::new(elements, angstrom_to_bohr(&nalgebra::DVector::from_vec(geom_coords)).data.as_vec().clone()),
+            geometry: Geometry::new(
+                elements,
+                angstrom_to_bohr(&nalgebra::DVector::from_vec(geom_coords))
+                    .data
+                    .as_vec()
+                    .clone(),
+            ),
         };
 
         // Validate the state to ensure meaningful data
@@ -568,7 +577,10 @@ impl QMInterface for OrcaInterface {
         for i in 0..geom.num_atoms {
             let coords = geom.get_atom_coords(i);
             // Convert from Bohrs to Angstroms for QM input
-            let angstrom_coords = crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![coords[0], coords[1], coords[2]]));
+            let angstrom_coords =
+                crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![
+                    coords[0], coords[1], coords[2],
+                ]));
             content.push_str(&format!(
                 "{}  {:.8}  {:.8}  {:.8}\n",
                 geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
@@ -617,16 +629,20 @@ impl QMInterface for OrcaInterface {
             )));
         }
 
-        let engrad_content = fs::read_to_string(&engrad_path)
-            .map_err(|e| QMError::Parse(format!(
+        let engrad_content = fs::read_to_string(&engrad_path).map_err(|e| {
+            QMError::Parse(format!(
                 "Failed to read ORCA engrad file {}: {}",
-                engrad_path.display(), e
-            )))?;
-        let log_content = fs::read_to_string(log_path)
-            .map_err(|e| QMError::Parse(format!(
+                engrad_path.display(),
+                e
+            ))
+        })?;
+        let log_content = fs::read_to_string(log_path).map_err(|e| {
+            QMError::Parse(format!(
                 "Failed to read ORCA output file {}: {}",
-                log_path.display(), e
-            )))?;
+                log_path.display(),
+                e
+            ))
+        })?;
 
         let mut energy = 0.0;
         let mut forces = Vec::new();
@@ -837,11 +853,13 @@ impl QMInterface for BagelInterface {
             )));
         }
 
-        let content = fs::read_to_string(output_path)
-            .map_err(|e| QMError::Parse(format!(
+        let content = fs::read_to_string(output_path).map_err(|e| {
+            QMError::Parse(format!(
                 "Failed to read BAGEL output file {}: {}",
-                output_path.display(), e
-            )))?;
+                output_path.display(),
+                e
+            ))
+        })?;
 
         let mut energy = 0.0;
         let mut forces = Vec::new();
@@ -996,7 +1014,7 @@ impl QMInterface for XtbInterface {
     fn read_output(&self, output_path: &Path, _state: usize) -> Result<State> {
         // xTB outputs energy and gradients to .engrad file
         let engrad_path = output_path.with_extension("engrad");
-        
+
         // Check if required files exist before attempting to read
         if !engrad_path.exists() {
             return Err(QMError::Parse(format!(
@@ -1005,11 +1023,13 @@ impl QMInterface for XtbInterface {
             )));
         }
 
-        let content = fs::read_to_string(&engrad_path)
-            .map_err(|e| QMError::Parse(format!(
+        let content = fs::read_to_string(&engrad_path).map_err(|e| {
+            QMError::Parse(format!(
                 "Failed to read XTB engrad file {}: {}",
-                engrad_path.display(), e
-            )))?;
+                engrad_path.display(),
+                e
+            ))
+        })?;
 
         let mut energy = 0.0;
         let mut forces = Vec::new();
@@ -1114,7 +1134,10 @@ fn geometry_to_json(geom: &Geometry) -> String {
     for i in 0..geom.num_atoms {
         let coords = geom.get_atom_coords(i);
         // Convert from Bohrs to Angstroms for QM input
-        let angstrom_coords = crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![coords[0], coords[1], coords[2]]));
+        let angstrom_coords =
+            crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![
+                coords[0], coords[1], coords[2],
+            ]));
         result.push_str(&format!(
             "{{ \"atom\" : \"{}\", \"xyz\" : [ {:.8}, {:.8}, {:.8} ] }}",
             geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
@@ -1241,7 +1264,10 @@ impl QMInterface for CustomInterface {
         for i in 0..geom.num_atoms {
             let coords = geom.get_atom_coords(i);
             // Convert from Bohrs to Angstroms for QM input
-            let angstrom_coords = crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![coords[0], coords[1], coords[2]]));
+            let angstrom_coords =
+                crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![
+                    coords[0], coords[1], coords[2],
+                ]));
             geometry_lines.push(format!(
                 "{}  {:.8}  {:.8}  {:.8}",
                 geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
@@ -1283,27 +1309,33 @@ impl QMInterface for CustomInterface {
             )));
         }
 
-        let content = fs::read_to_string(output_path)
-            .map_err(|e| QMError::Parse(format!(
+        let content = fs::read_to_string(output_path).map_err(|e| {
+            QMError::Parse(format!(
                 "Failed to read {} output file {}: {}",
-                self.config.name, output_path.display(), e
-            )))?;
+                self.config.name,
+                output_path.display(),
+                e
+            ))
+        })?;
 
         // Parse energy
         let energy = if let Some(caps) = self.energy_regex.captures(&content) {
             if let Some(energy_match) = caps.get(1) {
-                let energy_val: f64 = energy_match
-                    .as_str()
-                    .parse()
-                    .map_err(|_| QMError::Parse(format!(
+                let energy_val: f64 = energy_match.as_str().parse().map_err(|_| {
+                    QMError::Parse(format!(
                         "Failed to parse energy value '{}' from {} output file: {}",
-                        energy_match.as_str(), self.config.name, output_path.display()
-                    )))?;
+                        energy_match.as_str(),
+                        self.config.name,
+                        output_path.display()
+                    ))
+                })?;
                 energy_val * self.config.energy_parser.unit_factor
             } else {
                 return Err(QMError::Parse(format!(
                     "Energy regex pattern '{}' must have a capture group for {} output file: {}",
-                    self.config.energy_parser.pattern, self.config.name, output_path.display()
+                    self.config.energy_parser.pattern,
+                    self.config.name,
+                    output_path.display()
                 )));
             }
         } else {
@@ -1318,18 +1350,30 @@ impl QMInterface for CustomInterface {
             let mut forces_vec = Vec::new();
             for caps in forces_regex.captures_iter(&content) {
                 if caps.len() >= 4 {
-                    let fx: f64 = caps[1].parse().map_err(|_| QMError::Parse(format!(
-                        "Failed to parse force component Fx '{}' from {} output file: {}",
-                        &caps[1], self.config.name, output_path.display()
-                    )))?;
-                    let fy: f64 = caps[2].parse().map_err(|_| QMError::Parse(format!(
-                        "Failed to parse force component Fy '{}' from {} output file: {}",
-                        &caps[2], self.config.name, output_path.display()
-                    )))?;
-                    let fz: f64 = caps[3].parse().map_err(|_| QMError::Parse(format!(
-                        "Failed to parse force component Fz '{}' from {} output file: {}",
-                        &caps[3], self.config.name, output_path.display()
-                    )))?;
+                    let fx: f64 = caps[1].parse().map_err(|_| {
+                        QMError::Parse(format!(
+                            "Failed to parse force component Fx '{}' from {} output file: {}",
+                            &caps[1],
+                            self.config.name,
+                            output_path.display()
+                        ))
+                    })?;
+                    let fy: f64 = caps[2].parse().map_err(|_| {
+                        QMError::Parse(format!(
+                            "Failed to parse force component Fy '{}' from {} output file: {}",
+                            &caps[2],
+                            self.config.name,
+                            output_path.display()
+                        ))
+                    })?;
+                    let fz: f64 = caps[3].parse().map_err(|_| {
+                        QMError::Parse(format!(
+                            "Failed to parse force component Fz '{}' from {} output file: {}",
+                            &caps[3],
+                            self.config.name,
+                            output_path.display()
+                        ))
+                    })?;
                     forces_vec.push(fx);
                     forces_vec.push(fy);
                     forces_vec.push(fz);

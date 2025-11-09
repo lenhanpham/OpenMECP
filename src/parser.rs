@@ -74,7 +74,7 @@
 
 use crate::config::{Config, QMProgram, RunMode, ScanSpec, ScanType};
 use crate::constraints::Constraint;
-use crate::geometry::{Geometry, angstrom_to_bohr};
+use crate::geometry::{angstrom_to_bohr, Geometry};
 use nalgebra::DVector;
 use regex::Regex;
 use std::fs;
@@ -99,9 +99,9 @@ pub enum ParseError {
     Parse(String),
     /// Invalid tail section content with detailed context
     #[error("Invalid tail section '{section}'{}: {message}", line_number.map(|n| format!(" at line {}", n)).unwrap_or_default())]
-    InvalidTailSection { 
+    InvalidTailSection {
         /// Name of the tail section (e.g., "TAIL1", "TAIL2")
-        section: String, 
+        section: String,
         /// Descriptive error message
         message: String,
         /// Optional line number where the error occurred
@@ -109,9 +109,9 @@ pub enum ParseError {
     },
     /// Gaussian syntax error with detailed context
     #[error("Gaussian syntax error in {section}{}: {details}", line_number.map(|n| format!(" at line {}", n)).unwrap_or_default())]
-    GaussianSyntaxError { 
+    GaussianSyntaxError {
         /// Name of the section where the error occurred
-        section: String, 
+        section: String,
         /// Detailed error information
         details: String,
         /// Optional line number where the error occurred
@@ -233,24 +233,24 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
     let mut lst2_elements = Vec::new();
     let mut lst2_coords = Vec::new();
     let mut oniom_layer_info = Vec::new();
-    
+
     let mut in_geom = false;
     let mut in_tail1 = false;
     let mut in_tail2 = false;
     let mut in_constr = false;
     let mut in_lst1 = false;
     let mut in_lst2 = false;
-    
+
     let geom_re = Regex::new(r"^\s*(\S+)\s+(-?\d+\.?\d*)").unwrap();
-    
+
     for line in content.lines() {
         let line_lower = line.to_lowercase();
         let trimmed = line_lower.trim();
-        
+
         if trimmed.starts_with('#') {
             continue;
         }
-        
+
         if trimmed.contains("*geom") {
             in_geom = true;
             continue;
@@ -278,7 +278,7 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
             in_lst2 = false;
             continue;
         }
-        
+
         if in_geom {
             if line.trim().starts_with('@') {
                 // External geometry file
@@ -291,9 +291,21 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 4 {
                     elements.push(parts[0].to_string());
-                    coords.push(parts[1].parse().map_err(|_| ParseError::Parse("Invalid coordinate".into()))?);
-                    coords.push(parts[2].parse().map_err(|_| ParseError::Parse("Invalid coordinate".into()))?);
-                    coords.push(parts[3].parse().map_err(|_| ParseError::Parse("Invalid coordinate".into()))?);
+                    coords.push(
+                        parts[1]
+                            .parse()
+                            .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
+                    );
+                    coords.push(
+                        parts[2]
+                            .parse()
+                            .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
+                    );
+                    coords.push(
+                        parts[3]
+                            .parse()
+                            .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
+                    );
                     if parts.len() > 4 {
                         oniom_layer_info.push(parts[4..].join(" "));
                     } else {
@@ -305,17 +317,41 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 4 {
                 lst1_elements.push(parts[0].to_string());
-                lst1_coords.push(parts[1].parse().map_err(|_| ParseError::Parse("Invalid coordinate".into()))?);
-                lst1_coords.push(parts[2].parse().map_err(|_| ParseError::Parse("Invalid coordinate".into()))?);
-                lst1_coords.push(parts[3].parse().map_err(|_| ParseError::Parse("Invalid coordinate".into()))?);
+                lst1_coords.push(
+                    parts[1]
+                        .parse()
+                        .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
+                );
+                lst1_coords.push(
+                    parts[2]
+                        .parse()
+                        .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
+                );
+                lst1_coords.push(
+                    parts[3]
+                        .parse()
+                        .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
+                );
             }
         } else if in_lst2 && geom_re.is_match(line) {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 4 {
                 lst2_elements.push(parts[0].to_string());
-                lst2_coords.push(parts[1].parse().map_err(|_| ParseError::Parse("Invalid coordinate".into()))?);
-                lst2_coords.push(parts[2].parse().map_err(|_| ParseError::Parse("Invalid coordinate".into()))?);
-                lst2_coords.push(parts[3].parse().map_err(|_| ParseError::Parse("Invalid coordinate".into()))?);
+                lst2_coords.push(
+                    parts[1]
+                        .parse()
+                        .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
+                );
+                lst2_coords.push(
+                    parts[2]
+                        .parse()
+                        .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
+                );
+                lst2_coords.push(
+                    parts[3]
+                        .parse()
+                        .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
+                );
             }
         } else if in_tail1 {
             if !is_comment_line(line) && !line.trim().is_empty() {
@@ -341,7 +377,7 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
             parse_parameter(line, &mut config, &mut fixed_atoms)?;
         }
     }
-    
+
     config.oniom_layer_info = oniom_layer_info;
 
     // Validate tail sections after parsing with enhanced error reporting
@@ -349,14 +385,32 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
     validate_tail_section_with_filtering_context(&tail1, "TAIL1")?;
     validate_tail_section_with_filtering_context(&tail2, "TAIL2")?;
 
-    let geometry = Geometry::new(elements, angstrom_to_bohr(&DVector::from_vec(coords)).data.as_vec().clone());
+    let geometry = Geometry::new(
+        elements,
+        angstrom_to_bohr(&DVector::from_vec(coords))
+            .data
+            .as_vec()
+            .clone(),
+    );
     let lst1 = if !lst1_elements.is_empty() {
-        Some(Geometry::new(lst1_elements, angstrom_to_bohr(&DVector::from_vec(lst1_coords)).data.as_vec().clone()))
+        Some(Geometry::new(
+            lst1_elements,
+            angstrom_to_bohr(&DVector::from_vec(lst1_coords))
+                .data
+                .as_vec()
+                .clone(),
+        ))
     } else {
         None
     };
     let lst2 = if !lst2_elements.is_empty() {
-        Some(Geometry::new(lst2_elements, angstrom_to_bohr(&DVector::from_vec(lst2_coords)).data.as_vec().clone()))
+        Some(Geometry::new(
+            lst2_elements,
+            angstrom_to_bohr(&DVector::from_vec(lst2_coords))
+                .data
+                .as_vec()
+                .clone(),
+        ))
     } else {
         None
     };
@@ -409,14 +463,14 @@ fn parse_constraint(line: &str, constraints: &mut Vec<Constraint>) -> Result<()>
     if trimmed.is_empty() || trimmed.starts_with('#') {
         return Ok(());
     }
-    
+
     let parts: Vec<&str> = trimmed.split_whitespace().collect();
     if parts.is_empty() {
         return Ok(());
     }
-    
+
     let constraint_type = parts[0].to_lowercase();
-    
+
     match constraint_type.as_str() {
         "r" | "bond" => {
             if parts.len() < 4 {
@@ -425,19 +479,23 @@ fn parse_constraint(line: &str, constraints: &mut Vec<Constraint>) -> Result<()>
                     line
                 )));
             }
-            
+
             let a = parse_atom_index(parts[1], "first atom", line)?;
             let b = parse_atom_index(parts[2], "second atom", line)?;
             let target = parse_distance_target(parts[3], line)?;
-            
+
             if a == b {
                 return Err(ParseError::Parse(format!(
-                    "Bond constraint cannot have the same atom twice: atom {} in line '{}'", 
-                    a + 1, line
+                    "Bond constraint cannot have the same atom twice: atom {} in line '{}'",
+                    a + 1,
+                    line
                 )));
             }
-            
-            constraints.push(Constraint::Bond { atoms: (a, b), target });
+
+            constraints.push(Constraint::Bond {
+                atoms: (a, b),
+                target,
+            });
         }
         "a" | "angle" => {
             if parts.len() < 5 {
@@ -446,22 +504,28 @@ fn parse_constraint(line: &str, constraints: &mut Vec<Constraint>) -> Result<()>
                     line
                 )));
             }
-            
+
             let a = parse_atom_index(parts[1], "first atom", line)?;
             let b = parse_atom_index(parts[2], "second atom", line)?;
             let c = parse_atom_index(parts[3], "third atom", line)?;
             let target_degrees = parse_angle_target(parts[4], line)?;
             let target = target_degrees.to_radians();
-            
+
             // Validate atom indices are unique
             if a == b || b == c || a == c {
                 return Err(ParseError::Parse(format!(
-                    "Angle constraint atoms must be unique. Got atoms {}, {}, {} in line '{}'", 
-                    a + 1, b + 1, c + 1, line
+                    "Angle constraint atoms must be unique. Got atoms {}, {}, {} in line '{}'",
+                    a + 1,
+                    b + 1,
+                    c + 1,
+                    line
                 )));
             }
-            
-            constraints.push(Constraint::Angle { atoms: (a, b, c), target });
+
+            constraints.push(Constraint::Angle {
+                atoms: (a, b, c),
+                target,
+            });
         }
         "d" | "dihedral" => {
             if parts.len() < 6 {
@@ -470,18 +534,18 @@ fn parse_constraint(line: &str, constraints: &mut Vec<Constraint>) -> Result<()>
                     line
                 )));
             }
-            
+
             let a = parse_atom_index(parts[1], "first atom", line)?;
             let b = parse_atom_index(parts[2], "second atom", line)?;
             let c = parse_atom_index(parts[3], "third atom", line)?;
             let d = parse_atom_index(parts[4], "fourth atom", line)?;
             let target_degrees = parse_angle_target(parts[5], line)?;
             let target = target_degrees.to_radians();
-            
+
             // Validate atom indices are unique
             let atoms = [a, b, c, d];
             for i in 0..4 {
-                for j in (i+1)..4 {
+                for j in (i + 1)..4 {
                     if atoms[i] == atoms[j] {
                         return Err(ParseError::Parse(format!(
                             "Dihedral constraint atoms must be unique. Got atoms {}, {}, {}, {} in line '{}'", 
@@ -490,8 +554,11 @@ fn parse_constraint(line: &str, constraints: &mut Vec<Constraint>) -> Result<()>
                     }
                 }
             }
-            
-            constraints.push(Constraint::Dihedral { atoms: (a, b, c, d), target });
+
+            constraints.push(Constraint::Dihedral {
+                atoms: (a, b, c, d),
+                target,
+            });
         }
         _ => {
             return Err(ParseError::Parse(format!(
@@ -510,14 +577,14 @@ fn parse_atom_index(s: &str, atom_description: &str, full_line: &str) -> Result<
             "Invalid {} index '{}' in constraint line '{}'. Atom indices must be positive integers.", 
             atom_description, s, full_line
         )))?;
-    
+
     if index == 0 {
         return Err(ParseError::Parse(format!(
-            "Atom indices must be 1-based (starting from 1), got {} for {} in line '{}'", 
+            "Atom indices must be 1-based (starting from 1), got {} for {} in line '{}'",
             index, atom_description, full_line
         )));
     }
-    
+
     Ok(index - 1) // Convert to 0-based indexing
 }
 
@@ -528,39 +595,40 @@ fn parse_distance_target(s: &str, full_line: &str) -> Result<f64> {
             "Invalid distance target '{}' in constraint line '{}'. Distance must be a positive number.", 
             s, full_line
         )))?;
-    
+
     if distance <= 0.0 {
         return Err(ParseError::Parse(format!(
-            "Distance target must be positive, got {} in line '{}'", 
+            "Distance target must be positive, got {} in line '{}'",
             distance, full_line
         )));
     }
-    
+
     if distance > 20.0 {
         return Err(ParseError::Parse(format!(
-            "Distance target {} Å seems unreasonably large in line '{}'. Maximum allowed: 20.0 Å", 
+            "Distance target {} Å seems unreasonably large in line '{}'. Maximum allowed: 20.0 Å",
             distance, full_line
         )));
     }
-    
+
     Ok(distance)
 }
 
 /// Parses an angle target value (in degrees) with validation.
 fn parse_angle_target(s: &str, full_line: &str) -> Result<f64> {
-    let angle = s.parse::<f64>()
-        .map_err(|_| ParseError::Parse(format!(
-            "Invalid angle target '{}' in constraint line '{}'. Angle must be a number in degrees.", 
+    let angle = s.parse::<f64>().map_err(|_| {
+        ParseError::Parse(format!(
+            "Invalid angle target '{}' in constraint line '{}'. Angle must be a number in degrees.",
             s, full_line
-        )))?;
-    
+        ))
+    })?;
+
     if !(0.0..=360.0).contains(&angle) {
         return Err(ParseError::Parse(format!(
-            "Angle target {} degrees is outside valid range [0, 360] in line '{}'", 
+            "Angle target {} degrees is outside valid range [0, 360] in line '{}'",
             angle, full_line
         )));
     }
-    
+
     Ok(angle)
 }
 
@@ -580,60 +648,85 @@ fn parse_angle_target(s: &str, full_line: &str) -> Result<f64> {
 /// # Returns
 ///
 /// `Ok(())` if all constraints are valid, `Err(ParseError)` with detailed error information otherwise.
-fn validate_constraints_against_geometry(constraints: &[Constraint], geometry: &Geometry) -> Result<()> {
+fn validate_constraints_against_geometry(
+    constraints: &[Constraint],
+    geometry: &Geometry,
+) -> Result<()> {
     let num_atoms = geometry.num_atoms;
-    
+
     // Validate each constraint
     for (i, constraint) in constraints.iter().enumerate() {
         match constraint {
-            Constraint::Bond { atoms: (a, b), target } => {
+            Constraint::Bond {
+                atoms: (a, b),
+                target,
+            } => {
                 // Check atom indices
                 if *a >= num_atoms {
                     return Err(ParseError::Parse(format!(
-                        "Bond constraint {}: atom index {} exceeds number of atoms ({})", 
-                        i + 1, a + 1, num_atoms
+                        "Bond constraint {}: atom index {} exceeds number of atoms ({})",
+                        i + 1,
+                        a + 1,
+                        num_atoms
                     )));
                 }
                 if *b >= num_atoms {
                     return Err(ParseError::Parse(format!(
-                        "Bond constraint {}: atom index {} exceeds number of atoms ({})", 
-                        i + 1, b + 1, num_atoms
+                        "Bond constraint {}: atom index {} exceeds number of atoms ({})",
+                        i + 1,
+                        b + 1,
+                        num_atoms
                     )));
                 }
-                
+
                 // Check target reasonableness
                 if *target > 10.0 {
                     return Err(ParseError::Parse(format!(
-                        "Bond constraint {}: target distance {:.3} Å is unreasonably large", 
-                        i + 1, target
+                        "Bond constraint {}: target distance {:.3} Å is unreasonably large",
+                        i + 1,
+                        target
                     )));
                 }
             }
-            Constraint::Angle { atoms: (a, b, c), target: _ } => {
+            Constraint::Angle {
+                atoms: (a, b, c),
+                target: _,
+            } => {
                 // Check atom indices
                 for (atom_idx, atom_name) in [(*a, "first"), (*b, "second"), (*c, "third")] {
                     if atom_idx >= num_atoms {
                         return Err(ParseError::Parse(format!(
-                            "Angle constraint {}: {} atom index {} exceeds number of atoms ({})", 
-                            i + 1, atom_name, atom_idx + 1, num_atoms
+                            "Angle constraint {}: {} atom index {} exceeds number of atoms ({})",
+                            i + 1,
+                            atom_name,
+                            atom_idx + 1,
+                            num_atoms
                         )));
                     }
                 }
             }
-            Constraint::Dihedral { atoms: (a, b, c, d), target: _ } => {
+            Constraint::Dihedral {
+                atoms: (a, b, c, d),
+                target: _,
+            } => {
                 // Check atom indices
-                for (atom_idx, atom_name) in [(*a, "first"), (*b, "second"), (*c, "third"), (*d, "fourth")] {
+                for (atom_idx, atom_name) in
+                    [(*a, "first"), (*b, "second"), (*c, "third"), (*d, "fourth")]
+                {
                     if atom_idx >= num_atoms {
                         return Err(ParseError::Parse(format!(
-                            "Dihedral constraint {}: {} atom index {} exceeds number of atoms ({})", 
-                            i + 1, atom_name, atom_idx + 1, num_atoms
+                            "Dihedral constraint {}: {} atom index {} exceeds number of atoms ({})",
+                            i + 1,
+                            atom_name,
+                            atom_idx + 1,
+                            num_atoms
                         )));
                     }
                 }
             }
         }
     }
-    
+
     // Check for duplicate constraints
     for i in 0..constraints.len() {
         for j in (i + 1)..constraints.len() {
@@ -645,21 +738,43 @@ fn validate_constraints_against_geometry(constraints: &[Constraint], geometry: &
             }
         }
     }
-    
+
     Ok(())
 }
 
 /// Checks if two constraints are equivalent (define the same geometric parameter).
 fn constraints_are_equivalent(c1: &Constraint, c2: &Constraint) -> bool {
     match (c1, c2) {
-        (Constraint::Bond { atoms: (a1, b1), .. }, Constraint::Bond { atoms: (a2, b2), .. }) => {
-            (a1 == a2 && b1 == b2) || (a1 == b2 && b1 == a2)
-        }
-        (Constraint::Angle { atoms: (a1, b1, c1), .. }, Constraint::Angle { atoms: (a2, b2, c2), .. }) => {
-            (a1 == a2 && b1 == b2 && c1 == c2) || (a1 == c2 && b1 == b2 && c1 == a2)
-        }
-        (Constraint::Dihedral { atoms: (a1, b1, c1, d1), .. }, Constraint::Dihedral { atoms: (a2, b2, c2, d2), .. }) => {
-            (a1 == a2 && b1 == b2 && c1 == c2 && d1 == d2) || (a1 == d2 && b1 == c2 && c1 == b2 && d1 == a2)
+        (
+            Constraint::Bond {
+                atoms: (a1, b1), ..
+            },
+            Constraint::Bond {
+                atoms: (a2, b2), ..
+            },
+        ) => (a1 == a2 && b1 == b2) || (a1 == b2 && b1 == a2),
+        (
+            Constraint::Angle {
+                atoms: (a1, b1, c1),
+                ..
+            },
+            Constraint::Angle {
+                atoms: (a2, b2, c2),
+                ..
+            },
+        ) => (a1 == a2 && b1 == b2 && c1 == c2) || (a1 == c2 && b1 == b2 && c1 == a2),
+        (
+            Constraint::Dihedral {
+                atoms: (a1, b1, c1, d1),
+                ..
+            },
+            Constraint::Dihedral {
+                atoms: (a2, b2, c2, d2),
+                ..
+            },
+        ) => {
+            (a1 == a2 && b1 == b2 && c1 == c2 && d1 == d2)
+                || (a1 == d2 && b1 == c2 && c1 == b2 && d1 == a2)
         }
         _ => false,
     }
@@ -670,28 +785,58 @@ fn parse_scan(line: &str, config: &mut Config) -> Result<()> {
     if parts.len() < 6 {
         return Ok(());
     }
-    
+
     let scan_type = match parts[1].to_lowercase().as_str() {
         "r" if parts.len() >= 7 => {
-            let a = parts[2].parse::<usize>().map_err(|_| ParseError::Parse("Invalid atom".into()))? - 1;
-            let b = parts[3].parse::<usize>().map_err(|_| ParseError::Parse("Invalid atom".into()))? - 1;
+            let a = parts[2]
+                .parse::<usize>()
+                .map_err(|_| ParseError::Parse("Invalid atom".into()))?
+                - 1;
+            let b = parts[3]
+                .parse::<usize>()
+                .map_err(|_| ParseError::Parse("Invalid atom".into()))?
+                - 1;
             ScanType::Bond { atoms: (a, b) }
         }
         "a" if parts.len() >= 8 => {
-            let a = parts[2].parse::<usize>().map_err(|_| ParseError::Parse("Invalid atom".into()))? - 1;
-            let b = parts[3].parse::<usize>().map_err(|_| ParseError::Parse("Invalid atom".into()))? - 1;
-            let c = parts[4].parse::<usize>().map_err(|_| ParseError::Parse("Invalid atom".into()))? - 1;
+            let a = parts[2]
+                .parse::<usize>()
+                .map_err(|_| ParseError::Parse("Invalid atom".into()))?
+                - 1;
+            let b = parts[3]
+                .parse::<usize>()
+                .map_err(|_| ParseError::Parse("Invalid atom".into()))?
+                - 1;
+            let c = parts[4]
+                .parse::<usize>()
+                .map_err(|_| ParseError::Parse("Invalid atom".into()))?
+                - 1;
             ScanType::Angle { atoms: (a, b, c) }
         }
         _ => return Ok(()),
     };
-    
-    let offset = if matches!(scan_type, ScanType::Bond { .. }) { 4 } else { 5 };
-    let start = parts[offset].parse().map_err(|_| ParseError::Parse("Invalid start".into()))?;
-    let num_points = parts[offset + 1].parse().map_err(|_| ParseError::Parse("Invalid num".into()))?;
-    let step_size = parts[offset + 2].parse().map_err(|_| ParseError::Parse("Invalid step".into()))?;
-    
-    config.scans.push(ScanSpec { scan_type, start, num_points, step_size });
+
+    let offset = if matches!(scan_type, ScanType::Bond { .. }) {
+        4
+    } else {
+        5
+    };
+    let start = parts[offset]
+        .parse()
+        .map_err(|_| ParseError::Parse("Invalid start".into()))?;
+    let num_points = parts[offset + 1]
+        .parse()
+        .map_err(|_| ParseError::Parse("Invalid num".into()))?;
+    let step_size = parts[offset + 2]
+        .parse()
+        .map_err(|_| ParseError::Parse("Invalid step".into()))?;
+
+    config.scans.push(ScanSpec {
+        scan_type,
+        start,
+        num_points,
+        step_size,
+    });
     Ok(())
 }
 
@@ -700,17 +845,17 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
     if parts.len() != 2 {
         return Ok(());
     }
-    
+
     let key = parts[0].trim().to_lowercase();
     let raw_value = parts[1].trim();
-    
+
     // Remove inline comments from the value
     let value = if let Some(comment_pos) = raw_value.find('#') {
         raw_value[..comment_pos].trim()
     } else {
         raw_value
     };
-    
+
     match key.as_str() {
         "nprocs" => config.nprocs = value.parse().unwrap_or(1),
         "mem" => config.mem = value.to_string(),
@@ -756,24 +901,31 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "drive_steps" => config.drive_steps = value.parse().unwrap_or(10),
         "drive_type" => config.drive_type = value.to_string(),
         "use_gediis" => config.use_gediis = value.to_lowercase() == "true",
+        "use_hybrid_gediis" => config.use_hybrid_gediis = value.to_lowercase() == "true",
         "switch_step" => {
             config.switch_step = value.parse().unwrap_or_else(|_| {
-                eprintln!("Warning: Invalid switch_step value '{}', using default (3)", value);
+                eprintln!(
+                    "Warning: Invalid switch_step value '{}', using default (3)",
+                    value
+                );
                 3
             });
-        },
+        }
         "drive_atoms" => {
-            config.drive_atoms = value.split(',')
+            config.drive_atoms = value
+                .split(',')
                 .filter_map(|s| s.trim().parse::<usize>().ok())
                 .map(|x| x.saturating_sub(1)) // Convert to 0-based indexing
                 .collect();
-        },
+        }
         "fixedatoms" => {
             for group in value.split(',') {
                 if group.contains('-') {
                     let range: Vec<&str> = group.split('-').collect();
                     if range.len() == 2 {
-                        if let (Ok(start), Ok(end)) = (range[0].parse::<usize>(), range[1].parse::<usize>()) {
+                        if let (Ok(start), Ok(end)) =
+                            (range[0].parse::<usize>(), range[1].parse::<usize>())
+                        {
                             for i in start..=end {
                                 fixed_atoms.push(i - 1);
                             }
@@ -785,16 +937,24 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
             }
         }
         "gau_comm" => {
-            config.program_commands.insert("gaussian".to_string(), value.to_string());
+            config
+                .program_commands
+                .insert("gaussian".to_string(), value.to_string());
         }
         "orca_comm" => {
-            config.program_commands.insert("orca".to_string(), value.to_string());
+            config
+                .program_commands
+                .insert("orca".to_string(), value.to_string());
         }
         "xtb_comm" => {
-            config.program_commands.insert("xtb".to_string(), value.to_string());
+            config
+                .program_commands
+                .insert("xtb".to_string(), value.to_string());
         }
         "bagel_comm" => {
-            config.program_commands.insert("bagel".to_string(), value.to_string());
+            config
+                .program_commands
+                .insert("bagel".to_string(), value.to_string());
         }
         "isoniom" => config.is_oniom = value.to_lowercase() == "true",
         "chargeandmultforoniom1" => config.charge_and_mult_oniom1 = value.to_string(),
@@ -845,24 +1005,24 @@ pub fn filter_tail_content(raw_content: &str) -> String {
         .lines()
         .filter_map(|line| {
             let trimmed = line.trim();
-            
+
             // Skip empty lines
             if trimmed.is_empty() {
                 return None;
             }
-            
+
             // Skip lines that start with '#' (full-line comments)
             if is_comment_line(line) {
                 return None;
             }
-            
+
             // Remove inline comments (everything after '#' on the same line)
             let cleaned_line = if let Some(comment_pos) = trimmed.find('#') {
                 trimmed[..comment_pos].trim()
             } else {
                 trimmed
             };
-            
+
             // Return the cleaned line if it's not empty after comment removal
             if cleaned_line.is_empty() {
                 None
@@ -971,22 +1131,22 @@ pub fn validate_gaussian_syntax(content: &str, section_name: &str) -> Result<()>
 
     // Check for invalid characters that would break Gaussian input
     let invalid_chars = ['\n', '\r', '\t'];
-    
+
     for ch in invalid_chars {
         if content.contains(ch) {
             let char_name = match ch {
                 '\n' => "newline",
-                '\r' => "carriage return", 
+                '\r' => "carriage return",
                 '\t' => "tab",
                 _ => "unknown",
             };
-            
+
             let suggestion = match ch {
                 '\n' | '\r' => "Put all keywords on a single line or separate them with spaces instead of line breaks",
                 '\t' => "Replace tabs with single spaces between keywords",
                 _ => "Remove this character and use spaces to separate keywords",
             };
-            
+
             return Err(ParseError::GaussianSyntaxError {
                 section: section_name.to_string(),
                 details: format!("Invalid {} character found in Gaussian keywords. Gaussian route sections must be on a single line. Suggestion: {}", char_name, suggestion),
@@ -1012,10 +1172,12 @@ pub fn validate_gaussian_syntax(content: &str, section_name: &str) -> Result<()>
                 '|' => "Use parentheses or commas to separate options instead of pipes",
                 '&' => "Remove ampersands - they are not valid in Gaussian keywords",
                 ';' => "Use spaces or commas to separate keywords instead of semicolons",
-                '>' | '<' => "Remove redirection operators - they are not valid in Gaussian keywords",
+                '>' | '<' => {
+                    "Remove redirection operators - they are not valid in Gaussian keywords"
+                }
                 _ => "Remove this character and check Gaussian manual for proper keyword syntax",
             };
-            
+
             return Err(ParseError::GaussianSyntaxError {
                 section: section_name.to_string(),
                 details: format!("Potentially problematic character '{}' found. This may cause Gaussian parsing errors. Suggestion: {}", ch, suggestion),
@@ -1031,9 +1193,12 @@ pub fn validate_gaussian_syntax(content: &str, section_name: &str) -> Result<()>
         let suggestion = if open_parens > close_parens {
             format!("Add {} closing parenthesis ')'", open_parens - close_parens)
         } else {
-            format!("Remove {} extra closing parenthesis ')' or add matching opening parenthesis '('", close_parens - open_parens)
+            format!(
+                "Remove {} extra closing parenthesis ')' or add matching opening parenthesis '('",
+                close_parens - open_parens
+            )
         };
-        
+
         return Err(ParseError::GaussianSyntaxError {
             section: section_name.to_string(),
             details: format!("Unbalanced parentheses in Gaussian keywords: {} opening '(', {} closing ')'. Suggestion: {}", open_parens, close_parens, suggestion),
@@ -1090,7 +1255,7 @@ pub fn validate_gaussian_syntax(content: &str, section_name: &str) -> Result<()>
 ///
 /// # Returns
 ///
-/// `Ok(())` if the content is valid (including empty content), or `Err(ParseError)` 
+/// `Ok(())` if the content is valid (including empty content), or `Err(ParseError)`
 /// with detailed error information and suggestions for fixing issues
 ///
 /// # Examples
@@ -1112,7 +1277,7 @@ pub fn validate_tail_section_with_context(content: &str, section_name: &str) -> 
         log_empty_tail_section_info(section_name);
         return Ok(());
     }
-    
+
     // Delegate to the main validation function for non-empty content
     validate_tail_section(content, section_name)
 }
@@ -1130,9 +1295,12 @@ pub fn validate_tail_section_with_context(content: &str, section_name: &str) -> 
 ///
 /// # Returns
 ///
-/// `Ok(())` if the content is valid (including empty content), or `Err(ParseError)` 
+/// `Ok(())` if the content is valid (including empty content), or `Err(ParseError)`
 /// with detailed error information and suggestions for fixing issues
-pub fn validate_tail_section_with_filtering_context(content: &str, section_name: &str) -> Result<()> {
+pub fn validate_tail_section_with_filtering_context(
+    content: &str,
+    section_name: &str,
+) -> Result<()> {
     // Use the existing validation function which already handles empty content gracefully
     validate_tail_section_with_context(content, section_name)
 }
@@ -1205,110 +1373,124 @@ pub fn validate_tail_section(content: &str, section_name: &str) -> Result<()> {
     if content.is_empty() {
         return Ok(());
     }
-    
+
     // Perform additional tail-section specific validations before general syntax validation
-    
+
     // Check for common TD-DFT keyword patterns and provide specific guidance
     if content.to_uppercase().contains("TD") && !content.contains('(') {
         let suggestion_message = format!(
             "TD keyword found without required parentheses in {} section.\n\nProblem: TD-DFT calculations require parameters in parentheses.\n\nSuggestions:\n  • Use 'TD(NStates=N)' where N is the number of excited states (e.g., TD(NStates=5))\n  • For specific roots: 'TD(NStates=N,Root=M)' where M is the state number\n  • Common examples:\n    - TD(NStates=5,Root=1)  # First excited state, calculate 5 states\n    - TD(NStates=10)        # Calculate 10 excited states",
             section_name
         );
-        
+
         return Err(ParseError::InvalidTailSection {
             section: section_name.to_string(),
             message: suggestion_message,
             line_number: None,
         });
     }
-    
+
     // Check for ROOT keyword without TD
     if content.to_uppercase().contains("ROOT") && !content.to_uppercase().contains("TD") {
         let suggestion_message = format!(
             "ROOT keyword found without TD keyword in {} section.\n\nProblem: ROOT is typically used with TD-DFT calculations to specify which excited state to optimize.\n\nSuggestions:\n  • Use 'TD(NStates=N,Root=M)' for combined TD-DFT with root specification\n  • Example: 'TD(NStates=5,Root=1)' to optimize the first excited state\n  • If you need separate keywords: 'TD(NStates=5) Root=1'",
             section_name
         );
-        
+
         return Err(ParseError::InvalidTailSection {
             section: section_name.to_string(),
             message: suggestion_message,
             line_number: None,
         });
     }
-    
+
     // Check for common misspellings or formatting issues
     let common_issues = [
-        ("NSTATES", "Use 'NStates' instead of 'NSTATES' (case-sensitive)"),
-        ("nstates", "Use 'NStates' instead of 'nstates' (case-sensitive)"),
+        (
+            "NSTATES",
+            "Use 'NStates' instead of 'NSTATES' (case-sensitive)",
+        ),
+        (
+            "nstates",
+            "Use 'NStates' instead of 'nstates' (case-sensitive)",
+        ),
         ("root=", "Use 'Root=' instead of 'root=' (case-sensitive)"),
         ("ROOT=", "Use 'Root=' instead of 'ROOT=' (case-sensitive)"),
         ("td(", "Use 'TD(' instead of 'td(' (case-sensitive)"),
     ];
-    
+
     for (wrong, suggestion) in &common_issues {
         if content.contains(wrong) {
             return Err(ParseError::InvalidTailSection {
                 section: section_name.to_string(),
-                message: format!("Potential keyword formatting issue: found '{}'. Suggestion: {}", wrong, suggestion),
+                message: format!(
+                    "Potential keyword formatting issue: found '{}'. Suggestion: {}",
+                    wrong, suggestion
+                ),
                 line_number: None,
             });
         }
     }
-    
+
     // Check for missing equals signs in keyword=value pairs
     if content.contains("NStates") && !content.contains("NStates=") {
         let suggestion_message = format!(
             "NStates keyword found without value assignment in {} section.\n\nProblem: NStates requires a numeric value to specify how many excited states to calculate.\n\nSuggestions:\n  • Use 'NStates=N' where N is the number of excited states\n  • Common values: NStates=5, NStates=10, NStates=20\n  • Example: 'TD(NStates=5,Root=1)' or 'TD(NStates=5) Root=1'",
             section_name
         );
-        
+
         return Err(ParseError::InvalidTailSection {
             section: section_name.to_string(),
             message: suggestion_message,
             line_number: None,
         });
     }
-    
+
     if content.contains("Root") && !content.contains("Root=") {
         let suggestion_message = format!(
             "Root keyword found without value assignment in {} section.\n\nProblem: Root requires a numeric value to specify which excited state to optimize.\n\nSuggestions:\n  • Use 'Root=N' where N is the excited state number (starting from 1)\n  • Example: 'Root=1' for first excited state, 'Root=2' for second excited state\n  • Complete example: 'TD(NStates=5,Root=1)' or 'TD(NStates=5) Root=1'",
             section_name
         );
-        
+
         return Err(ParseError::InvalidTailSection {
             section: section_name.to_string(),
             message: suggestion_message,
             line_number: None,
         });
     }
-    
+
     // Validate the content using the existing Gaussian keyword validation
     validate_gaussian_keywords(content).map_err(|e| match e {
-        ParseError::GaussianSyntaxError { details, line_number, .. } => {
+        ParseError::GaussianSyntaxError {
+            details,
+            line_number,
+            ..
+        } => {
             // Create a user-friendly error message with specific suggestions
-            let user_friendly_message = create_user_friendly_tail_error(&details, section_name, content);
-            
+            let user_friendly_message =
+                create_user_friendly_tail_error(&details, section_name, content);
+
             ParseError::InvalidTailSection {
                 section: section_name.to_string(),
                 message: user_friendly_message,
                 line_number,
             }
-        },
+        }
         _ => {
             // Handle other types of validation errors
             let fallback_message = format!(
-                "Validation failed for {} section: {}\n\n{}", 
-                section_name, 
+                "Validation failed for {} section: {}\n\n{}",
+                section_name,
                 e,
                 get_tail_section_suggestions(content, section_name)
             );
-            
+
             ParseError::InvalidTailSection {
                 section: section_name.to_string(),
                 message: fallback_message,
                 line_number: None,
             }
-        },
+        }
     })
 }
 
@@ -1326,7 +1508,11 @@ fn read_geom_from_xyz(path: &Path) -> Result<(Vec<String>, Vec<f64>)> {
         if parts.len() >= 4 {
             elements.push(parts[0].to_string());
             for &coord_str in &parts[1..4] {
-                coords.push(coord_str.parse().map_err(|_| ParseError::Parse("Invalid coordinate in XYZ file".into()))?);
+                coords.push(
+                    coord_str
+                        .parse()
+                        .map_err(|_| ParseError::Parse("Invalid coordinate in XYZ file".into()))?,
+                );
             }
         }
     }
@@ -1353,7 +1539,11 @@ fn read_geom_from_gjf(path: &Path) -> Result<(Vec<String>, Vec<f64>)> {
             if parts.len() >= 4 {
                 elements.push(parts[0].to_string());
                 for &coord_str in &parts[1..4] {
-                    coords.push(coord_str.parse().map_err(|_| ParseError::Parse("Invalid coordinate in GJF file".into()))?);
+                    coords.push(
+                        coord_str.parse().map_err(|_| {
+                            ParseError::Parse("Invalid coordinate in GJF file".into())
+                        })?,
+                    );
                 }
             }
         } else if in_geom && line.chars().next().is_some_and(|c| c.is_ascii_digit()) {
@@ -1385,7 +1575,11 @@ fn read_geom_from_log(path: &Path) -> Result<(Vec<String>, Vec<f64>)> {
                 // Atomic number, atomic number, 0, x, y, z
                 elements.push(parts[1].to_string());
                 for &coord_str in &parts[3..6] {
-                    coords.push(coord_str.parse().map_err(|_| ParseError::Parse("Invalid coordinate in LOG file".into()))?);
+                    coords.push(
+                        coord_str.parse().map_err(|_| {
+                            ParseError::Parse("Invalid coordinate in LOG file".into())
+                        })?,
+                    );
                 }
             }
         }
@@ -1408,36 +1602,42 @@ fn read_geom_from_log(path: &Path) -> Result<(Vec<String>, Vec<f64>)> {
 /// A string containing specific suggestions for fixing the issues
 fn get_tail_section_suggestions(content: &str, section_name: &str) -> String {
     let mut suggestions = Vec::new();
-    
+
     // Check for common patterns and provide specific advice
     if content.contains('\n') {
         suggestions.push("Put all keywords on a single line separated by spaces".to_string());
     }
-    
+
     if content.contains('#') {
         suggestions.push("Move comments to separate lines outside the tail section".to_string());
     }
-    
+
     if content.to_uppercase().contains("TD") && !content.contains('(') {
         suggestions.push("Add parentheses to TD keyword: TD(NStates=5,Root=1)".to_string());
     }
-    
+
     if content.contains("  ") {
         suggestions.push("Replace multiple spaces with single spaces between keywords".to_string());
     }
-    
-    if content.chars().filter(|&c| c == '(').count() != content.chars().filter(|&c| c == ')').count() {
+
+    if content.chars().filter(|&c| c == '(').count()
+        != content.chars().filter(|&c| c == ')').count()
+    {
         suggestions.push("Check that all parentheses are properly balanced".to_string());
     }
-    
+
     // Add general guidance if no specific issues found
     if suggestions.is_empty() {
         suggestions.push(format!("Ensure {} contains valid Gaussian keywords (e.g., 'TD(NStates=5,Root=1)' for TD-DFT calculations)", section_name));
         suggestions.push("Check the Gaussian manual for proper keyword syntax".to_string());
         suggestions.push("Remove any shell command characters or special symbols".to_string());
     }
-    
-    format!("Suggestions for fixing {} section:\n  • {}", section_name, suggestions.join("\n  • "))
+
+    format!(
+        "Suggestions for fixing {} section:\n  • {}",
+        section_name,
+        suggestions.join("\n  • ")
+    )
 }
 
 /// Creates a user-friendly error message for tail section validation failures.
@@ -1455,9 +1655,13 @@ fn get_tail_section_suggestions(content: &str, section_name: &str) -> String {
 /// # Returns
 ///
 /// A formatted error message with context and suggestions
-fn create_user_friendly_tail_error(error_details: &str, section_name: &str, content: &str) -> String {
+fn create_user_friendly_tail_error(
+    error_details: &str,
+    section_name: &str,
+    content: &str,
+) -> String {
     let suggestions = get_tail_section_suggestions(content, section_name);
-    
+
     format!(
         "Problem in {} section: {}\n\n{}\n\nExample of valid {} content:\n  TD(NStates=5,Root=1)\n  or\n  TD(NStates=10) Root=2",
         section_name,
@@ -1476,7 +1680,9 @@ fn read_external_geometry(path: &Path) -> Result<(Vec<String>, Vec<f64>)> {
     } else if path_str.ends_with(".log") {
         read_geom_from_log(path)
     } else {
-        Err(ParseError::Parse("Unsupported external geometry file format".into()))
+        Err(ParseError::Parse(
+            "Unsupported external geometry file format".into(),
+        ))
     }
 }
 
@@ -1554,7 +1760,7 @@ mod tests {
         // Test that empty content is handled gracefully
         let result = validate_tail_section_with_context("", "TAIL1");
         assert!(result.is_ok());
-        
+
         let result = validate_tail_section_with_context("", "TAIL2");
         assert!(result.is_ok());
     }
@@ -1564,7 +1770,7 @@ mod tests {
         // Test the filtering context function
         let result = validate_tail_section_with_filtering_context("", "TAIL1");
         assert!(result.is_ok());
-        
+
         let result = validate_tail_section_with_filtering_context("", "TAIL2");
         assert!(result.is_ok());
     }
@@ -1575,32 +1781,33 @@ mod tests {
         let only_comments = "# This is a comment\n# Another comment\n# More comments";
         let result = filter_tail_content(only_comments);
         assert_eq!(result, "");
-        
+
         // Test mixed content with some valid keywords
         let mixed_content = "# Comment\nTD(NStates=5)\n# Another comment\nRoot=1";
         let result = filter_tail_content(mixed_content);
         assert_eq!(result, "TD(NStates=5) Root=1");
-        
+
         // Test empty input
         let empty_input = "";
         let result = filter_tail_content(empty_input);
         assert_eq!(result, "");
-        
+
         // Test whitespace only
         let whitespace_only = "   \n\t\n   ";
         let result = filter_tail_content(whitespace_only);
         assert_eq!(result, "");
-        
+
         // Test inline comments are removed
-        let inline_comments = "TD(NStates=5) # This is an inline comment\nRoot=1 # Another inline comment";
+        let inline_comments =
+            "TD(NStates=5) # This is an inline comment\nRoot=1 # Another inline comment";
         let result = filter_tail_content(inline_comments);
         assert_eq!(result, "TD(NStates=5) Root=1");
-        
+
         // Test line that becomes empty after removing inline comment
         let only_inline = "   # This entire line is a comment";
         let result = filter_tail_content(only_inline);
         assert_eq!(result, "");
-        
+
         // Test mixed inline and full-line comments
         let mixed_inline = "TD(NStates=5) # inline comment\n# full line comment\nRoot=1";
         let result = filter_tail_content(mixed_inline);
@@ -1630,27 +1837,39 @@ mod tests {
         // Test that inline comments are properly removed from parameter values
         let mut config = Config::default();
         let mut fixed_atoms = Vec::new();
-        
+
         // Test nprocs with inline comment
         let result = parse_parameter("nprocs = 30 #processors", &mut config, &mut fixed_atoms);
         assert!(result.is_ok());
         assert_eq!(config.nprocs, 30);
-        
+
         // Test mem with inline comment
-        let result = parse_parameter("mem = 120GB # memory to be used", &mut config, &mut fixed_atoms);
+        let result = parse_parameter(
+            "mem = 120GB # memory to be used",
+            &mut config,
+            &mut fixed_atoms,
+        );
         assert!(result.is_ok());
         assert_eq!(config.mem, "120GB");
-        
+
         // Test method with inline comment
-        let result = parse_parameter("method = B3LYP/6-31G* # method comment", &mut config, &mut fixed_atoms);
+        let result = parse_parameter(
+            "method = B3LYP/6-31G* # method comment",
+            &mut config,
+            &mut fixed_atoms,
+        );
         assert!(result.is_ok());
         assert_eq!(config.method, "B3LYP/6-31G*");
-        
+
         // Test charge with inline comment
-        let result = parse_parameter("charge = 1 # molecular charge", &mut config, &mut fixed_atoms);
+        let result = parse_parameter(
+            "charge = 1 # molecular charge",
+            &mut config,
+            &mut fixed_atoms,
+        );
         assert!(result.is_ok());
         assert_eq!(config.charge1, 1);
-        
+
         // Test mult1 with inline comment
         let result = parse_parameter("mult1 = 3 # triplet state", &mut config, &mut fixed_atoms);
         assert!(result.is_ok());

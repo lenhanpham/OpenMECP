@@ -93,16 +93,16 @@ impl std::error::Error for ValidationError {}
 pub fn validate_run_mode_compatibility(config: &Config) -> ValidationResult<()> {
     // Check basic program/mode compatibility
     validate_program_mode_compatibility(config)?;
-    
+
     // Check wavefunction file requirements
     validate_wavefunction_files(config)?;
-    
+
     // Check program-specific requirements
     validate_program_specific_requirements(config)?;
-    
+
     // Check run mode specific requirements
     validate_run_mode_requirements(config)?;
-    
+
     Ok(())
 }
 
@@ -121,7 +121,7 @@ fn validate_program_mode_compatibility(config: &Config) -> ValidationResult<()> 
                 });
             }
         }
-        
+
         // XTB-specific validations
         (QMProgram::Xtb, RunMode::Stable) => {
             return Err(ValidationError {
@@ -131,7 +131,7 @@ fn validate_program_mode_compatibility(config: &Config) -> ValidationResult<()> 
                 reference: Some("XTB automatically uses stable wavefunctions".to_string()),
             });
         }
-        
+
         (QMProgram::Xtb, RunMode::InterRead) => {
             return Err(ValidationError {
                 category: ErrorCategory::UnsupportedFeature,
@@ -140,19 +140,22 @@ fn validate_program_mode_compatibility(config: &Config) -> ValidationResult<()> 
                 reference: Some("XTB uses internal wavefunction handling".to_string()),
             });
         }
-        
+
         // BAGEL-specific validations
         (QMProgram::Bagel, RunMode::Read) | (QMProgram::Bagel, RunMode::InterRead) => {
             if config.bagel_model.is_empty() {
                 return Err(ValidationError {
                     category: ErrorCategory::InvalidConfiguration,
                     message: "BAGEL calculations require a model file specification".to_string(),
-                    suggestion: Some("Set the 'bagel_model' parameter to point to your BAGEL JSON template file".to_string()),
+                    suggestion: Some(
+                        "Set the 'bagel_model' parameter to point to your BAGEL JSON template file"
+                            .to_string(),
+                    ),
                     reference: Some("See BAGEL documentation for model file format".to_string()),
                 });
             }
         }
-        
+
         // Custom program validations
         (QMProgram::Custom, _) => {
             if config.custom_interface_file.is_empty() {
@@ -164,7 +167,7 @@ fn validate_program_mode_compatibility(config: &Config) -> ValidationResult<()> 
                 });
             }
         }
-        
+
         // Coordinate driving validations
         (_, RunMode::CoordinateDrive) => {
             if config.drive_type.is_empty() || config.drive_atoms.is_empty() {
@@ -176,7 +179,7 @@ fn validate_program_mode_compatibility(config: &Config) -> ValidationResult<()> 
                 });
             }
         }
-        
+
         // Path optimization validations
         (_, RunMode::PathOptimization) => {
             if config.drive_type.is_empty() || config.drive_atoms.is_empty() {
@@ -188,23 +191,30 @@ fn validate_program_mode_compatibility(config: &Config) -> ValidationResult<()> 
                 });
             }
         }
-        
+
         // FixDE mode validations
         (_, RunMode::FixDE) => {
             if config.fix_de == 0.0 {
                 return Err(ValidationError {
                     category: ErrorCategory::InvalidConfiguration,
-                    message: "FixDE mode requires a target energy difference specification".to_string(),
-                    suggestion: Some("Set the 'fix_de' parameter to your target energy difference in eV".to_string()),
-                    reference: Some("FixDE mode constrains the energy difference to the specified value".to_string()),
+                    message: "FixDE mode requires a target energy difference specification"
+                        .to_string(),
+                    suggestion: Some(
+                        "Set the 'fix_de' parameter to your target energy difference in eV"
+                            .to_string(),
+                    ),
+                    reference: Some(
+                        "FixDE mode constrains the energy difference to the specified value"
+                            .to_string(),
+                    ),
                 });
             }
         }
-        
+
         // All other combinations are valid
         _ => {}
     }
-    
+
     Ok(())
 }
 
@@ -215,15 +225,20 @@ fn validate_wavefunction_files(config: &Config) -> ValidationResult<()> {
             match config.program {
                 QMProgram::Gaussian => {
                     // Check for Gaussian checkpoint files
-                    let chk_files = ["state_A.chk", "state_B.chk", "running_dir/state_A.chk", "running_dir/state_B.chk"];
+                    let chk_files = [
+                        "state_A.chk",
+                        "state_B.chk",
+                        "running_dir/state_A.chk",
+                        "running_dir/state_B.chk",
+                    ];
                     let mut found_files = Vec::new();
-                    
+
                     for file in &chk_files {
                         if Path::new(file).exists() {
                             found_files.push(*file);
                         }
                     }
-                    
+
                     if found_files.is_empty() {
                         return Err(ValidationError {
                             category: ErrorCategory::MissingWavefunctionFiles,
@@ -232,21 +247,26 @@ fn validate_wavefunction_files(config: &Config) -> ValidationResult<()> {
                             reference: Some("Checkpoint files are created automatically during normal calculations".to_string()),
                         });
                     }
-                    
+
                     println!("Found Gaussian checkpoint files: {:?}", found_files);
                 }
-                
+
                 QMProgram::Orca => {
                     // Check for ORCA wavefunction files
-                    let gbw_files = ["state_A.gbw", "state_B.gbw", "running_dir/state_A.gbw", "running_dir/state_B.gbw"];
+                    let gbw_files = [
+                        "state_A.gbw",
+                        "state_B.gbw",
+                        "running_dir/state_A.gbw",
+                        "running_dir/state_B.gbw",
+                    ];
                     let mut found_files = Vec::new();
-                    
+
                     for file in &gbw_files {
                         if Path::new(file).exists() {
                             found_files.push(*file);
                         }
                     }
-                    
+
                     if found_files.is_empty() {
                         return Err(ValidationError {
                             category: ErrorCategory::MissingWavefunctionFiles,
@@ -255,27 +275,32 @@ fn validate_wavefunction_files(config: &Config) -> ValidationResult<()> {
                             reference: Some("ORCA .gbw files contain the molecular orbitals and are created during calculations".to_string()),
                         });
                     }
-                    
+
                     println!("Found ORCA wavefunction files: {:?}", found_files);
                 }
-                
+
                 QMProgram::Xtb => {
                     // XTB doesn't use persistent wavefunction files in the same way
                     // This is handled in the program compatibility check
                 }
-                
+
                 QMProgram::Bagel => {
                     // BAGEL wavefunction handling is different - check model file instead
                     if !Path::new(&config.bagel_model).exists() {
                         return Err(ValidationError {
                             category: ErrorCategory::MissingDependencies,
                             message: format!("BAGEL model file '{}' not found", config.bagel_model),
-                            suggestion: Some("Ensure the BAGEL model file path is correct and the file exists".to_string()),
-                            reference: Some("BAGEL model files define the calculation template".to_string()),
+                            suggestion: Some(
+                                "Ensure the BAGEL model file path is correct and the file exists"
+                                    .to_string(),
+                            ),
+                            reference: Some(
+                                "BAGEL model files define the calculation template".to_string(),
+                            ),
                         });
                     }
                 }
-                
+
                 QMProgram::Custom => {
                     // Custom interface validation is handled elsewhere
                     if !Path::new(&config.custom_interface_file).exists() {
@@ -289,16 +314,16 @@ fn validate_wavefunction_files(config: &Config) -> ValidationResult<()> {
                 }
             }
         }
-        
+
         RunMode::Normal | RunMode::NoRead | RunMode::Stable => {
             // These modes don't require existing wavefunction files
         }
-        
+
         _ => {
             // Other modes (CoordinateDrive, PathOptimization, FixDE) don't have specific wavefunction requirements
         }
     }
-    
+
     Ok(())
 }
 
@@ -311,43 +336,52 @@ fn validate_program_specific_requirements(config: &Config) -> ValidationResult<(
                 return Err(ValidationError {
                     category: ErrorCategory::InvalidConfiguration,
                     message: "MP2 flag is incompatible with DFT methods in Gaussian".to_string(),
-                    suggestion: Some("Either remove the MP2 flag or use a wavefunction method like HF or MP2".to_string()),
+                    suggestion: Some(
+                        "Either remove the MP2 flag or use a wavefunction method like HF or MP2"
+                            .to_string(),
+                    ),
                     reference: Some("MP2 is a post-HF method, not compatible with DFT".to_string()),
                 });
             }
         }
-        
+
         QMProgram::Orca => {
             // Validate ORCA-specific settings
             if config.mp2 {
                 println!("Warning: MP2 flag may not be applicable for ORCA calculations");
             }
         }
-        
+
         QMProgram::Bagel => {
             // BAGEL requires model file
             if config.bagel_model.is_empty() {
                 return Err(ValidationError {
                     category: ErrorCategory::InvalidConfiguration,
                     message: "BAGEL calculations require a model file specification".to_string(),
-                    suggestion: Some("Set the 'bagel_model' parameter to your BAGEL JSON template file".to_string()),
-                    reference: Some("BAGEL model files define the quantum chemistry method and basis set".to_string()),
+                    suggestion: Some(
+                        "Set the 'bagel_model' parameter to your BAGEL JSON template file"
+                            .to_string(),
+                    ),
+                    reference: Some(
+                        "BAGEL model files define the quantum chemistry method and basis set"
+                            .to_string(),
+                    ),
                 });
             }
         }
-        
+
         QMProgram::Xtb => {
             // XTB has limited method options
             if !config.method.is_empty() && !config.method.contains("GFN") {
                 println!("Warning: XTB typically uses GFN methods (GFN1-xTB, GFN2-xTB). Method '{}' may not be recognized", config.method);
             }
         }
-        
+
         QMProgram::Custom => {
             // Custom program validation is handled in compatibility check
         }
     }
-    
+
     Ok(())
 }
 
@@ -358,27 +392,34 @@ fn validate_run_mode_requirements(config: &Config) -> ValidationResult<()> {
             // Inter-read mode is specifically for open-shell singlets
             if config.mult1 != 1 || config.mult2 != 1 {
                 println!("Warning: Inter-read mode is typically used for open-shell singlet calculations (mult1=1, mult2=1)");
-                println!("Current multiplicities: mult1={}, mult2={}", config.mult1, config.mult2);
+                println!(
+                    "Current multiplicities: mult1={}, mult2={}",
+                    config.mult1, config.mult2
+                );
             }
         }
-        
+
         RunMode::Stable => {
             // Stability mode warnings
             match config.program {
                 QMProgram::Orca => {
                     println!("ORCA Stability Mode Guidance:");
-                    println!("- RHF calculations will not restart automatically if instability is found");
+                    println!(
+                        "- RHF calculations will not restart automatically if instability is found"
+                    );
                     println!("- Remember to use UKS for singlet state calculations");
                     println!("- RI approximations are not supported in stability analysis");
                     println!("- Consider using 'read' mode with manually converged wavefunctions for RI calculations");
                 }
                 QMProgram::Gaussian => {
-                    println!("Gaussian Stability Mode: Will automatically handle wavefunction stability");
+                    println!(
+                        "Gaussian Stability Mode: Will automatically handle wavefunction stability"
+                    );
                 }
                 _ => {}
             }
         }
-        
+
         RunMode::CoordinateDrive => {
             // Validate coordinate driving parameters
             if config.drive_start == config.drive_end {
@@ -389,22 +430,26 @@ fn validate_run_mode_requirements(config: &Config) -> ValidationResult<()> {
                     reference: Some("Coordinate driving varies a parameter from start to end value".to_string()),
                 });
             }
-            
+
             if config.drive_steps == 0 {
                 return Err(ValidationError {
                     category: ErrorCategory::InvalidConfiguration,
                     message: "Coordinate driving requires at least one step".to_string(),
-                    suggestion: Some("Set drive_steps to a positive integer (typically 10-50)".to_string()),
-                    reference: Some("More steps give higher resolution but take longer".to_string()),
+                    suggestion: Some(
+                        "Set drive_steps to a positive integer (typically 10-50)".to_string(),
+                    ),
+                    reference: Some(
+                        "More steps give higher resolution but take longer".to_string(),
+                    ),
                 });
             }
         }
-        
+
         _ => {
             // Other modes don't have specific additional requirements
         }
     }
-    
+
     Ok(())
 }
 
@@ -418,21 +463,23 @@ fn validate_run_mode_requirements(config: &Config) -> ValidationResult<()> {
 /// * `config` - The configuration to provide guidance for
 pub fn provide_user_guidance(config: &Config) {
     println!("\n****Configuration Guidance****");
-    
+
     // Program-specific guidance
     match config.program {
         QMProgram::Orca => {
             if config.run_mode == RunMode::InterRead {
                 println!("ORCA Inter-Read Mode Guidance:");
                 println!("- The inter_read mode is set for ORCA");
-                println!("- Unlike Gaussian, ORCA will not automatically add guess=mix for state A");
+                println!(
+                    "- Unlike Gaussian, ORCA will not automatically add guess=mix for state A"
+                );
                 println!("- For open-shell singlet convergence, add convergence control keywords to your tail section:");
                 println!("  %scf");
                 println!("    MaxIter 200");
                 println!("    ConvForced true");
                 println!("  end");
             }
-            
+
             if config.run_mode == RunMode::Stable {
                 println!("ORCA Stability Mode Limitations:");
                 println!("- RI approximations are not supported in stability analysis");
@@ -440,7 +487,7 @@ pub fn provide_user_guidance(config: &Config) {
                 println!("- UKS is recommended for singlet state calculations");
             }
         }
-        
+
         QMProgram::Gaussian => {
             if config.run_mode == RunMode::InterRead {
                 println!("Gaussian Inter-Read Mode:");
@@ -448,17 +495,17 @@ pub fn provide_user_guidance(config: &Config) {
                 println!("- Optimal for open-shell singlet calculations");
             }
         }
-        
+
         QMProgram::Xtb => {
             println!("XTB Calculation Notes:");
             println!("- XTB handles wavefunction stability internally");
             println!("- Use 'normal' or 'noread' modes for best performance");
             println!("- Method should typically be GFN1-xTB or GFN2-xTB");
         }
-        
+
         _ => {}
     }
-    
+
     // Run mode specific guidance
     match config.run_mode {
         RunMode::Normal => {
@@ -478,7 +525,7 @@ pub fn provide_user_guidance(config: &Config) {
         }
         _ => {}
     }
-    
+
     println!("****End Configuration Guidance****\n");
 }
 
@@ -493,17 +540,19 @@ pub fn log_mode_transition(from_mode: RunMode, to_mode: RunMode, reason: &str) {
     if from_mode != to_mode {
         println!("****Mode Transition: {:?} -> {:?}****", from_mode, to_mode);
         println!("Reason: {}", reason);
-        
+
         match (from_mode, to_mode) {
             (RunMode::Stable, RunMode::Read) => {
                 println!("Stability analysis completed, switching to read mode for optimization");
             }
             (RunMode::InterRead, RunMode::Read) => {
-                println!("Inter-read initialization completed, switching to read mode for optimization");
+                println!(
+                    "Inter-read initialization completed, switching to read mode for optimization"
+                );
             }
             _ => {}
         }
-        
+
         println!("****Mode Transition Complete****\n");
     }
 }
@@ -516,7 +565,12 @@ pub fn log_mode_transition(from_mode: RunMode, to_mode: RunMode, reason: &str) {
 /// * `source` - Source file path
 /// * `destination` - Destination file path (optional)
 /// * `print_level` - Print level (0=quiet, 1=normal, 2=verbose)
-pub fn log_file_operation(operation: &str, source: &str, destination: Option<&str>, print_level: u32) {
+pub fn log_file_operation(
+    operation: &str,
+    source: &str,
+    destination: Option<&str>,
+    print_level: u32,
+) {
     // Only print file operations if print_level is 2 (verbose)
     if print_level >= 2 {
         match destination {
@@ -537,7 +591,7 @@ pub fn log_file_operation(operation: &str, source: &str, destination: Option<&st
 }
 
 /// Logs file operations for debugging and validation purposes (legacy version).
-/// 
+///
 /// This function maintains backward compatibility by defaulting to verbose output.
 /// New code should use `log_file_operation` with explicit print_level.
 ///

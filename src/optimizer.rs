@@ -133,7 +133,13 @@ impl OptimizationState {
     /// // Add first iteration
     /// // opt_state.add_to_history(coords, grad, hessian, energy);
     /// ```
-    pub fn add_to_history(&mut self, geom: DVector<f64>, grad: DVector<f64>, hess: DMatrix<f64>, energy: f64) {
+    pub fn add_to_history(
+        &mut self,
+        geom: DVector<f64>,
+        grad: DVector<f64>,
+        hess: DMatrix<f64>,
+        energy: f64,
+    ) {
         if self.geom_history.len() >= self.max_history {
             self.geom_history.pop_front();
             self.grad_history.pop_front();
@@ -213,7 +219,9 @@ pub fn solve_constrained_step(
 
     // Build the augmented Hessian matrix
     let mut augmented_hessian = DMatrix::zeros(n_coords + n_constraints, n_coords + n_constraints);
-    augmented_hessian.view_mut((0, 0), (n_coords, n_coords)).copy_from(hessian);
+    augmented_hessian
+        .view_mut((0, 0), (n_coords, n_coords))
+        .copy_from(hessian);
     augmented_hessian
         .view_mut((0, n_coords), (n_coords, n_constraints))
         .copy_from(&constraint_jacobian.transpose());
@@ -360,7 +368,7 @@ pub fn bfgs_step(
     g0: &DVector<f64>,
     hessian: &DMatrix<f64>,
     config: &Config,
-    adaptive_scale: f64,
+    _adaptive_scale: f64, // Parameter kept for compatibility but not used for BFGS
 ) -> DVector<f64> {
     // Solve H * dk = -g (compute Newton direction)
     let neg_g = -g0;
@@ -374,18 +382,28 @@ pub fn bfgs_step(
     // 1. Compute dk = -H^-1 * g
     // 2. Cap dk to 0.1 if ||dk|| > 0.1
     // 3. Apply rho=15 multiplier: XNew = X0 + rho * dk
-    
+
     // Step 2: Cap direction vector dk to 0.1 (Python's hardcoded limit)
     let dk_norm = dk.norm();
-    const DIRECTION_LIMIT: f64 = 0.1;  // Python's hardcoded cap on direction
+    const DIRECTION_LIMIT: f64 = 0.1; // Python's hardcoded cap on direction
     if dk_norm > DIRECTION_LIMIT {
+        let original_norm = dk_norm;
         dk *= DIRECTION_LIMIT / dk_norm;
-        println!("current stepsize: {} is reduced to max_size {}", dk_norm, DIRECTION_LIMIT);
+        println!(
+            "current stepsize: {} is reduced to max_size {}",
+            original_norm, DIRECTION_LIMIT
+        );
     }
 
     // Step 3: Apply rho multiplier (from config.bfgs_rho, default 15.0)
-    // This naturally reduces as Hessian improves and dk gets smaller
-    let rho = config.bfgs_rho * adaptive_scale;
+    // Python uses FIXED rho for BFGS, no adaptive scaling
+    let rho = config.bfgs_rho; // Fixed rho, matching Python behavior
+    let final_step_size = DIRECTION_LIMIT * rho;
+    println!(
+        "BFGS step: direction_capped={}, rho={}, final_step_size={}",
+        DIRECTION_LIMIT, rho, final_step_size
+    );
+
     let x_new = x0 + &dk * rho;
 
     x_new
@@ -484,7 +502,7 @@ pub fn update_hessian_psb(
     }
     // If curvature condition not satisfied, return current Hessian
     // This prevents degradation in convergence properties
-    
+
     h_new
 }
 
@@ -613,13 +631,13 @@ pub fn check_convergence(
 ) -> ConvergenceStatus {
     let de = (e1 - e2).abs();
     let disp = x_new - x_old;
-    
+
     let rms_disp = disp.norm() / (disp.len() as f64).sqrt();
     let max_disp = disp.iter().map(|x| x.abs()).fold(0.0, f64::max);
-    
+
     let rms_grad = grad.norm() / (grad.len() as f64).sqrt();
     let max_grad = grad.iter().map(|x| x.abs()).fold(0.0, f64::max);
-    
+
     ConvergenceStatus {
         de_converged: de < config.thresholds.de,
         rms_grad_converged: rms_grad < config.thresholds.rms_g,
@@ -659,20 +677,20 @@ fn compute_error_vectors(
     hessians: &VecDeque<DMatrix<f64>>,
 ) -> Vec<DVector<f64>> {
     let n = grads.len();
-    if n == 0 { return Vec::new(); }
+    if n == 0 {
+        return Vec::new();
+    }
 
     // Compute the mean Hessian
-    let mut h_mean = DMatrix::zeros(
-        hessians[0].nrows(),
-        hessians[0].ncols(),
-    );
+    let mut h_mean = DMatrix::zeros(hessians[0].nrows(), hessians[0].ncols());
     for hess in hessians {
         h_mean += hess;
     }
     h_mean /= n as f64;
 
     // Compute error vectors using the mean Hessian for all gradients
-    grads.iter()
+    grads
+        .iter()
         .map(|grad| {
             h_mean
                 .clone()
@@ -717,19 +735,19 @@ fn compute_error_vectors(
 fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
     let n = errors.len();
     let mut b = DMatrix::zeros(n + 1, n + 1);
-    
+
     for i in 0..n {
         for j in 0..n {
             b[(i, j)] = errors[i].dot(&errors[j]);
         }
     }
-    
+
     for i in 0..n {
         b[(i, n)] = 1.0;
         b[(n, i)] = 1.0;
     }
     b[(n, n)] = 0.0;
-    
+
     b
 }
 
@@ -779,14 +797,14 @@ fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
 /// ```
 pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64> {
     let n = opt_state.geom_history.len();
-    
+
     // Error vectors are now correctly computed with the mean Hessian inside this function
     let errors = compute_error_vectors(&opt_state.grad_history, &opt_state.hess_history);
     let b_matrix = build_b_matrix(&errors);
-    
+
     let mut rhs = DVector::zeros(n + 1);
     rhs[n] = 1.0;
-    
+
     let solution = b_matrix.lu().solve(&rhs).unwrap_or_else(|| {
         let mut fallback = DVector::zeros(n + 1);
         for i in 0..n {
@@ -794,9 +812,9 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
         }
         fallback
     });
-    
+
     let coeffs = solution.rows(0, n);
-    
+
     // --- Start of Bug Fix ---
 
     // 1. Interpolate geometry to get x_new_prime
@@ -804,13 +822,13 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
     for (i, geom) in opt_state.geom_history.iter().enumerate() {
         x_new_prime += geom * coeffs[i];
     }
-    
+
     // 2. Interpolate gradient to get g_new_prime (THE CORRECT WAY)
     let mut g_new_prime = DVector::zeros(opt_state.grad_history[0].len());
     for (i, grad) in opt_state.grad_history.iter().enumerate() {
         g_new_prime += grad * coeffs[i];
     }
-    
+
     // 3. Get the mean Hessian (already computed once in compute_error_vectors, but needed here)
     let mut h_mean = DMatrix::zeros(
         opt_state.hess_history[0].nrows(),
@@ -820,15 +838,18 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
         h_mean += hess;
     }
     h_mean /= n as f64;
-    
+
     // 4. Compute correction using the interpolated gradient
-    let correction = h_mean.lu().solve(&g_new_prime).unwrap_or_else(|| g_new_prime.clone());
-    
+    let correction = h_mean
+        .lu()
+        .solve(&g_new_prime)
+        .unwrap_or_else(|| g_new_prime.clone());
+
     // 5. Apply correction to the interpolated geometry
     let mut x_new = x_new_prime - &correction;
 
     // --- End of Bug Fix ---
-    
+
     let last_geom = opt_state.geom_history.back().unwrap();
     let mut step = &x_new - last_geom;
 
@@ -842,7 +863,10 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
 
     if step_norm > config.max_step_size {
         let scale = config.max_step_size / step_norm;
-        println!("current stepsize: {} is reduced to max_size {}", step_norm, config.max_step_size);
+        println!(
+            "current stepsize: {} is reduced to max_size {}",
+            step_norm, config.max_step_size
+        );
         x_new = last_geom + &step * scale;
     } else {
         x_new = last_geom + step;
@@ -1094,9 +1118,60 @@ pub fn gediis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f6
 
     if step_norm > config.max_step_size {
         let scale = config.max_step_size / step_norm;
-        println!("current stepsize: {} is reduced to max_size {}", step_norm, config.max_step_size);
+        println!(
+            "current stepsize: {} is reduced to max_size {}",
+            step_norm, config.max_step_size
+        );
         x_new = last_geom + &step * scale;
     }
 
     x_new
+}
+
+/// Performs a hybrid GEDIIS optimization step (50% GDIIS + 50% GEDIIS).
+///
+/// This function implements Python's hybrid approach which averages results
+/// from GDIIS and GEDIIS optimizers. This combines the robust convergence of
+/// GDIIS with the energy-aware acceleration of GEDIIS.
+///
+/// # Algorithm
+///
+/// 1. Compute GDIIS step using gradient history
+/// 2. Compute GEDIIS step using energy-weighted error vectors
+/// 3. Apply 50/50 averaging: X_new = 0.5 * X_GDIIS + 0.5 * X_GEDIIS
+/// 4. Apply step size limits from configuration
+///
+/// # Arguments
+///
+/// * `opt_state` - Optimization state with history
+/// * `config` - Configuration with step size limits
+///
+/// # Returns
+///
+/// Returns the new geometry coordinates after hybrid GEDIIS step.
+///
+/// # Examples
+///
+/// ```rust
+/// use omecp::optimizer::{hybrid_gediis_step, OptimizationState};
+/// use omecp::config::Config;
+///
+/// let config = Config::default(); // hybrid_gediis = true by default
+/// let opt_state = OptimizationState::new();
+///
+/// // let x_new = hybrid_gediis_step(&opt_state, &config);
+/// ```
+pub fn hybrid_gediis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64> {
+    // Compute both GDIIS and GEDIIS results
+    let gdiis_result = gdiis_step(opt_state, config);
+    let gediis_result = gediis_step(opt_state, config);
+
+    // Apply 50/50 averaging (Python MECP.py behavior)
+    let n = gdiis_result.len();
+    let mut hybrid_result = DVector::zeros(n);
+    for i in 0..n {
+        hybrid_result[i] = 0.5 * gdiis_result[i] + 0.5 * gediis_result[i];
+    }
+
+    hybrid_result
 }

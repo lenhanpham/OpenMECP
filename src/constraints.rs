@@ -463,10 +463,10 @@ pub fn add_constraint_lagrange(
 
     // Evaluate constraint violations
     let violations = evaluate_constraints(geometry, constraints);
-    
+
     // Build constraint Jacobian matrix C (num_constraints × 3*num_atoms)
     let jacobian = build_constraint_jacobian(geometry, constraints);
-    
+
     // Check for zero violations - if all constraints are satisfied, no correction needed
     let max_violation = violations.iter().fold(0.0f64, |acc, &x| acc.max(x.abs()));
     if max_violation < 1e-12 {
@@ -477,7 +477,7 @@ pub fn add_constraint_lagrange(
     // Solve the constraint equation: C * C^T * λ = -g(x)
     // where g(x) are the constraint violations
     let cct = &jacobian * jacobian.transpose();
-    
+
     // Check if the matrix is singular
     let det = cct.determinant();
     if det.abs() < 1e-14 {
@@ -489,9 +489,9 @@ pub fn add_constraint_lagrange(
         Some(inv) => inv,
         None => return Err(ConstraintError::SingularJacobian),
     };
-    
+
     let lambda_vec = cct_inv * (-violations);
-    
+
     // Update lambdas vector
     for (i, &lambda) in lambda_vec.iter().enumerate() {
         if i < lambdas.len() {
@@ -503,7 +503,7 @@ pub fn add_constraint_lagrange(
     for &lambda in &lambda_vec {
         if !lambda.is_finite() {
             return Err(ConstraintError::NumericalInstability(
-                "Lagrange multipliers contain NaN or infinite values".to_string()
+                "Lagrange multipliers contain NaN or infinite values".to_string(),
             ));
         }
     }
@@ -536,44 +536,56 @@ pub fn validate_constraints(
 ) -> Result<(), ConstraintError> {
     for (i, constraint) in constraints.iter().enumerate() {
         match constraint {
-            Constraint::Bond { atoms: (a1, a2), target } => {
+            Constraint::Bond {
+                atoms: (a1, a2),
+                target,
+            } => {
                 if *a1 >= num_atoms || *a2 >= num_atoms {
-                    return Err(ConstraintError::InvalidConstraint(
-                        format!("Bond constraint {}: atom indices {} or {} exceed number of atoms {}", 
-                               i, a1, a2, num_atoms)
-                    ));
+                    return Err(ConstraintError::InvalidConstraint(format!(
+                        "Bond constraint {}: atom indices {} or {} exceed number of atoms {}",
+                        i, a1, a2, num_atoms
+                    )));
                 }
                 if a1 == a2 {
-                    return Err(ConstraintError::InvalidConstraint(
-                        format!("Bond constraint {}: cannot constrain atom {} to itself", i, a1)
-                    ));
+                    return Err(ConstraintError::InvalidConstraint(format!(
+                        "Bond constraint {}: cannot constrain atom {} to itself",
+                        i, a1
+                    )));
                 }
                 if *target <= 0.0 || *target > 10.0 {
-                    return Err(ConstraintError::InvalidConstraint(
-                        format!("Bond constraint {}: unreasonable target distance {:.3} Å", i, target)
-                    ));
+                    return Err(ConstraintError::InvalidConstraint(format!(
+                        "Bond constraint {}: unreasonable target distance {:.3} Å",
+                        i, target
+                    )));
                 }
             }
-            Constraint::Angle { atoms: (a1, a2, a3), target } => {
+            Constraint::Angle {
+                atoms: (a1, a2, a3),
+                target,
+            } => {
                 if *a1 >= num_atoms || *a2 >= num_atoms || *a3 >= num_atoms {
-                    return Err(ConstraintError::InvalidConstraint(
-                        format!("Angle constraint {}: atom indices {}, {}, or {} exceed number of atoms {}", 
-                               i, a1, a2, a3, num_atoms)
-                    ));
+                    return Err(ConstraintError::InvalidConstraint(format!(
+                        "Angle constraint {}: atom indices {}, {}, or {} exceed number of atoms {}",
+                        i, a1, a2, a3, num_atoms
+                    )));
                 }
                 if a1 == a2 || a2 == a3 || a1 == a3 {
-                    return Err(ConstraintError::InvalidConstraint(
-                        format!("Angle constraint {}: duplicate atom indices {}, {}, {}", i, a1, a2, a3)
-                    ));
+                    return Err(ConstraintError::InvalidConstraint(format!(
+                        "Angle constraint {}: duplicate atom indices {}, {}, {}",
+                        i, a1, a2, a3
+                    )));
                 }
                 if *target < 0.0 || *target > std::f64::consts::PI {
-                    return Err(ConstraintError::InvalidConstraint(
-                        format!("Angle constraint {}: target angle {:.3} rad is outside valid range [0, π]", 
-                               i, target)
-                    ));
+                    return Err(ConstraintError::InvalidConstraint(format!(
+                        "Angle constraint {}: target angle {:.3} rad is outside valid range [0, π]",
+                        i, target
+                    )));
                 }
             }
-            Constraint::Dihedral { atoms: (a1, a2, a3, a4), target } => {
+            Constraint::Dihedral {
+                atoms: (a1, a2, a3, a4),
+                target,
+            } => {
                 if *a1 >= num_atoms || *a2 >= num_atoms || *a3 >= num_atoms || *a4 >= num_atoms {
                     return Err(ConstraintError::InvalidConstraint(
                         format!("Dihedral constraint {}: atom indices {}, {}, {}, or {} exceed number of atoms {}", 
@@ -582,12 +594,12 @@ pub fn validate_constraints(
                 }
                 let atoms = [*a1, *a2, *a3, *a4];
                 for j in 0..4 {
-                    for k in (j+1)..4 {
+                    for k in (j + 1)..4 {
                         if atoms[j] == atoms[k] {
-                            return Err(ConstraintError::InvalidConstraint(
-                                format!("Dihedral constraint {}: duplicate atom indices {}, {}, {}, {}", 
-                                       i, a1, a2, a3, a4)
-                            ));
+                            return Err(ConstraintError::InvalidConstraint(format!(
+                                "Dihedral constraint {}: duplicate atom indices {}, {}, {}, {}",
+                                i, a1, a2, a3, a4
+                            )));
                         }
                     }
                 }
@@ -640,33 +652,52 @@ pub fn report_constraint_status(
     }
 
     println!("\n--- Constraint Status (Step {}) ---", step);
-    
+
     let violations = evaluate_constraints(geometry, constraints);
     let max_violation = violations.iter().fold(0.0f64, |acc, &x| acc.max(x.abs()));
-    
+
     println!("Maximum constraint violation: {:.6}", max_violation);
-    
+
     for (i, constraint) in constraints.iter().enumerate() {
         let violation = violations[i];
         let lambda = lambdas.get(i).copied().unwrap_or(0.0);
-        
+
         match constraint {
-            Constraint::Bond { atoms: (a, b), target } => {
+            Constraint::Bond {
+                atoms: (a, b),
+                target,
+            } => {
                 let current = calculate_bond_distance(geometry, *a, *b);
                 println!(
                     "  Bond {}-{}: current={:.4} Å, target={:.4} Å, violation={:.6}, λ={:.6}",
-                    a + 1, b + 1, current, target, violation, lambda
+                    a + 1,
+                    b + 1,
+                    current,
+                    target,
+                    violation,
+                    lambda
                 );
             }
-            Constraint::Angle { atoms: (a, b, c), target } => {
+            Constraint::Angle {
+                atoms: (a, b, c),
+                target,
+            } => {
                 let current = calculate_bond_angle(geometry, *a, *b, *c);
                 println!(
                     "  Angle {}-{}-{}: current={:.2}°, target={:.2}°, violation={:.6}, λ={:.6}",
-                    a + 1, b + 1, c + 1, 
-                    current.to_degrees(), target.to_degrees(), violation, lambda
+                    a + 1,
+                    b + 1,
+                    c + 1,
+                    current.to_degrees(),
+                    target.to_degrees(),
+                    violation,
+                    lambda
                 );
             }
-            Constraint::Dihedral { atoms: (a, b, c, d), target } => {
+            Constraint::Dihedral {
+                atoms: (a, b, c, d),
+                target,
+            } => {
                 let current = calculate_dihedral(geometry, *a, *b, *c, *d);
                 println!(
                     "  Dihedral {}-{}-{}-{}: current={:.2}°, target={:.2}°, violation={:.6}, λ={:.6}",
@@ -676,10 +707,17 @@ pub fn report_constraint_status(
             }
         }
     }
-    
+
     // Convergence status
     let converged = max_violation < 1e-6;
-    println!("Constraint convergence: {}", if converged { "CONVERGED" } else { "NOT CONVERGED" });
+    println!(
+        "Constraint convergence: {}",
+        if converged {
+            "CONVERGED"
+        } else {
+            "NOT CONVERGED"
+        }
+    );
     println!("--- End Constraint Status ---\n");
 }
 
@@ -698,18 +736,26 @@ fn calculate_bond_angle(geometry: &Geometry, a: usize, b: usize, c: usize) -> f6
     let pos_a = geometry.get_atom_coords(a);
     let pos_b = geometry.get_atom_coords(b);
     let pos_c = geometry.get_atom_coords(c);
-    
-    let v_ba = [pos_a[0] - pos_b[0], pos_a[1] - pos_b[1], pos_a[2] - pos_b[2]];
-    let v_bc = [pos_c[0] - pos_b[0], pos_c[1] - pos_b[1], pos_c[2] - pos_b[2]];
-    
+
+    let v_ba = [
+        pos_a[0] - pos_b[0],
+        pos_a[1] - pos_b[1],
+        pos_a[2] - pos_b[2],
+    ];
+    let v_bc = [
+        pos_c[0] - pos_b[0],
+        pos_c[1] - pos_b[1],
+        pos_c[2] - pos_b[2],
+    ];
+
     let dot = v_ba[0] * v_bc[0] + v_ba[1] * v_bc[1] + v_ba[2] * v_bc[2];
     let norm_ba = (v_ba[0].powi(2) + v_ba[1].powi(2) + v_ba[2].powi(2)).sqrt();
     let norm_bc = (v_bc[0].powi(2) + v_bc[1].powi(2) + v_bc[2].powi(2)).sqrt();
-    
+
     if norm_ba < 1e-10 || norm_bc < 1e-10 {
         return 0.0;
     }
-    
+
     let cos_angle = (dot / (norm_ba * norm_bc)).clamp(-1.0, 1.0);
     cos_angle.acos()
 }

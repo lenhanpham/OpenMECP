@@ -221,6 +221,12 @@ pub struct Config {
     pub drive_atoms: Vec<usize>,
     /// Use GEDIIS optimizer instead of GDIIS (faster for difficult cases)
     pub use_gediis: bool,
+    /// Use hybrid GEDIIS (50% GDIIS + 50% GEDIIS) instead of pure GEDIIS
+    ///
+    /// When enabled, this matches Python's MECP.py behavior which averages
+    /// GDIIS and GEDIIS results for improved convergence robustness.
+    /// Default: true to match Python behavior
+    pub use_hybrid_gediis: bool,
     /// Step number at which to switch from BFGS to DIIS optimizers (default: 3)
     /// - 0: Use DIIS from step 1 (no BFGS)
     /// - >= max_steps: Use BFGS only (no DIIS)
@@ -235,7 +241,7 @@ impl Default for Config {
         Self {
             thresholds: Thresholds::default(),
             max_steps: 100,
-            max_step_size: 0.3,
+            max_step_size: 0.1,
             reduced_factor: 0.5,
             nprocs: 1,
             mem: "1GB".to_string(),
@@ -272,7 +278,8 @@ impl Default for Config {
             drive_type: String::new(),
             drive_atoms: Vec::new(),
             use_gediis: false,
-            switch_step: 3, // Default to current behavior (BFGS for first 3 steps)
+            use_hybrid_gediis: true, // Match Python's hybrid behavior
+            switch_step: 3,          // Default to current behavior (BFGS for first 3 steps)
             bfgs_rho: 15.0,
         }
     }
@@ -318,14 +325,14 @@ pub enum RunMode {
     ///
     /// **Phase 1**: Pre-point calculations WITHOUT checkpoint reading to generate initial wavefunctions
     /// **Phase 2**: Main optimization loop WITH checkpoint reading for faster SCF convergence
-    /// 
+    ///
     /// **Program-specific behavior:**
     /// - **Gaussian**: Generates .chk files in Phase 1, uses `guess=read` in Phase 2
     /// - **ORCA**: Generates .gbw files in Phase 1, uses `!moread` in Phase 2  
     /// - **XTB**: Runs pre-point for initialization, no checkpoint files needed
     /// - **BAGEL**: Validates model file in Phase 1, uses same model in Phase 2
     /// - **Custom**: Follows Gaussian-like behavior (depends on interface configuration)
-    /// 
+    ///
     /// - Recommended for most calculations
     /// - Balanced between speed and robustness
     /// - Follows the exact Python MECP.py workflow

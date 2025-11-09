@@ -67,8 +67,7 @@ pub enum ConfigError {
 }
 
 /// Main configuration structure containing all program settings.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Settings {
     /// File extension settings for different QM programs
     pub extensions: ExtensionSettings,
@@ -291,10 +290,17 @@ impl SettingsManager {
                     Ok(system_config) => {
                         settings.merge(system_config);
                         config_source = format!("system config ({})", system_path.display());
-                        debug!("Loaded system configuration from: {}", system_path.display());
+                        debug!(
+                            "Loaded system configuration from: {}",
+                            system_path.display()
+                        );
                     }
                     Err(e) => {
-                        warn!("Failed to load system config from {}: {}", system_path.display(), e);
+                        warn!(
+                            "Failed to load system config from {}: {}",
+                            system_path.display(),
+                            e
+                        );
                     }
                 }
             }
@@ -310,7 +316,11 @@ impl SettingsManager {
                         debug!("Loaded user configuration from: {}", user_path.display());
                     }
                     Err(e) => {
-                        warn!("Failed to load user config from {}: {}", user_path.display(), e);
+                        warn!(
+                            "Failed to load user config from {}: {}",
+                            user_path.display(),
+                            e
+                        );
                     }
                 }
             }
@@ -326,7 +336,11 @@ impl SettingsManager {
                     debug!("Loaded local configuration from: {}", local_path.display());
                 }
                 Err(e) => {
-                    warn!("Failed to load local config from {}: {}", local_path.display(), e);
+                    warn!(
+                        "Failed to load local config from {}: {}",
+                        local_path.display(),
+                        e
+                    );
                 }
             }
         }
@@ -367,7 +381,9 @@ impl SettingsManager {
     }
 
     /// Parses the extensions section from INI configuration.
-    fn parse_extensions(section: &std::collections::HashMap<String, Option<String>>) -> Result<ExtensionSettings, ConfigError> {
+    fn parse_extensions(
+        section: &std::collections::HashMap<String, Option<String>>,
+    ) -> Result<ExtensionSettings, ConfigError> {
         let mut extensions = ExtensionSettings::default();
 
         if let Some(Some(gaussian)) = section.get("gaussian") {
@@ -390,46 +406,56 @@ impl SettingsManager {
     }
 
     /// Parses the general section from INI configuration.
-    fn parse_general(section: &std::collections::HashMap<String, Option<String>>) -> Result<GeneralSettings, ConfigError> {
+    fn parse_general(
+        section: &std::collections::HashMap<String, Option<String>>,
+    ) -> Result<GeneralSettings, ConfigError> {
         let mut general = GeneralSettings::default();
 
         if let Some(Some(max_memory)) = section.get("max_memory") {
             general.max_memory = max_memory.clone();
         }
         if let Some(Some(default_nprocs)) = section.get("default_nprocs") {
-            general.default_nprocs = default_nprocs.parse()
-                .map_err(|_| ConfigError::InvalidValue(format!("Invalid default_nprocs: {}", default_nprocs)))?;
+            general.default_nprocs = default_nprocs.parse().map_err(|_| {
+                ConfigError::InvalidValue(format!("Invalid default_nprocs: {}", default_nprocs))
+            })?;
         }
         if let Some(Some(print_level)) = section.get("print_level") {
-            general.print_level = print_level.parse()
-                .map_err(|_| ConfigError::InvalidValue(format!("Invalid print_level: {}", print_level)))?;
+            general.print_level = print_level.parse().map_err(|_| {
+                ConfigError::InvalidValue(format!("Invalid print_level: {}", print_level))
+            })?;
         }
 
         Ok(general)
     }
 
     /// Parses the logging section from INI configuration.
-    fn parse_logging(section: &std::collections::HashMap<String, Option<String>>) -> Result<LoggingSettings, ConfigError> {
+    fn parse_logging(
+        section: &std::collections::HashMap<String, Option<String>>,
+    ) -> Result<LoggingSettings, ConfigError> {
         let mut logging = LoggingSettings::default();
 
         if let Some(Some(level)) = section.get("level") {
             logging.level = level.clone();
         }
         if let Some(Some(file_logging)) = section.get("file_logging") {
-            logging.file_logging = file_logging.parse()
-                .map_err(|_| ConfigError::InvalidValue(format!("Invalid file_logging value: {}", file_logging)))?;
+            logging.file_logging = file_logging.parse().map_err(|_| {
+                ConfigError::InvalidValue(format!("Invalid file_logging value: {}", file_logging))
+            })?;
         }
 
         Ok(logging)
     }
 
     /// Parses the cleanup section from INI configuration.
-    fn parse_cleanup(section: &std::collections::HashMap<String, Option<String>>) -> Result<CleanupSettings, ConfigError> {
+    fn parse_cleanup(
+        section: &std::collections::HashMap<String, Option<String>>,
+    ) -> Result<CleanupSettings, ConfigError> {
         let mut cleanup = CleanupSettings::default();
 
         if let Some(Some(enabled)) = section.get("enabled") {
-            cleanup.enabled = enabled.parse()
-                .map_err(|_| ConfigError::InvalidValue(format!("Invalid enabled value: {}", enabled)))?;
+            cleanup.enabled = enabled.parse().map_err(|_| {
+                ConfigError::InvalidValue(format!("Invalid enabled value: {}", enabled))
+            })?;
         }
 
         if let Some(Some(preserve_extensions)) = section.get("preserve_extensions") {
@@ -442,13 +468,18 @@ impl SettingsManager {
         }
 
         if let Some(Some(verbose)) = section.get("verbose") {
-            cleanup.verbose = verbose.parse()
-                .map_err(|_| ConfigError::InvalidValue(format!("Invalid verbose value: {}", verbose)))?;
+            cleanup.verbose = verbose.parse().map_err(|_| {
+                ConfigError::InvalidValue(format!("Invalid verbose value: {}", verbose))
+            })?;
         }
 
         if let Some(Some(cleanup_frequency)) = section.get("cleanup_frequency") {
-            cleanup.cleanup_frequency = cleanup_frequency.parse()
-                .map_err(|_| ConfigError::InvalidValue(format!("Invalid cleanup_frequency value: {}", cleanup_frequency)))?;
+            cleanup.cleanup_frequency = cleanup_frequency.parse().map_err(|_| {
+                ConfigError::InvalidValue(format!(
+                    "Invalid cleanup_frequency value: {}",
+                    cleanup_frequency
+                ))
+            })?;
         }
 
         Ok(cleanup)
@@ -473,15 +504,20 @@ impl SettingsManager {
     fn get_user_config_path() -> Option<PathBuf> {
         #[cfg(unix)]
         {
-            std::env::var("HOME")
-                .ok()
-                .map(|home| PathBuf::from(home).join(".config").join("omecp").join("omecp_config.cfg"))
+            std::env::var("HOME").ok().map(|home| {
+                PathBuf::from(home)
+                    .join(".config")
+                    .join("omecp")
+                    .join("omecp_config.cfg")
+            })
         }
         #[cfg(windows)]
         {
-            std::env::var("APPDATA")
-                .ok()
-                .map(|appdata| PathBuf::from(appdata).join("omecp").join("omecp_config.cfg"))
+            std::env::var("APPDATA").ok().map(|appdata| {
+                PathBuf::from(appdata)
+                    .join("omecp")
+                    .join("omecp_config.cfg")
+            })
         }
     }
 }
@@ -521,7 +557,7 @@ impl SettingsManager {
     /// Generates the content for a omecp_config.cfg template file.
     fn generate_template_content() -> String {
         format!(
-r#"# OpenMECP Configuration File
+            r#"# OpenMECP Configuration File
 # 
 # This file allows you to customize OpenMECP behavior without modifying source code.
 # Configuration files are loaded in hierarchical order with local settings taking precedence:

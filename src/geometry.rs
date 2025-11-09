@@ -230,8 +230,9 @@ impl State {
 
         // Check for empty forces vector
         if self.forces.is_empty() {
-            return Err("State contains empty forces vector, indicating missing gradient data"
-                .to_string());
+            return Err(
+                "State contains empty forces vector, indicating missing gradient data".to_string(),
+            );
         }
 
         // Check for all-zero forces (gradient calculation failure)
@@ -269,7 +270,7 @@ mod tests {
             forces: DVector::from_vec(vec![0.1, -0.2, 0.0]),
             geometry,
         };
-        
+
         assert!(valid_state.validate().is_ok());
     }
 
@@ -281,7 +282,7 @@ mod tests {
             forces: DVector::from_vec(vec![0.1, -0.2, 0.0]),
             geometry,
         };
-        
+
         let result = invalid_state.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("zero energy"));
@@ -295,7 +296,7 @@ mod tests {
             forces: DVector::from_vec(vec![0.0, 0.0, 0.0]),
             geometry,
         };
-        
+
         let result = invalid_state.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("all-zero forces"));
@@ -309,7 +310,7 @@ mod tests {
             forces: DVector::from_vec(vec![]),
             geometry,
         };
-        
+
         let result = invalid_state.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("empty forces"));
@@ -318,15 +319,15 @@ mod tests {
     #[test]
     fn test_state_validation_force_geometry_mismatch() {
         let geometry = Geometry::new(
-            vec!["H".to_string(), "H".to_string()], 
-            vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+            vec!["H".to_string(), "H".to_string()],
+            vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
         );
         let invalid_state = State {
             energy: -0.5,
             forces: DVector::from_vec(vec![0.1, -0.2, 0.0]), // Only 3 components for 2 atoms
             geometry,
         };
-        
+
         let result = invalid_state.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Force/geometry mismatch"));

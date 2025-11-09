@@ -457,8 +457,7 @@ fn print_usage(program_name: &str) {
 fn run_create_input<P: AsRef<Path>>(
     geometry_file: P,
     output_path: Option<P>,
-) -> Result<std::path::PathBuf, Box<dyn std::error::Error>>
-{
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     use omecp::template_generator::*;
 
     let geometry_file = geometry_file.as_ref();
@@ -470,7 +469,11 @@ fn run_create_input<P: AsRef<Path>>(
     }
 
     if !is_supported_format(&geometry_path) {
-        return Err("Unsupported file format. Supported formats: .xyz, .log, .gjf".to_string().into());
+        return Err(
+            "Unsupported file format. Supported formats: .xyz, .log, .gjf"
+                .to_string()
+                .into(),
+        );
     }
 
     // Extract geometry to validate the file
@@ -776,7 +779,10 @@ fn print_configuration(
 
 fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("**** OpenMECP: Minimum Energy Crossing Point Optimizer****");
-    println!("              Version {}  Release date: 2025", env!("CARGO_PKG_VERSION"));
+    println!(
+        "              Version {}  Release date: 2025",
+        env!("CARGO_PKG_VERSION")
+    );
     println!("               ****Developer Le Nhan Pham****             ");
     println!("           https://github.com/lenhanpham/OpenMECP        \n");
 
@@ -1341,21 +1347,25 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                     config.switch_step
                 );
             }
-            let adaptive_scale = if step == 0 {
-                1.0 // First step, no previous energy to compare
-            } else {
-                let energy_current = state1.energy - state2.energy;
-                let energy_previous = opt_state.energy_history.back().unwrap_or(&energy_current);
-                optimizer::compute_adaptive_scale(energy_current, *energy_previous, grad.norm(), step)
-            };
-            optimizer::bfgs_step(&x_old, &grad, &hessian, &config, adaptive_scale)
+            // BFGS uses fixed rho in Python, no adaptive scaling
+            // Pass 1.0 as adaptive_scale parameter for compatibility but it won't be used
+            optimizer::bfgs_step(&x_old, &grad, &hessian, &config, 1.0)
         } else if config.use_gediis {
-            println!(
-                "Using GEDIIS optimizer (step {} >= switch point {})",
-                step + 1,
-                config.switch_step
-            );
-            optimizer::gediis_step(&opt_state, &config)
+            if config.use_hybrid_gediis {
+                println!(
+                    "Using Hybrid GEDIIS optimizer (50% GDIIS + 50% GEDIIS) (step {} >= switch point {})",
+                    step + 1,
+                    config.switch_step
+                );
+                optimizer::hybrid_gediis_step(&opt_state, &config)
+            } else {
+                println!(
+                    "Using Pure GEDIIS optimizer (step {} >= switch point {})",
+                    step + 1,
+                    config.switch_step
+                );
+                optimizer::gediis_step(&opt_state, &config)
+            }
         } else {
             println!(
                 "Using GDIIS optimizer (step {} >= switch point {})",
@@ -1478,9 +1488,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Print energy and convergence status
         println!(
             "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
-            state1_new.energy,
-            state2_new.energy,
-            de
+            state1_new.energy, state2_new.energy, de
         );
         print_convergence_status(&conv, de, rms_grad, max_grad, rms_disp, max_disp, &config);
 
@@ -1512,8 +1520,14 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         // Save checkpoint with dynamic filename based on input file
         let checkpoint_filename = format!("{}.json", job_dir);
-        let checkpoint =
-            checkpoint::Checkpoint::new(step, &geometry, &state1_new.geometry.coords, &hessian, &opt_state, &config);
+        let checkpoint = checkpoint::Checkpoint::new(
+            step,
+            &geometry,
+            &state1_new.geometry.coords,
+            &hessian,
+            &opt_state,
+            &config,
+        );
         checkpoint.save(Path::new(&checkpoint_filename))?;
 
         // Periodic cleanup during optimization to prevent file accumulation
@@ -2311,7 +2325,10 @@ fn run_single_optimization(
                 let step_norm = delta_x.norm();
                 if step_norm > config.max_step_size {
                     let scale = config.max_step_size / step_norm;
-                    println!("current stepsize: {} is reduced to max_size {}", step_norm, config.max_step_size);
+                    println!(
+                        "current stepsize: {} is reduced to max_size {}",
+                        step_norm, config.max_step_size
+                    );
                     x_old.clone() + delta_x * scale
                 } else {
                     x_old.clone() + delta_x
@@ -2319,14 +2336,8 @@ fn run_single_optimization(
             } else {
                 // Fallback to BFGS if solver fails
                 println!("Warning: Constrained step solver failed. Falling back to BFGS.");
-                let adaptive_scale = if step == 0 {
-                    1.0
-                } else {
-                    let energy_current = state1.energy - state2.energy;
-                    let energy_previous = opt_state.energy_history.back().unwrap_or(&energy_current);
-                    optimizer::compute_adaptive_scale(energy_current, *energy_previous, grad.norm(), step)
-                };
-                optimizer::bfgs_step(&x_old, &grad, &hessian, config, adaptive_scale)
+                // BFGS uses fixed rho in Python, no adaptive scaling
+                optimizer::bfgs_step(&x_old, &grad, &hessian, &config, 1.0)
             }
         } else {
             // Choose optimizer based on switch_step configuration
@@ -2346,8 +2357,14 @@ fn run_single_optimization(
                     1.0
                 } else {
                     let energy_current = state1.energy - state2.energy;
-                    let energy_previous = opt_state.energy_history.back().unwrap_or(&energy_current);
-                    optimizer::compute_adaptive_scale(energy_current, *energy_previous, grad.norm(), step)
+                    let energy_previous =
+                        opt_state.energy_history.back().unwrap_or(&energy_current);
+                    optimizer::compute_adaptive_scale(
+                        energy_current,
+                        *energy_previous,
+                        grad.norm(),
+                        step,
+                    )
                 };
                 optimizer::bfgs_step(&x_old, &grad, &hessian, config, adaptive_scale)
             } else if config.use_gediis {
@@ -3173,7 +3190,9 @@ fn geometry_to_json(elements: &[String], geometry: &geometry::Geometry) -> Strin
     for (i, elem) in elements.iter().enumerate().take(n) {
         let coords = geometry.get_atom_coords(i);
         // Convert from Bohrs to Angstroms for JSON output
-        let angstrom_coords = geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![coords[0], coords[1], coords[2]]));
+        let angstrom_coords = geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![
+            coords[0], coords[1], coords[2],
+        ]));
         result.push_str(&format!(
             "{{ \"atom\" : \"{}\", \"xyz\" : [ {:.6}, {:.6}, {:.6} ]}}",
             elem, angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
@@ -3384,7 +3403,10 @@ fn run_restart(
                 let step_norm = delta_x.norm();
                 if step_norm > config.max_step_size {
                     let scale = config.max_step_size / step_norm;
-                    println!("current stepsize: {} is reduced to max_size {}", step_norm, config.max_step_size);
+                    println!(
+                        "current stepsize: {} is reduced to max_size {}",
+                        step_norm, config.max_step_size
+                    );
                     x_old.clone() + delta_x * scale
                 } else {
                     x_old.clone() + delta_x
@@ -3392,14 +3414,8 @@ fn run_restart(
             } else {
                 // Fallback to BFGS if solver fails
                 println!("Warning: Constrained step solver failed. Falling back to BFGS.");
-                let adaptive_scale = if step == 0 {
-                    1.0
-                } else {
-                    let energy_current = state1.energy - state2.energy;
-                    let energy_previous = opt_state.energy_history.back().unwrap_or(&energy_current);
-                    optimizer::compute_adaptive_scale(energy_current, *energy_previous, grad.norm(), step)
-                };
-                optimizer::bfgs_step(&x_old, &grad, &hessian, &config, adaptive_scale)
+                // BFGS uses fixed rho in Python, no adaptive scaling
+                optimizer::bfgs_step(&x_old, &grad, &hessian, &config, 1.0)
             }
         } else {
             // Choose optimizer based on switch_step configuration
@@ -3424,21 +3440,24 @@ fn run_restart(
                         config.switch_step
                     );
                 }
-                let adaptive_scale = if step == 0 {
-                    1.0
-                } else {
-                    let energy_current = state1.energy - state2.energy;
-                    let energy_previous = opt_state.energy_history.back().unwrap_or(&energy_current);
-                    optimizer::compute_adaptive_scale(energy_current, *energy_previous, grad.norm(), step)
-                };
-                optimizer::bfgs_step(&x_old, &grad, &hessian, &config, adaptive_scale)
+                // BFGS uses fixed rho in Python, no adaptive scaling
+                optimizer::bfgs_step(&x_old, &grad, &hessian, &config, 1.0)
             } else if config.use_gediis {
-                println!(
-                    "Using GEDIIS optimizer (step {} >= switch point {})",
-                    step + 1,
-                    config.switch_step
-                );
-                optimizer::gediis_step(&opt_state, &config)
+                if config.use_hybrid_gediis {
+                    println!(
+                        "Using Hybrid GEDIIS optimizer (50% GDIIS + 50% GEDIIS) (step {} >= switch point {})",
+                        step + 1,
+                        config.switch_step
+                    );
+                    optimizer::hybrid_gediis_step(&opt_state, &config)
+                } else {
+                    println!(
+                        "Using Pure GEDIIS optimizer (step {} >= switch point {})",
+                        step + 1,
+                        config.switch_step
+                    );
+                    optimizer::gediis_step(&opt_state, &config)
+                }
             } else {
                 println!(
                     "Using GDIIS optimizer (step {} >= switch point {})",
@@ -3473,9 +3492,7 @@ fn run_restart(
         // Print energy and convergence status
         println!(
             "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
-            state1.energy,
-            state2.energy,
-            de
+            state1.energy, state2.energy, de
         );
         print_convergence_status(&conv, de, rms_grad, max_grad, rms_disp, max_disp, &config);
 

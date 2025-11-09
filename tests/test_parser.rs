@@ -1,5 +1,5 @@
-use omecp::parser::parse_input;
 use omecp::constraints::Constraint;
+use omecp::parser::parse_input;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;

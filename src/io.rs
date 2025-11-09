@@ -1,4 +1,3 @@
-
 //! File I/O utilities for geometry and checkpoint files.
 //!
 //! This module provides functions for reading and writing molecular geometries
@@ -46,17 +45,19 @@ use std::path::Path;
 /// ```
 pub fn write_xyz(geom: &Geometry, path: &Path) -> Result<()> {
     let mut content = format!("{}\n\n", geom.num_atoms);
-    
+
     for i in 0..geom.num_atoms {
         let coords = geom.get_atom_coords(i);
         // Convert from Bohrs to Angstroms for XYZ output
-        let angstrom_coords = crate::geometry::bohr_to_angstrom(&DVector::from_vec(vec![coords[0], coords[1], coords[2]]));
+        let angstrom_coords = crate::geometry::bohr_to_angstrom(&DVector::from_vec(vec![
+            coords[0], coords[1], coords[2],
+        ]));
         content.push_str(&format!(
             "{}  {:.8}  {:.8}  {:.8}\n",
             geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
         ));
     }
-    
+
     fs::write(path, content)
 }
 
@@ -67,7 +68,7 @@ pub fn write_xyz(geom: &Geometry, path: &Path) -> Result<()> {
 /// - Inline comments (text after '#' on the same line as valid keywords)
 /// - Empty lines
 /// - Leading and trailing whitespace from each line
-/// 
+///
 /// The remaining valid keywords are joined with single spaces to create
 /// a clean string suitable for Gaussian route sections. If all content
 /// is filtered out (e.g., only comments), an empty string is returned,
@@ -106,24 +107,24 @@ pub fn clean_gaussian_keywords(keywords: &str) -> String {
         .lines()
         .filter_map(|line| {
             let trimmed = line.trim();
-            
+
             // Skip empty lines
             if trimmed.is_empty() {
                 return None;
             }
-            
+
             // Skip lines that start with '#' (full-line comments)
             if trimmed.starts_with('#') {
                 return None;
             }
-            
+
             // Remove inline comments (everything after '#' on the same line)
             let cleaned_line = if let Some(comment_pos) = trimmed.find('#') {
                 trimmed[..comment_pos].trim()
             } else {
                 trimmed
             };
-            
+
             // Return the cleaned line if it's not empty after comment removal
             if cleaned_line.is_empty() {
                 None
@@ -133,7 +134,7 @@ pub fn clean_gaussian_keywords(keywords: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ");
-    
+
     // The result may be empty if all content was filtered out (e.g., only comments)
     // This is acceptable and will be handled gracefully by the caller
     result
@@ -146,7 +147,7 @@ pub fn clean_gaussian_keywords(keywords: &str) -> String {
 /// - Inline comments (text after '#' on the same line as valid keywords)
 /// - Empty lines
 /// - Leading and trailing whitespace from each line
-/// 
+///
 /// The remaining valid keywords are joined with single spaces.
 ///
 /// # Arguments
@@ -161,24 +162,24 @@ pub fn clean_keywords(keywords: &str) -> String {
         .lines()
         .filter_map(|line| {
             let trimmed = line.trim();
-            
+
             // Skip empty lines
             if trimmed.is_empty() {
                 return None;
             }
-            
+
             // Skip lines that start with '#' (full-line comments)
             if trimmed.starts_with('#') {
                 return None;
             }
-            
+
             // Remove inline comments (everything after '#' on the same line)
             let cleaned_line = if let Some(comment_pos) = trimmed.find('#') {
                 trimmed[..comment_pos].trim()
             } else {
                 trimmed
             };
-            
+
             // Return the cleaned line if it's not empty after comment removal
             if cleaned_line.is_empty() {
                 None
@@ -212,15 +213,12 @@ pub fn build_gaussian_header(
     td: &str,
 ) -> String {
     // Use the dynamic method modification for consistency
-    let modified_method = modify_method_for_run_mode(
-        &config.method,
-        config.program,
-        config.run_mode,
-    );
-    
+    let modified_method =
+        modify_method_for_run_mode(&config.method, config.program, config.run_mode);
+
     let mut temp_config = config.clone();
     temp_config.method = modified_method;
-    
+
     build_gaussian_header_internal(&temp_config, charge, mult, td)
 }
 
@@ -261,7 +259,7 @@ fn build_gaussian_header_internal_with_chk(
 
     // Clean TD-DFT keywords to remove comments and extra whitespace
     let clean_td = clean_gaussian_keywords(td);
-    
+
     // Build route section following Python format exactly
     // Python: f'# {Method} {Td1} nosymm'
     let route_section = if clean_td.is_empty() {
@@ -270,7 +268,7 @@ fn build_gaussian_header_internal_with_chk(
         format!("# {} {} nosymm", method_str, clean_td)
     };
 
-    // Format following Python exactly: 
+    // Format following Python exactly:
     // f'%chk=state_A.chk\n%nprocshared={NProcs} \n%mem={Mem} \n# {Method} {Td1} nosymm\n\n Title Card \n\n{Charge1} {Mult1}'
     format!(
         "%chk={}\n%nprocshared={} \n%mem={} \n{}\n\n Title Card \n\n{} {}",
@@ -302,21 +300,18 @@ pub fn build_orca_header(
     input_basename: &str,
 ) -> String {
     // Use the dynamic method modification for consistency
-    let modified_method = modify_method_for_run_mode(
-        &config.method,
-        config.program,
-        config.run_mode,
-    );
-    
+    let modified_method =
+        modify_method_for_run_mode(&config.method, config.program, config.run_mode);
+
     let mut temp_config = config.clone();
     temp_config.method = modified_method;
-    
+
     build_orca_header_internal(&temp_config, charge, mult, tail, input_basename)
 }
 
 /// Internal ORCA header builder that doesn't modify the method string.
 ///
-/// This function constructs the header for an ORCA input file based on the 
+/// This function constructs the header for an ORCA input file based on the
 /// provided configuration and state-specific parameters. It assumes the method
 /// string has already been modified by `modify_method_for_run_mode()`.
 ///
@@ -343,7 +338,7 @@ fn build_orca_header_internal(
 
     // Clean tail keywords to remove comments
     let clean_tail = clean_keywords(tail);
-    
+
     // Build the method line
     let method_line = if clean_tail.is_empty() {
         format!("! {}", method_str)
@@ -420,13 +415,17 @@ pub fn build_bagel_header(
 ) -> String {
     // BAGEL uses JSON format - this is a basic template
     // The actual geometry will be inserted by the writeBAGEL equivalent function
-    let basis = if config.basis_set.is_empty() { "cc-pVDZ" } else { &config.basis_set };
-    let df_basis = if config.basis_set.is_empty() { 
-        "cc-pVDZ-jkfit".to_string() 
-    } else { 
-        format!("{}-jkfit", config.basis_set) 
+    let basis = if config.basis_set.is_empty() {
+        "cc-pVDZ"
+    } else {
+        &config.basis_set
     };
-    
+    let df_basis = if config.basis_set.is_empty() {
+        "cc-pVDZ-jkfit".to_string()
+    } else {
+        format!("{}-jkfit", config.basis_set)
+    };
+
     format!(
         r#"{{
   "bagel" : [
@@ -507,7 +506,7 @@ pub fn modify_method_for_run_mode(
     run_mode: crate::config::RunMode,
 ) -> String {
     let mut modified_method = method.to_string();
-    
+
     // Add program-specific keywords (following Python MECP.py modifyMETHOD logic)
     match program {
         crate::config::QMProgram::Gaussian | crate::config::QMProgram::Custom => {
@@ -523,7 +522,7 @@ pub fn modify_method_for_run_mode(
         // XTB and BAGEL don't need method modification
         _ => {}
     }
-    
+
     // Add stability keywords for stable mode (following Python logic)
     if run_mode == crate::config::RunMode::Stable && !modified_method.is_empty() {
         match program {
@@ -531,12 +530,13 @@ pub fn modify_method_for_run_mode(
                 modified_method.push_str(" stable=opt");
             }
             crate::config::QMProgram::Orca => {
-                modified_method.push_str("\n %scf stabperform true StabRestartUHFifUnstable true end \n");
+                modified_method
+                    .push_str("\n %scf stabperform true StabRestartUHFifUnstable true end \n");
             }
             _ => {}
         }
     }
-    
+
     // Add guess keywords (except for noread mode, following Python logic)
     if run_mode != crate::config::RunMode::NoRead && !modified_method.is_empty() {
         match program {
@@ -549,7 +549,7 @@ pub fn modify_method_for_run_mode(
             _ => {}
         }
     }
-    
+
     modified_method
 }
 
@@ -646,7 +646,15 @@ pub fn build_program_header_with_basename(
     state: usize,
     input_basename: &str,
 ) -> String {
-    build_program_header_with_chk(config, charge, mult, td_or_tail, state, None, Some(input_basename))
+    build_program_header_with_chk(
+        config,
+        charge,
+        mult,
+        td_or_tail,
+        state,
+        None,
+        Some(input_basename),
+    )
 }
 
 /// Builds a program-specific input file header string with custom checkpoint file name.
@@ -678,16 +686,13 @@ pub fn build_program_header_with_chk(
     input_basename: Option<&str>,
 ) -> String {
     // Get dynamically modified method based on run mode and program
-    let modified_method = modify_method_for_run_mode(
-        &config.method,
-        config.program,
-        config.run_mode,
-    );
-    
+    let modified_method =
+        modify_method_for_run_mode(&config.method, config.program, config.run_mode);
+
     // Create temporary config with modified method for header generation
     let mut temp_config = config.clone();
     temp_config.method = modified_method;
-    
+
     // Determine checkpoint file name
     let checkpoint_file = chk_file.unwrap_or(
         // Default checkpoint file names based on charge/mult
@@ -695,27 +700,34 @@ pub fn build_program_header_with_chk(
             "state_A.chk"
         } else {
             "state_B.chk"
-        }
+        },
     );
-    
+
     match config.program {
-        crate::config::QMProgram::Gaussian => {
-            build_gaussian_header_internal_with_chk(&temp_config, charge, mult, td_or_tail, checkpoint_file)
-        }
+        crate::config::QMProgram::Gaussian => build_gaussian_header_internal_with_chk(
+            &temp_config,
+            charge,
+            mult,
+            td_or_tail,
+            checkpoint_file,
+        ),
         crate::config::QMProgram::Orca => {
-            let basename = input_basename.expect("ORCA requires input_basename parameter for .gbw file paths");
+            let basename =
+                input_basename.expect("ORCA requires input_basename parameter for .gbw file paths");
             build_orca_header_internal(&temp_config, charge, mult, td_or_tail, basename)
         }
-        crate::config::QMProgram::Xtb => {
-            build_xtb_header(&temp_config, charge, mult, td_or_tail)
-        }
-        crate::config::QMProgram::Bagel => {
-            build_bagel_header(&temp_config, charge, mult, state)
-        }
+        crate::config::QMProgram::Xtb => build_xtb_header(&temp_config, charge, mult, td_or_tail),
+        crate::config::QMProgram::Bagel => build_bagel_header(&temp_config, charge, mult, state),
         crate::config::QMProgram::Custom => {
             // For custom programs, fall back to Gaussian format
             // Users can override this via custom interface files
-            build_gaussian_header_internal_with_chk(&temp_config, charge, mult, td_or_tail, checkpoint_file)
+            build_gaussian_header_internal_with_chk(
+                &temp_config,
+                charge,
+                mult,
+                td_or_tail,
+                checkpoint_file,
+            )
         }
     }
 }
@@ -746,12 +758,12 @@ mod tests {
         let inline = "TD(NStates=5) # This is an inline comment\nRoot=1 # Another inline comment";
         let result = clean_gaussian_keywords(inline);
         assert_eq!(result, "TD(NStates=5) Root=1");
-        
+
         // Test line that becomes empty after removing inline comment
         let only_inline = "# This entire line is a comment";
         let result = clean_gaussian_keywords(only_inline);
         assert_eq!(result, "");
-        
+
         // Test mixed inline and full-line comments
         let mixed_inline = "TD(NStates=5) # inline comment\n# full line comment\nRoot=1";
         let result = clean_gaussian_keywords(mixed_inline);
@@ -784,7 +796,7 @@ mod tests {
         config.run_mode = RunMode::Normal;
 
         let header = build_gaussian_header(&config, 0, 1, "");
-        
+
         // Should contain proper formatting with spaces after resource specifications
         assert!(header.contains("%nprocshared=4 "));
         assert!(header.contains("%mem=4GB "));
@@ -803,7 +815,7 @@ mod tests {
 
         let td_with_comments = "# This is a comment\n# Another comment";
         let header = build_gaussian_header(&config, 0, 1, td_with_comments);
-        
+
         // Should contain proper formatting
         assert!(header.contains("%nprocshared=4 "));
         assert!(header.contains("%mem=4GB "));
@@ -826,7 +838,7 @@ mod tests {
 
         let mixed_td = "# Comment\nTD(NStates=5)\n# Another comment\nRoot=1";
         let header = build_gaussian_header(&config, 0, 1, mixed_td);
-        
+
         // Should contain proper formatting and cleaned TD keywords
         assert!(header.contains("%nprocshared=4 "));
         assert!(header.contains("%mem=4GB "));
@@ -844,7 +856,7 @@ mod tests {
         let mixed = "# Comment\nTD(NStates=5) # inline\n# Another comment\nRoot=1";
         let result = clean_keywords(mixed);
         assert_eq!(result, "TD(NStates=5) Root=1");
-        
+
         // Test empty result
         let only_comments = "# Only comments\n# More comments";
         let result = clean_keywords(only_comments);
@@ -861,7 +873,7 @@ mod tests {
         config.run_mode = RunMode::Normal;
 
         let header = build_orca_header(&config, 0, 1, "", "test_job");
-        
+
         // Should contain ORCA-specific formatting
         assert!(header.contains("%pal nprocs 8 end"));
         assert!(header.contains("%maxcore 8000"));
@@ -881,8 +893,7 @@ mod tests {
 
         let tail_with_comments = "# Comment\n%tddft\n  nroots 5\nend\n# Another comment";
         let header = build_orca_header(&config, -1, 2, tail_with_comments, "test_job");
-        
-        
+
         // Should contain cleaned tail content - the method is now modified by dynamic function
         assert!(header.contains("B3LYP def2-SVP engrad"));
         assert!(header.contains("%tddft nroots 5 end"));
@@ -903,7 +914,7 @@ mod tests {
         config.run_mode = crate::config::RunMode::NoRead;
 
         let header = build_orca_header(&config, 0, 1, "", "test_job");
-        
+
         // Should not contain moread in noread mode
         assert!(!header.contains("!moread"));
         assert!(header.contains("! B3LYP def2-SVP engrad"));
@@ -913,7 +924,7 @@ mod tests {
     fn test_build_xtb_header() {
         let config = Config::default();
         let header = build_xtb_header(&config, 1, 3, "");
-        
+
         // XTB format: charge and unpaired electrons (mult-1)
         assert!(header.contains("$chrg 1"));
         assert!(header.contains("$uhf 2")); // mult=3 -> uhf=2
@@ -926,7 +937,7 @@ mod tests {
         config.basis_set = "cc-pVTZ".to_string();
 
         let header = build_bagel_header(&config, 0, 1, 2);
-        
+
         // Should contain BAGEL JSON format
         assert!(header.contains("\"bagel\""));
         assert!(header.contains("\"charge\" : 0"));
@@ -939,7 +950,7 @@ mod tests {
     fn test_build_bagel_header_default_basis() {
         let config = Config::default();
         let header = build_bagel_header(&config, -1, 2, 0);
-        
+
         // Should use default basis when none specified
         assert!(header.contains("\"basis\" : \"cc-pVDZ\""));
         assert!(header.contains("\"charge\" : -1"));
@@ -949,44 +960,44 @@ mod tests {
     #[test]
     fn test_modify_method_for_run_mode_gaussian() {
         // Test Gaussian method modification for different run modes
-        
+
         // Normal mode: should add force and guess=read
         let result = modify_method_for_run_mode(
-            "B3LYP/6-31G*", 
-            crate::config::QMProgram::Gaussian, 
-            crate::config::RunMode::Normal
+            "B3LYP/6-31G*",
+            crate::config::QMProgram::Gaussian,
+            crate::config::RunMode::Normal,
         );
         assert_eq!(result, "B3LYP/6-31G* force guess=read");
-        
+
         // NoRead mode: should add force but not guess=read
         let result = modify_method_for_run_mode(
-            "B3LYP/6-31G*", 
-            crate::config::QMProgram::Gaussian, 
-            crate::config::RunMode::NoRead
+            "B3LYP/6-31G*",
+            crate::config::QMProgram::Gaussian,
+            crate::config::RunMode::NoRead,
         );
         assert_eq!(result, "B3LYP/6-31G* force");
-        
+
         // Stable mode: should add force, guess=read, and stable=opt
         let result = modify_method_for_run_mode(
-            "B3LYP/6-31G*", 
-            crate::config::QMProgram::Gaussian, 
-            crate::config::RunMode::Stable
+            "B3LYP/6-31G*",
+            crate::config::QMProgram::Gaussian,
+            crate::config::RunMode::Stable,
         );
         assert_eq!(result, "B3LYP/6-31G* force stable=opt guess=read");
-        
+
         // Read mode: should add force and guess=read
         let result = modify_method_for_run_mode(
-            "B3LYP/6-31G*", 
-            crate::config::QMProgram::Gaussian, 
-            crate::config::RunMode::Read
+            "B3LYP/6-31G*",
+            crate::config::QMProgram::Gaussian,
+            crate::config::RunMode::Read,
         );
         assert_eq!(result, "B3LYP/6-31G* force guess=read");
-        
+
         // InterRead mode: should add force and guess=read
         let result = modify_method_for_run_mode(
-            "B3LYP/6-31G*", 
-            crate::config::QMProgram::Gaussian, 
-            crate::config::RunMode::InterRead
+            "B3LYP/6-31G*",
+            crate::config::QMProgram::Gaussian,
+            crate::config::RunMode::InterRead,
         );
         assert_eq!(result, "B3LYP/6-31G* force guess=read");
     }
@@ -994,30 +1005,30 @@ mod tests {
     #[test]
     fn test_modify_method_for_run_mode_orca() {
         // Test ORCA method modification for different run modes
-        
+
         // Normal mode: should add engrad and moread
         let result = modify_method_for_run_mode(
-            "B3LYP def2-SVP", 
-            crate::config::QMProgram::Orca, 
-            crate::config::RunMode::Normal
+            "B3LYP def2-SVP",
+            crate::config::QMProgram::Orca,
+            crate::config::RunMode::Normal,
         );
         assert!(result.contains("B3LYP def2-SVP engrad"));
         assert!(result.contains("!moread"));
         assert!(result.contains("%moinp \"***\""));
-        
+
         // NoRead mode: should add engrad but not moread
         let result = modify_method_for_run_mode(
-            "B3LYP def2-SVP", 
-            crate::config::QMProgram::Orca, 
-            crate::config::RunMode::NoRead
+            "B3LYP def2-SVP",
+            crate::config::QMProgram::Orca,
+            crate::config::RunMode::NoRead,
         );
         assert_eq!(result, "B3LYP def2-SVP engrad");
-        
+
         // Stable mode: should add engrad, moread, and stability keywords
         let result = modify_method_for_run_mode(
-            "B3LYP def2-SVP", 
-            crate::config::QMProgram::Orca, 
-            crate::config::RunMode::Stable
+            "B3LYP def2-SVP",
+            crate::config::QMProgram::Orca,
+            crate::config::RunMode::Stable,
         );
         assert!(result.contains("B3LYP def2-SVP engrad"));
         assert!(result.contains("stabperform true"));
@@ -1028,18 +1039,18 @@ mod tests {
     #[test]
     fn test_modify_method_for_run_mode_xtb_bagel() {
         // Test that XTB and BAGEL don't modify method strings
-        
+
         let result = modify_method_for_run_mode(
-            "GFN2-xTB", 
-            crate::config::QMProgram::Xtb, 
-            crate::config::RunMode::Normal
+            "GFN2-xTB",
+            crate::config::QMProgram::Xtb,
+            crate::config::RunMode::Normal,
         );
         assert_eq!(result, "GFN2-xTB");
-        
+
         let result = modify_method_for_run_mode(
-            "CASSCF", 
-            crate::config::QMProgram::Bagel, 
-            crate::config::RunMode::Stable
+            "CASSCF",
+            crate::config::QMProgram::Bagel,
+            crate::config::RunMode::Stable,
         );
         assert_eq!(result, "CASSCF");
     }
@@ -1047,18 +1058,18 @@ mod tests {
     #[test]
     fn test_modify_method_for_run_mode_empty_method() {
         // Test behavior with empty method string
-        
+
         let result = modify_method_for_run_mode(
-            "", 
-            crate::config::QMProgram::Gaussian, 
-            crate::config::RunMode::Normal
+            "",
+            crate::config::QMProgram::Gaussian,
+            crate::config::RunMode::Normal,
         );
         assert_eq!(result, "");
-        
+
         let result = modify_method_for_run_mode(
-            "", 
-            crate::config::QMProgram::Orca, 
-            crate::config::RunMode::Normal
+            "",
+            crate::config::QMProgram::Orca,
+            crate::config::RunMode::Normal,
         );
         assert_eq!(result, "");
     }
@@ -1066,7 +1077,7 @@ mod tests {
     #[test]
     fn test_build_program_header_with_dynamic_modification() {
         // Test that build_program_header uses dynamic method modification
-        
+
         // Gaussian with stable mode
         let mut config = Config::default();
         config.program = crate::config::QMProgram::Gaussian;
@@ -1074,15 +1085,15 @@ mod tests {
         config.run_mode = crate::config::RunMode::Stable;
         config.nprocs = 4;
         config.mem = "4GB".to_string();
-        
+
         let header = build_program_header(&config, 0, 1, "", 0);
         assert!(header.contains("B3LYP/6-31G* force stable=opt guess=read"));
-        
+
         // ORCA with noread mode
         config.program = crate::config::QMProgram::Orca;
         config.method = "B3LYP def2-SVP".to_string();
         config.run_mode = crate::config::RunMode::NoRead;
-        
+
         let header = build_program_header(&config, 0, 1, "", 0);
         assert!(header.contains("B3LYP def2-SVP engrad"));
         assert!(!header.contains("!moread"));
@@ -1091,7 +1102,7 @@ mod tests {
     #[test]
     fn test_build_program_header_dispatch() {
         // Test that the dispatcher works correctly for different programs
-        
+
         // Gaussian
         let mut config = Config::default();
         config.program = crate::config::QMProgram::Gaussian;
@@ -1101,19 +1112,19 @@ mod tests {
         let header = build_program_header(&config, 0, 1, "", 0);
         assert!(header.contains("%chk=state_A.chk"));
         assert!(header.contains("%nprocshared="));
-        
+
         // ORCA
         config.program = crate::config::QMProgram::Orca;
         let header = build_program_header(&config, 0, 1, "", 0);
         assert!(header.contains("%pal nprocs"));
         assert!(header.contains("*xyz"));
-        
+
         // XTB
         config.program = crate::config::QMProgram::Xtb;
         let header = build_program_header(&config, 1, 2, "", 0);
         assert!(header.contains("$chrg 1"));
         assert!(header.contains("$uhf 1"));
-        
+
         // BAGEL
         config.program = crate::config::QMProgram::Bagel;
         let header = build_program_header(&config, 0, 1, "", 1);
@@ -1124,7 +1135,7 @@ mod tests {
     #[test]
     fn test_orca_header_gbw_replacement() {
         // Test that ORCA headers properly replace *** with .gbw file paths
-        
+
         let mut config = Config::default();
         config.program = crate::config::QMProgram::Orca;
         config.method = "B3LYP def2-SVP".to_string();
@@ -1133,22 +1144,22 @@ mod tests {
         config.mult1 = 1;
         config.charge2 = 0;
         config.mult2 = 3;
-        
+
         // Test default behavior (should use "calc" as default basename)
         let header = build_program_header(&config, 0, 1, "", 0);
         assert!(header.contains("calc/state_A.gbw"));
         assert!(!header.contains("***"));
-        
+
         let header = build_program_header(&config, 0, 3, "", 0);
         assert!(header.contains("calc/state_B.gbw"));
         assert!(!header.contains("***"));
-        
+
         // Test with custom basename (should use custom basename)
         let header = build_program_header_with_basename(&config, 0, 1, "", 0, "compound_x");
         assert!(header.contains("compound_x/state_A.gbw"));
         assert!(!header.contains("***"));
         assert!(!header.contains("calc"));
-        
+
         let header = build_program_header_with_basename(&config, 0, 3, "", 0, "compound_x");
         assert!(header.contains("compound_x/state_B.gbw"));
         assert!(!header.contains("***"));

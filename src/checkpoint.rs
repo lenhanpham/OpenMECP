@@ -57,18 +57,17 @@
 //! including geometry, gradients, Hessian, and history for recovery.
 
 use crate::config::Config;
+use crate::geometry::{angstrom_to_bohr, Geometry};
+use crate::optimizer::OptimizationState;
+use nalgebra::{DMatrix, DVector};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use crate::geometry::{Geometry, angstrom_to_bohr};
-use crate::optimizer::OptimizationState;
-use nalgebra::{DMatrix, DVector};
 
 /// Default checkpoint version (1 = Angstroms for backward compatibility)
 fn default_version() -> u32 {
     1
 }
-
 
 // Serializable versions of structs containing nalgebra types
 
@@ -128,11 +127,25 @@ impl From<&OptimizationState> for SerializableOptimizationState {
         Self {
             lambdas: opt_state.lambdas.clone(),
             lambda_de: opt_state.lambda_de,
-            geom_history: opt_state.geom_history.iter().map(|v| v.data.as_vec().clone()).collect(),
-            grad_history: opt_state.grad_history.iter().map(|v| v.data.as_vec().clone()).collect(),
-            hess_history: opt_state.hess_history.iter().map(|m| {
-                m.row_iter().map(|row| row.iter().cloned().collect()).collect()
-            }).collect(),
+            geom_history: opt_state
+                .geom_history
+                .iter()
+                .map(|v| v.data.as_vec().clone())
+                .collect(),
+            grad_history: opt_state
+                .grad_history
+                .iter()
+                .map(|v| v.data.as_vec().clone())
+                .collect(),
+            hess_history: opt_state
+                .hess_history
+                .iter()
+                .map(|m| {
+                    m.row_iter()
+                        .map(|row| row.iter().cloned().collect())
+                        .collect()
+                })
+                .collect(),
             max_history: opt_state.max_history,
         }
     }
@@ -155,7 +168,9 @@ impl From<SerializableOptimizationState> for OptimizationState {
             let nrows = hess.len();
             let ncols = hess[0].len();
             let flat: Vec<f64> = hess.into_iter().flatten().collect();
-            opt_state.hess_history.push_back(DMatrix::from_row_slice(nrows, ncols, &flat));
+            opt_state
+                .hess_history
+                .push_back(DMatrix::from_row_slice(nrows, ncols, &flat));
         }
 
         opt_state
@@ -260,7 +275,10 @@ impl Checkpoint {
             step,
             geometry: geometry.into(),
             x_old: x_old.data.as_vec().clone(),
-            hessian: hessian.row_iter().map(|row| row.iter().cloned().collect()).collect(),
+            hessian: hessian
+                .row_iter()
+                .map(|row| row.iter().cloned().collect())
+                .collect(),
             opt_state: opt_state.into(),
             config: config.clone(),
         }
@@ -397,7 +415,11 @@ impl Checkpoint {
         }
         // Version 2: coordinates already in Bohrs, no conversion needed
         let nrows = checkpoint.hessian.len();
-        let ncols = if nrows > 0 { checkpoint.hessian[0].len() } else { 0 };
+        let ncols = if nrows > 0 {
+            checkpoint.hessian[0].len()
+        } else {
+            0
+        };
         let hess_flat: Vec<f64> = checkpoint.hessian.into_iter().flatten().collect();
         let hessian = if nrows > 0 && ncols > 0 {
             DMatrix::from_row_slice(nrows, ncols, &hess_flat)

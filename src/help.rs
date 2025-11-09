@@ -339,6 +339,14 @@ pub const KEYWORDS: &[Keyword] = &[
         required: false,
     },
     Keyword {
+        name: "use_hybrid_gediis",
+        category: KeywordCategory::Convergence,
+        description: "Use hybrid GEDIIS (50% GDIIS + 50% GEDIIS) instead of pure GEDIIS. Matches Python MECP.py behavior.",
+        default_value: Some("true"),
+        example: Some("use_hybrid_gediis = true  # Hybrid mode\nuse_hybrid_gediis = false  # Pure GEDIIS"),
+        required: false,
+    },
+    Keyword {
         name: "switch_step",
         category: KeywordCategory::Convergence,
         description: "Step number to switch from BFGS to DIIS optimizers (0=DIIS-only, >=max_steps=BFGS-only)",
@@ -826,10 +834,7 @@ pub fn print_method_help() {
     // Group methods by category
     let mut categories: HashMap<&str, Vec<&MethodInfo>> = HashMap::new();
     for method in methods {
-        categories
-            .entry(method.category)
-            .or_default()
-            .push(method);
+        categories.entry(method.category).or_default().push(method);
     }
 
     for (category, methods) in categories {

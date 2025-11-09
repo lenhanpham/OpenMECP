@@ -160,31 +160,31 @@
 //!
 //! 0.0.1 (Alpha)
 
-pub mod config;
-pub mod geometry;
-pub mod parser;
-pub mod qm_interface;
-pub mod optimizer;
-pub mod constraints;
-pub mod io;
-/// Configuration management system
-pub mod settings;
-/// Linear synchronous transit interpolation
-pub mod lst;
 /// Restart functionality
 pub mod checkpoint;
-/// NEB and path optimization
-pub mod reaction_path;
-/// PES scanning functionality
-pub mod pes_scan;
-/// Input file templates
-pub mod template_generator;
-/// Built-in help system
-pub mod help;
-/// Run mode validation and compatibility checking
-pub mod validation;
 /// Automated file cleanup for quantum chemistry calculations
 pub mod cleanup;
+pub mod config;
+pub mod constraints;
+pub mod geometry;
+/// Built-in help system
+pub mod help;
+pub mod io;
+/// Linear synchronous transit interpolation
+pub mod lst;
+pub mod optimizer;
+pub mod parser;
+/// PES scanning functionality
+pub mod pes_scan;
+pub mod qm_interface;
+/// NEB and path optimization
+pub mod reaction_path;
+/// Configuration management system
+pub mod settings;
+/// Input file templates
+pub mod template_generator;
+/// Run mode validation and compatibility checking
+pub mod validation;
 
 pub use config::Config;
 pub use geometry::Geometry;

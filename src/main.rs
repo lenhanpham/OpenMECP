@@ -43,13 +43,99 @@
 //! - `.log` - Gaussian output files (with final geometry)
 //! - `.gjf` - Gaussian input files
 
-use nalgebra::{DMatrix, DVector};
+use nalgebra::DMatrix;
 use omecp::qm_interface::get_output_file_base;
 use omecp::*;
 use omecp::{checkpoint, lst, validation};
 use std::env;
 use std::path::Path;
 use std::process;
+
+/// Prints comprehensive convergence criteria status for a single optimization step.
+///
+/// This function displays all 5 convergence criteria with:
+/// - Current value (with appropriate units)
+/// - Threshold value
+/// - Pass/fail status using ✓/✗ symbols
+/// - Automatic unit conversion (Bohr → Angstrom for displacements)
+///
+/// # Arguments
+///
+/// * `conv` - ConvergenceStatus struct with boolean flags for each criterion
+/// * `de` - Current energy difference (Hartree)
+/// * `rms_grad` - Current RMS gradient (Hartree/Bohr)
+/// * `max_grad` - Current max gradient (Hartree/Bohr)
+/// * `rms_disp` - Current RMS displacement (Bohr)
+/// * `max_disp` - Current max displacement (Bohr)
+/// * `config` - Configuration with threshold values
+fn print_convergence_status(
+    conv: &optimizer::ConvergenceStatus,
+    de: f64,
+    rms_grad: f64,
+    max_grad: f64,
+    rms_disp: f64,
+    max_disp: f64,
+    config: &config::Config,
+) {
+    const BOHR_TO_ANGSTROM: f64 = 0.529177;
+
+    println!(" Criteria                            Current           Threshold        Pass");
+    println!("----------------------------------------------------------------------------");
+
+    println!(
+        "  1. Energy difference             {:>12.8}      {:>12.8}       {}   ",
+        de,
+        config.thresholds.de,
+        if conv.de_converged { "YES" } else { "NO " }
+    );
+
+    println!(
+        "  2. RMS gradient                  {:>12.8}      {:>12.8}       {}   ",
+        rms_grad,
+        config.thresholds.rms_g,
+        if conv.rms_grad_converged {
+            "YES"
+        } else {
+            "NO "
+        }
+    );
+
+    println!(
+        "  3. Max gradient                  {:>12.8}      {:>12.8}       {}   ",
+        max_grad,
+        config.thresholds.max_g,
+        if conv.max_grad_converged {
+            "YES"
+        } else {
+            "NO "
+        }
+    );
+
+    println!(
+        "  4. RMS displacement              {:>12.8}      {:>12.8}       {}   ",
+        rms_disp * BOHR_TO_ANGSTROM,
+        config.thresholds.rms,
+        if conv.rms_disp_converged {
+            "YES"
+        } else {
+            "NO "
+        }
+    );
+
+    println!(
+        "  5. Max displacement              {:>12.8}      {:>12.8}       {}   ",
+        max_disp * BOHR_TO_ANGSTROM,
+        config.thresholds.max_dis,
+        if conv.max_disp_converged {
+            "YES"
+        } else {
+            "NO "
+        }
+    );
+
+    println!("----------------------------------------------------------------------------");
+    println!();
+}
 
 /// Returns the appropriate input file extension for the given QM program.
 ///
@@ -372,8 +458,6 @@ fn run_create_input<P: AsRef<Path>>(
     geometry_file: P,
     output_path: Option<P>,
 ) -> Result<std::path::PathBuf, Box<dyn std::error::Error>>
-where
-    P: AsRef<Path>,
 {
     use omecp::template_generator::*;
 
@@ -386,7 +470,7 @@ where
     }
 
     if !is_supported_format(&geometry_path) {
-        return Err(format!("Unsupported file format. Supported formats: .xyz, .log, .gjf").into());
+        return Err("Unsupported file format. Supported formats: .xyz, .log, .gjf".to_string().into());
     }
 
     // Extract geometry to validate the file
@@ -497,97 +581,13 @@ fn run_create_settings_template() -> Result<(), Box<dyn std::error::Error>> {
 /// - Optimization diverges
 /// - Maximum steps exceeded
 /// - File I/O errors occur
-
-/// Prints detailed convergence criteria for the current optimization step
 ///
-/// # Arguments
-///
-/// * `step` - Current optimization step number (1-indexed)
-/// * `conv` - Convergence status containing all 5 criteria results
-/// * `e1` - Energy of state 1 in Hartree
-/// * `e2` - Energy of state 2 in Hartree
-/// * `disp` - Displacement vector (new - old geometry)
-/// * `grad` - Current MECP gradient vector
-/// * `config` - Configuration with convergence thresholds
-fn print_convergence_details(
-    step: usize,
-    conv: &optimizer::ConvergenceStatus,
-    e1: f64,
-    e2: f64,
-    disp: &DVector<f64>,
-    grad: &DVector<f64>,
-    config: &config::Config,
-) {
-    // Calculate actual values
-    let de = (e1 - e2).abs();
-    let rms_disp = disp.norm() / (disp.len() as f64).sqrt();
-    let max_disp = disp.iter().map(|x| x.abs()).fold(0.0, f64::max);
-    let rms_grad = grad.norm() / (grad.len() as f64).sqrt();
-    let max_grad = grad.iter().map(|x| x.abs()).fold(0.0, f64::max);
-
-    // Convert Bohr to Angstrom for displacement display (1 Bohr = 0.529177 Å)
-    let bohr_to_angstrom = 0.529177;
-
-    println!("Step {}: Convergence Status", step);
-    println!(" Criteria                            Current           Threshold        Pass");
-    println!("----------------------------------------------------------------------------");
-    println!(
-        "  1. Energy difference             {:>12.8}      {:>12.8}       {}   ",
-        de,
-        config.thresholds.de,
-        if conv.de_converged { "YES" } else { "NO " }
-    );
-    println!(
-        "  2. RMS gradient                  {:>12.8}      {:>12.8}       {}   ",
-        rms_grad,
-        config.thresholds.rms_g,
-        if conv.rms_grad_converged {
-            "YES"
-        } else {
-            "NO "
-        }
-    );
-    println!(
-        "  3. Max gradient                  {:>12.8}      {:>12.8}       {}   ",
-        max_grad,
-        config.thresholds.max_g,
-        if conv.max_grad_converged {
-            "YES"
-        } else {
-            "NO "
-        }
-    );
-    println!(
-        "  4. RMS displacement              {:>12.8}      {:>12.8}       {}   ",
-        rms_disp * bohr_to_angstrom,
-        config.thresholds.rms,
-        if conv.rms_disp_converged {
-            "YES"
-        } else {
-            "NO "
-        }
-    );
-    println!(
-        "  5. Max displacement              {:>12.8}      {:>12.8}       {}   ",
-        max_disp * bohr_to_angstrom,
-        config.thresholds.max_dis,
-        if conv.max_disp_converged {
-            "YES"
-        } else {
-            "NO "
-        }
-    );
-    println!("----------------------------------------------------------------------------");
-    println!();
-}
-
 /// Prints all configuration parameters and settings information to the output.
-///
 /// This function displays:
-/// 1. Settings file location and source (if loaded)
-/// 2. All input configuration parameters
-/// 3. Settings from omecp_config.cfg
-/// 4. Debug log file information (if file logging is enabled)
+///   1. Settings file location and source (if loaded)
+///   2. All input configuration parameters
+///   3. Settings from omecp_config.cfg
+///   4. Debug log file information (if file logging is enabled)
 ///
 /// This helps users understand what parameters are being used and where they come from.
 fn print_configuration(
@@ -1277,6 +1277,9 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let state1 = qm.read_output(Path::new(&initial_a_output), config.state1)?;
     let state2 = qm.read_output(Path::new(&initial_b_output), config.state2)?;
 
+    // FIX: Synchronize geometry from pre-point calculation
+    geometry.coords = state1.geometry.coords.clone();
+
     // Initialize optimization
     let mut opt_state = optimizer::OptimizationState::new();
     let mut x_old = geometry.coords.clone();
@@ -1409,43 +1412,17 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         // Read output files based on program type
         let output_ext = get_output_file_base(config.program);
-        let (state1_new, state2_new) = match config.program {
-            config::QMProgram::Gaussian | config::QMProgram::Orca | config::QMProgram::Custom => {
-                let state1 = qm.read_output(
-                    Path::new(&format!("{}/{}_state_A.{}", job_dir, step + 1, output_ext)),
-                    config.state1,
-                )?;
-                let state2 = qm.read_output(
-                    Path::new(&format!("{}/{}_state_B.{}", job_dir, step + 1, output_ext)),
-                    config.state2,
-                )?;
-                (state1, state2)
-            }
-            config::QMProgram::Xtb => {
-                // XTB output files use .inp base name, interface handles .engrad extension
-                let state1 = qm.read_output(
-                    Path::new(&format!("{}/{}_state_A.{}", job_dir, step + 1, output_ext)),
-                    config.state1,
-                )?;
-                let state2 = qm.read_output(
-                    Path::new(&format!("{}/{}_state_B.{}", job_dir, step + 1, output_ext)),
-                    config.state2,
-                )?;
-                (state1, state2)
-            }
-            config::QMProgram::Bagel => {
-                // BAGEL output files
-                let state1 = qm.read_output(
-                    Path::new(&format!("{}/{}_state_A.{}", job_dir, step + 1, output_ext)),
-                    config.state1,
-                )?;
-                let state2 = qm.read_output(
-                    Path::new(&format!("{}/{}_state_B.{}", job_dir, step + 1, output_ext)),
-                    config.state2,
-                )?;
-                (state1, state2)
-            }
-        };
+        let state1_new = qm.read_output(
+            Path::new(&format!("{}/{}_state_A.{}", job_dir, step + 1, output_ext)),
+            config.state1,
+        )?;
+        let state2_new = qm.read_output(
+            Path::new(&format!("{}/{}_state_B.{}", job_dir, step + 1, output_ext)),
+            config.state2,
+        )?;
+
+        // CRITICAL FIX: Update main geometry with the actual geometry from QM output
+        geometry.coords = state1_new.geometry.coords.clone();
 
         // Manage ORCA wavefunction files (following Python MECP.py logic)
         manage_orca_wavefunction_files(step + 1, &config, &geometry, job_dir)?;
@@ -1483,24 +1460,22 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             &config,
         );
 
-        // Calculate displacement for printing
-        let disp = &x_new - &x_old;
-        print_convergence_details(
-            step + 1,
-            &conv,
-            state1_new.energy,
-            state2_new.energy,
-            &disp,
-            &grad_new,
-            &config,
-        );
+        // Compute current values for display
+        let de = (state1_new.energy - state2_new.energy).abs();
+        let disp_vec = &x_new - &x_old;
+        let rms_disp = disp_vec.norm() / (disp_vec.len() as f64).sqrt();
+        let max_disp = disp_vec.iter().map(|x| x.abs()).fold(0.0, f64::max);
+        let rms_grad = grad_new.norm() / (grad_new.len() as f64).sqrt();
+        let max_grad = grad_new.iter().map(|x| x.abs()).fold(0.0, f64::max);
 
+        // Print energy and convergence status
         println!(
             "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
             state1_new.energy,
             state2_new.energy,
-            (state1_new.energy - state2_new.energy).abs()
+            de
         );
+        print_convergence_status(&conv, de, rms_grad, max_grad, rms_disp, max_disp, &config);
 
         if conv.is_converged() {
             println!("\nConverged at step {}", step + 1);
@@ -1522,7 +1497,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Add to history for GDIIS/GEDIIS
         let energy_diff = state1_new.energy - state2_new.energy;
         opt_state.add_to_history(
-            x_new.clone(),
+            state1_new.geometry.coords.clone(),
             grad_new.clone(),
             hessian.clone(),
             energy_diff,
@@ -1531,7 +1506,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Save checkpoint with dynamic filename based on input file
         let checkpoint_filename = format!("{}.json", job_dir);
         let checkpoint =
-            checkpoint::Checkpoint::new(step, &geometry, &x_new, &hessian, &opt_state, &config);
+            checkpoint::Checkpoint::new(step, &geometry, &state1_new.geometry.coords, &hessian, &opt_state, &config);
         checkpoint.save(Path::new(&checkpoint_filename))?;
 
         // Periodic cleanup during optimization to prevent file accumulation
@@ -1546,7 +1521,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        x_old = x_new;
+        x_old = state1_new.geometry.coords.clone();
     }
 
     // Clean up temporary files even if optimization didn't converge
@@ -1770,7 +1745,7 @@ fn run_pes_scan(
             // Run MECP optimization with scan constraints
             let scan_start_time = std::time::Instant::now();
             let optimization_result = execute_pes_scan_point(
-                &config,
+                config,
                 &mut geometry,
                 &constraints,
                 &input_data.tail1,
@@ -1834,7 +1809,7 @@ fn run_pes_scan(
 
             // Save scan results with Python MECP.py naming convention
             if converged {
-                save_scan_results(&config, &geometry, converged_step, val1, val2)?;
+                save_scan_results(config, &geometry, converged_step, val1, val2)?;
             }
 
             let scan_duration = scan_start_time.elapsed();
@@ -2391,17 +2366,16 @@ fn run_single_optimization(
             config,
         );
 
-        // Calculate displacement for printing
-        let disp = &x_new - &x_old;
-        print_convergence_details(
-            step + 1,
-            &conv,
-            state1_new.energy,
-            state2_new.energy,
-            &disp,
-            &grad_new,
-            config,
-        );
+        // Compute current values for display
+        let de = (state1_new.energy - state2_new.energy).abs();
+        let disp_vec = &x_new - &x_old;
+        let rms_disp = disp_vec.norm() / (disp_vec.len() as f64).sqrt();
+        let max_disp = disp_vec.iter().map(|x| x.abs()).fold(0.0, f64::max);
+        let rms_grad = grad_new.norm() / (grad_new.len() as f64).sqrt();
+        let max_grad = grad_new.iter().map(|x| x.abs()).fold(0.0, f64::max);
+
+        // Print convergence status
+        print_convergence_status(&conv, de, rms_grad, max_grad, rms_disp, max_disp, config);
 
         if conv.is_converged() {
             // Clean up temporary files after successful convergence
@@ -2428,12 +2402,12 @@ fn run_single_optimization(
         hessian = optimizer::update_hessian_psb(&hessian, &sk, &yk);
         let energy_diff = state1_new.energy - state2_new.energy;
         opt_state.add_to_history(
-            x_new.clone(),
+            state1_new.geometry.coords.clone(),
             grad_new.clone(),
             hessian.clone(),
             energy_diff,
         );
-        x_old = x_new;
+        x_old = state1_new.geometry.coords.clone();
     }
 
     Ok(())
@@ -3176,9 +3150,11 @@ fn geometry_to_json(elements: &[String], geometry: &geometry::Geometry) -> Strin
 
     for (i, elem) in elements.iter().enumerate().take(n) {
         let coords = geometry.get_atom_coords(i);
+        // Convert from Bohrs to Angstroms for JSON output
+        let angstrom_coords = geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![coords[0], coords[1], coords[2]]));
         result.push_str(&format!(
             "{{ \"atom\" : \"{}\", \"xyz\" : [ {:.6}, {:.6}, {:.6} ]}}",
-            elem, coords[0], coords[1], coords[2]
+            elem, angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
         ));
 
         // Add comma for all but the last atom
@@ -3449,60 +3425,22 @@ fn run_restart(
             &config,
         );
 
-        // Calculate displacement for printing
-        let disp = &x_new - &x_old;
-        print_convergence_details(
-            step + 1,
-            &conv,
-            state1.energy,
-            state2.energy,
-            &disp,
-            &grad,
-            &config,
-        );
+        // Compute current values for display
+        let de = (state1.energy - state2.energy).abs();
+        let disp_vec = &x_new - &x_old;
+        let rms_disp = disp_vec.norm() / (disp_vec.len() as f64).sqrt();
+        let max_disp = disp_vec.iter().map(|x| x.abs()).fold(0.0, f64::max);
+        let rms_grad = grad.norm() / (grad.len() as f64).sqrt();
+        let max_grad = grad.iter().map(|x| x.abs()).fold(0.0, f64::max);
 
+        // Print energy and convergence status
         println!(
             "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
             state1.energy,
             state2.energy,
-            (state1.energy - state2.energy).abs()
+            de
         );
-
-        if conv.is_converged() {
-            println!("\n****Congrats! MECP has converged****");
-            println!("Final geometry saved to final.xyz");
-            io::write_xyz(&geometry, Path::new("final.xyz"))?;
-            return Ok(());
-        }
-
-        // Check convergence (duplicate check - should be removed)
-        let conv = optimizer::check_convergence(
-            state1.energy,
-            state2.energy,
-            &x_old,
-            &x_new,
-            &grad,
-            &config,
-        );
-
-        // Calculate displacement for printing
-        let disp = &x_new - &x_old;
-        print_convergence_details(
-            step + 1,
-            &conv,
-            state1.energy,
-            state2.energy,
-            &disp,
-            &grad,
-            &config,
-        );
-
-        println!(
-            "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
-            state1.energy,
-            state2.energy,
-            (state1.energy - state2.energy).abs()
-        );
+        print_convergence_status(&conv, de, rms_grad, max_grad, rms_disp, max_disp, &config);
 
         if conv.is_converged() {
             println!("\n****Congrats! MECP has converged****");

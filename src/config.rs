@@ -226,6 +226,8 @@ pub struct Config {
     /// - >= max_steps: Use BFGS only (no DIIS)
     /// - Other values: Switch from BFGS to DIIS at specified step
     pub switch_step: usize,
+    /// Scaling factor for BFGS step (rho in Python MECP.py)
+    pub bfgs_rho: f64,
 }
 
 impl Default for Config {
@@ -271,6 +273,7 @@ impl Default for Config {
             drive_atoms: Vec::new(),
             use_gediis: false,
             switch_step: 3, // Default to current behavior (BFGS for first 3 steps)
+            bfgs_rho: 15.0,
         }
     }
 }

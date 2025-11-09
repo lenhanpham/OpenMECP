@@ -74,7 +74,8 @@
 
 use crate::config::{Config, QMProgram, RunMode, ScanSpec, ScanType};
 use crate::constraints::Constraint;
-use crate::geometry::Geometry;
+use crate::geometry::{Geometry, angstrom_to_bohr};
+use nalgebra::DVector;
 use regex::Regex;
 use std::fs;
 use std::path::Path;
@@ -348,14 +349,14 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
     validate_tail_section_with_filtering_context(&tail1, "TAIL1")?;
     validate_tail_section_with_filtering_context(&tail2, "TAIL2")?;
 
-    let geometry = Geometry::new(elements, coords);
+    let geometry = Geometry::new(elements, angstrom_to_bohr(&DVector::from_vec(coords)).data.as_vec().clone());
     let lst1 = if !lst1_elements.is_empty() {
-        Some(Geometry::new(lst1_elements, lst1_coords))
+        Some(Geometry::new(lst1_elements, angstrom_to_bohr(&DVector::from_vec(lst1_coords)).data.as_vec().clone()))
     } else {
         None
     };
     let lst2 = if !lst2_elements.is_empty() {
-        Some(Geometry::new(lst2_elements, lst2_coords))
+        Some(Geometry::new(lst2_elements, angstrom_to_bohr(&DVector::from_vec(lst2_coords)).data.as_vec().clone()))
     } else {
         None
     };
@@ -553,7 +554,7 @@ fn parse_angle_target(s: &str, full_line: &str) -> Result<f64> {
             s, full_line
         )))?;
     
-    if angle < 0.0 || angle > 360.0 {
+    if !(0.0..=360.0).contains(&angle) {
         return Err(ParseError::Parse(format!(
             "Angle target {} degrees is outside valid range [0, 360] in line '{}'", 
             angle, full_line

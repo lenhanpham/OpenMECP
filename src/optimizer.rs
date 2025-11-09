@@ -363,12 +363,15 @@ pub fn bfgs_step(
 ) -> DVector<f64> {
     // Solve H * dk = -g
     let neg_g = -g0;
-    let dk = hessian.clone().lu().solve(&neg_g).unwrap_or_else(|| {
+    let mut dk = hessian.clone().lu().solve(&neg_g).unwrap_or_else(|| {
         // Fallback to steepest descent when Hessian is singular
         // Scale to max_step_size to maintain stability
         let step_dir = -g0 / g0.norm();
         step_dir * config.max_step_size
     });
+
+    // Apply BFGS rho scaling factor
+    dk *= config.bfgs_rho;
 
     // Apply step size limit
     let mut x_new = x0 + &dk;
@@ -615,10 +618,27 @@ fn compute_error_vectors(
     grads: &VecDeque<DVector<f64>>,
     hessians: &VecDeque<DMatrix<f64>>,
 ) -> Vec<DVector<f64>> {
+    let n = grads.len();
+    if n == 0 { return Vec::new(); }
+
+    // Compute the mean Hessian
+    let mut h_mean = DMatrix::zeros(
+        hessians[0].nrows(),
+        hessians[0].ncols(),
+    );
+    for hess in hessians {
+        h_mean += hess;
+    }
+    h_mean /= n as f64;
+
+    // Compute error vectors using the mean Hessian for all gradients
     grads.iter()
-        .zip(hessians.iter())
-        .map(|(grad, hess)| {
-            hess.clone().lu().solve(grad).unwrap_or_else(|| grad.clone())
+        .map(|grad| {
+            h_mean
+                .clone()
+                .lu()
+                .solve(grad)
+                .unwrap_or_else(|| grad.clone())
         })
         .collect()
 }
@@ -720,6 +740,7 @@ fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
 pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64> {
     let n = opt_state.geom_history.len();
     
+    // Error vectors are now correctly computed with the mean Hessian inside this function
     let errors = compute_error_vectors(&opt_state.grad_history, &opt_state.hess_history);
     let b_matrix = build_b_matrix(&errors);
     
@@ -736,6 +757,21 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
     
     let coeffs = solution.rows(0, n);
     
+    // --- Start of Bug Fix ---
+
+    // 1. Interpolate geometry to get x_new_prime
+    let mut x_new_prime = DVector::zeros(opt_state.geom_history[0].len());
+    for (i, geom) in opt_state.geom_history.iter().enumerate() {
+        x_new_prime += geom * coeffs[i];
+    }
+    
+    // 2. Interpolate gradient to get g_new_prime (THE CORRECT WAY)
+    let mut g_new_prime = DVector::zeros(opt_state.grad_history[0].len());
+    for (i, grad) in opt_state.grad_history.iter().enumerate() {
+        g_new_prime += grad * coeffs[i];
+    }
+    
+    // 3. Get the mean Hessian (already computed once in compute_error_vectors, but needed here)
     let mut h_mean = DMatrix::zeros(
         opt_state.hess_history[0].nrows(),
         opt_state.hess_history[0].ncols(),
@@ -745,27 +781,30 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
     }
     h_mean /= n as f64;
     
-    let mut x_new = DVector::zeros(opt_state.geom_history[0].len());
-    for (i, geom) in opt_state.geom_history.iter().enumerate() {
-        x_new += geom * coeffs[i];
-    }
+    // 4. Compute correction using the interpolated gradient
+    let correction = h_mean.lu().solve(&g_new_prime).unwrap_or_else(|| g_new_prime.clone());
     
-    let mut g_mean = DVector::zeros(opt_state.grad_history[0].len());
-    for grad in &opt_state.grad_history {
-        g_mean += grad;
-    }
-    g_mean /= n as f64;
-    
-    let correction = h_mean.lu().solve(&g_mean).unwrap_or_else(|| g_mean.clone());
-    x_new -= &correction;
+    // 5. Apply correction to the interpolated geometry
+    let mut x_new = x_new_prime - &correction;
+
+    // --- End of Bug Fix ---
     
     let last_geom = opt_state.geom_history.back().unwrap();
-    let step = &x_new - last_geom;
+    let mut step = &x_new - last_geom;
+
+    // Python-inspired step reduction
+    let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
+    if last_grad_norm < config.thresholds.rms_g * 10.0 {
+        step *= 0.5; // REDUCED_FACTOR from Python code
+    }
+
     let step_norm = step.norm();
     
     if step_norm > config.max_step_size {
         let scale = config.max_step_size / step_norm;
         x_new = last_geom + &step * scale;
+    } else {
+        x_new = last_geom + step;
     }
 
     x_new

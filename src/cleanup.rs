@@ -133,6 +133,9 @@ pub struct CleanupConfig {
     /// Perform cleanup every N optimization steps (default: 5)
     /// Set to 0 to disable periodic cleanup
     pub cleanup_frequency: u32,
+
+    /// Global print level from general settings (0=quiet, 1=normal, 2=verbose)
+    pub print_level: u32,
 }
 
 impl Default for CleanupConfig {
@@ -142,6 +145,7 @@ impl Default for CleanupConfig {
             preserve_extensions: Vec::new(),
             verbose: 1,
             cleanup_frequency: 5,
+            print_level: 0,
         }
     }
 }
@@ -169,6 +173,7 @@ impl CleanupConfig {
             preserve_extensions: settings.cleanup.preserve_extensions.clone(),
             verbose: settings.cleanup.verbose,
             cleanup_frequency: settings.cleanup.cleanup_frequency,
+            print_level: settings.general.print_level,
         };
 
         // Get user-specified output extension for this program
@@ -230,6 +235,36 @@ impl CleanupConfig {
     pub fn cleanup_frequency(&self) -> u32 {
         self.cleanup_frequency
     }
+
+    /// Checks if logging should occur based on print_level and verbose settings.
+    ///
+    /// This combines the global print_level with the cleanup-specific verbose setting:
+    /// - If print_level is 0 (quiet), no cleanup messages are printed regardless of verbose
+    /// - If print_level is 1 (normal), messages are printed based on verbose level
+    /// - If print_level is 2 (verbose), all messages are printed
+    ///
+    /// # Arguments
+    ///
+    /// * `min_verbose_level` - Minimum verbose level required (0, 1, or 2)
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if logging should occur, `false` otherwise
+    pub fn should_log(&self, min_verbose_level: u32) -> bool {
+        // If global print_level is 0 (quiet), suppress all cleanup output
+        if self.print_level == 0 {
+            return false;
+        }
+
+        // If global print_level is 2 (verbose), allow all messages
+        if self.print_level >= 2 {
+            return true;
+        }
+
+        // If global print_level is 1 (normal), check verbose level
+        // verbose = 0: quiet, verbose = 1: normal, verbose = 2: verbose
+        self.verbose >= min_verbose_level
+    }
 }
 
 /// Manages cleanup operations for quantum chemistry calculations.
@@ -270,14 +305,14 @@ impl CleanupManager {
     /// Returns `Ok(())` on success or a `CleanupError` on failure
     pub fn cleanup_directory(&self, directory: &Path) -> Result<()> {
         if !self.config.enabled {
-            if self.config.verbose >= 1 {
+            if self.config.should_log(1) {
                 info!("Cleanup is disabled, skipping directory: {}", directory.display());
             }
             return Ok(());
         }
 
         if !directory.exists() {
-            if self.config.verbose >= 2 {
+            if self.config.should_log(2) {
                 debug!("Directory does not exist, skipping: {}", directory.display());
             }
             return Ok(());
@@ -290,16 +325,16 @@ impl CleanupManager {
             )));
         }
 
-        if self.config.verbose >= 1 {
+        if self.config.should_log(1) {
             info!("Starting cleanup in directory: {}", directory.display());
-            if self.config.verbose >= 2 {
+            if self.config.should_log(2) {
                 info!("Preserving files with extensions: {:?}", self.config.preserve_extensions);
             }
         }
 
         // Read all directory entries
         let entries = fs::read_dir(directory)
-            .map_err(|e| CleanupError::Io(e))?;
+            .map_err(CleanupError::Io)?;
 
         let mut all_files = Vec::new();
         for entry in entries {
@@ -332,9 +367,9 @@ impl CleanupManager {
                 .unwrap_or("");
 
             // Check if this file should be preserved
-            if self.should_preserve_file(&extension, &path, &filename, max_step) {
+            if self.should_preserve_file(extension, &path, &filename, max_step) {
                 preserved_files.push(path.clone());
-                if self.config.verbose >= 2 {
+                if self.config.should_log(2) {
                     debug!("Preserving file: {}", path.display());
                 }
             } else {
@@ -342,7 +377,7 @@ impl CleanupManager {
                 match fs::remove_file(&path) {
                     Ok(_) => {
                         cleaned_files.push(path.clone());
-                        if self.config.verbose >= 1 {
+                        if self.config.should_log(1) {
                             info!("Cleaned up file: {}", path.display());
                         }
                     }
@@ -355,13 +390,13 @@ impl CleanupManager {
         }
 
         // Log summary
-        if self.config.verbose >= 1 {
+        if self.config.should_log(1) {
             info!(
                 "Cleanup completed: {} files deleted, {} files preserved",
                 cleaned_files.len(),
                 preserved_files.len()
             );
-            if max_step > 0 && self.config.verbose >= 1 {
+            if max_step > 0 && self.config.should_log(1) {
                 info!("Latest step number: {}", max_step);
             }
         }
@@ -518,12 +553,12 @@ impl CleanupManager {
         if extension == "engrad" {
             // .engrad files are deleted by default (not in preserve_extensions)
             // unless cleanup_directory determines they should be kept
-            if self.config.verbose >= 2 {
+            if self.config.should_log(2) {
                 debug!("Deleting .engrad file (use cleanup_directory for step-based filtering): {}", file_path.display());
             }
             match fs::remove_file(file_path) {
                 Ok(_) => {
-                    if self.config.verbose >= 1 {
+                    if self.config.should_log(1) {
                         info!("Cleaned up file: {}", file_path.display());
                     }
                     Ok(true)
@@ -536,7 +571,7 @@ impl CleanupManager {
         } else {
             // For non-.engrad files, use normal whitelist check
             if self.should_preserve_file_simple(extension, filename) {
-                if self.config.verbose >= 2 {
+                if self.config.should_log(2) {
                     debug!("Preserving file: {}", file_path.display());
                 }
                 return Ok(false);
@@ -544,7 +579,7 @@ impl CleanupManager {
 
             match fs::remove_file(file_path) {
                 Ok(_) => {
-                    if self.config.verbose >= 1 {
+                    if self.config.should_log(1) {
                         info!("Cleaned up file: {}", file_path.display());
                     }
                     Ok(true)
@@ -638,6 +673,7 @@ mod tests {
             preserve_extensions: vec!["out".to_string(), "gbw".to_string()],
             verbose: 2,
             cleanup_frequency: 5,
+            print_level: 2,
         };
         config
     }
@@ -794,6 +830,7 @@ mod tests {
             preserve_extensions: vec!["out".to_string(), "gbw".to_string()],
             verbose: 1,
             cleanup_frequency: 5,
+            print_level: 1,
         };
 
         let manager = CleanupManager::new(config, QMProgram::Orca);

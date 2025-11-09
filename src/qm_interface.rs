@@ -565,9 +565,11 @@ impl QMInterface for OrcaInterface {
 
         for i in 0..geom.num_atoms {
             let coords = geom.get_atom_coords(i);
+            // Convert from Bohrs to Angstroms for QM input
+            let angstrom_coords = crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![coords[0], coords[1], coords[2]]));
             content.push_str(&format!(
                 "{}  {:.8}  {:.8}  {:.8}\n",
-                geom.elements[i], coords[0], coords[1], coords[2]
+                geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
             ));
         }
 
@@ -618,7 +620,7 @@ impl QMInterface for OrcaInterface {
                 "Failed to read ORCA engrad file {}: {}",
                 engrad_path.display(), e
             )))?;
-        let log_content = fs::read_to_string(&log_path)
+        let log_content = fs::read_to_string(log_path)
             .map_err(|e| QMError::Parse(format!(
                 "Failed to read ORCA output file {}: {}",
                 log_path.display(), e
@@ -652,9 +654,9 @@ impl QMInterface for OrcaInterface {
                 if parts.len() >= 4 {
                     let atomic_num: usize = parts[0].parse().unwrap_or(0);
                     elements.push(atomic_number_to_symbol(atomic_num));
-                    geom_coords.push(parts[1].parse::<f64>().unwrap_or(0.0) * 0.52918);
-                    geom_coords.push(parts[2].parse::<f64>().unwrap_or(0.0) * 0.52918);
-                    geom_coords.push(parts[3].parse::<f64>().unwrap_or(0.0) * 0.52918);
+                    geom_coords.push(parts[1].parse::<f64>().unwrap_or(0.0));
+                    geom_coords.push(parts[2].parse::<f64>().unwrap_or(0.0));
+                    geom_coords.push(parts[3].parse::<f64>().unwrap_or(0.0));
                 }
             } else if in_forces
                 && line
@@ -889,7 +891,7 @@ impl QMInterface for BagelInterface {
                     if let Some(coords_str) = xyz_part.split(']').next() {
                         for coord in coords_str.split(',') {
                             if let Ok(val) = coord.trim().parse::<f64>() {
-                                geom_coords.push(val * 0.52918); // Bohr to Angstrom
+                                geom_coords.push(val); // Keep in Bohrs
                             }
                         }
                     }
@@ -1109,9 +1111,11 @@ fn geometry_to_json(geom: &Geometry) -> String {
 
     for i in 0..geom.num_atoms {
         let coords = geom.get_atom_coords(i);
+        // Convert from Bohrs to Angstroms for QM input
+        let angstrom_coords = crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![coords[0], coords[1], coords[2]]));
         result.push_str(&format!(
             "{{ \"atom\" : \"{}\", \"xyz\" : [ {:.8}, {:.8}, {:.8} ] }}",
-            geom.elements[i], coords[0], coords[1], coords[2]
+            geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
         ));
 
         if i < geom.num_atoms - 1 {
@@ -1234,9 +1238,11 @@ impl QMInterface for CustomInterface {
         let mut geometry_lines = Vec::new();
         for i in 0..geom.num_atoms {
             let coords = geom.get_atom_coords(i);
+            // Convert from Bohrs to Angstroms for QM input
+            let angstrom_coords = crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![coords[0], coords[1], coords[2]]));
             geometry_lines.push(format!(
-                "{:>2} {:>12.8} {:>12.8} {:>12.8}",
-                geom.elements[i], coords[0], coords[1], coords[2]
+                "{}  {:.8}  {:.8}  {:.8}",
+                geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
             ));
         }
         let geometry_str = geometry_lines.join("\n");

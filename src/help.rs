@@ -798,7 +798,7 @@ pub fn print_keyword_help() {
     for keyword in KEYWORDS {
         categories
             .entry(keyword.category)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(keyword);
     }
 
@@ -828,7 +828,7 @@ pub fn print_method_help() {
     for method in methods {
         categories
             .entry(method.category)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(method);
     }
 

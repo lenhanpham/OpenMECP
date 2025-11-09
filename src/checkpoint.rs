@@ -60,9 +60,14 @@ use crate::config::Config;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use crate::geometry::Geometry;
+use crate::geometry::{Geometry, angstrom_to_bohr};
 use crate::optimizer::OptimizationState;
 use nalgebra::{DMatrix, DVector};
+
+/// Default checkpoint version (1 = Angstroms for backward compatibility)
+fn default_version() -> u32 {
+    1
+}
 
 
 // Serializable versions of structs containing nalgebra types
@@ -164,6 +169,9 @@ impl From<SerializableOptimizationState> for OptimizationState {
 /// and calculation configuration.
 #[derive(Serialize, Deserialize)]
 pub struct Checkpoint {
+    /// Checkpoint format version (1 = Angstroms, 2 = Bohrs)
+    #[serde(default = "default_version")]
+    pub version: u32,
     /// Current optimization step number
     pub step: usize,
     /// Current molecular geometry
@@ -248,6 +256,7 @@ impl Checkpoint {
         config: &Config,
     ) -> Self {
         Self {
+            version: 2, // Version 2: coordinates in Bohrs
             step,
             geometry: geometry.into(),
             x_old: x_old.data.as_vec().clone(),
@@ -371,8 +380,22 @@ impl Checkpoint {
         let content = fs::read_to_string(path)?;
         let checkpoint: Checkpoint = serde_json::from_str(&content)?;
 
-        let geometry = Geometry::from(checkpoint.geometry);
-        let x_old = DVector::from_vec(checkpoint.x_old);
+        // Handle backward compatibility: convert Angstrom geometries to Bohrs
+        let mut geometry = Geometry::from(checkpoint.geometry);
+        let mut x_old = DVector::from_vec(checkpoint.x_old);
+        let mut opt_state = OptimizationState::from(checkpoint.opt_state);
+
+        if checkpoint.version == 1 {
+            // Version 1: coordinates in Angstroms, convert to Bohrs
+            geometry.coords = angstrom_to_bohr(&geometry.coords);
+            x_old = angstrom_to_bohr(&x_old);
+
+            // Convert geometry history in optimization state
+            for geom in &mut opt_state.geom_history {
+                *geom = angstrom_to_bohr(geom);
+            }
+        }
+        // Version 2: coordinates already in Bohrs, no conversion needed
         let nrows = checkpoint.hessian.len();
         let ncols = if nrows > 0 { checkpoint.hessian[0].len() } else { 0 };
         let hess_flat: Vec<f64> = checkpoint.hessian.into_iter().flatten().collect();
@@ -381,7 +404,6 @@ impl Checkpoint {
         } else {
             DMatrix::from_row_slice(0, 0, &[])
         };
-        let opt_state = OptimizationState::from(checkpoint.opt_state);
 
         Ok(CheckpointLoad {
             step: checkpoint.step,

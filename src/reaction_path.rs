@@ -617,8 +617,8 @@ fn constrained_coordinate_driving(
 
         // Simple steepest descent step
         let step_size = 0.01;
-        for i in 0..geometry.coords.len() {
-            geometry.coords[i] += step_size * constraint_forces[i];
+        for (coord, &force) in geometry.coords.iter_mut().zip(&constraint_forces) {
+            *coord += step_size * force;
         }
 
         // Check convergence
@@ -776,7 +776,7 @@ fn calculate_constraint_force(geometry: &Geometry, constraint: &Constraint, viol
             // For angles, use finite difference approximation
             // This is simplified - a real implementation would use analytical gradients
             let delta = 0.001;
-            for i in 0..geometry.coords.len() {
+            for (i, _) in geometry.coords.iter().enumerate() {
                 let mut geom_plus = geometry.clone();
                 geom_plus.coords[i] += delta;
                 let violation_plus = calculate_constraint_violation(&geom_plus, constraint);
@@ -788,7 +788,7 @@ fn calculate_constraint_force(geometry: &Geometry, constraint: &Constraint, viol
             // For dihedrals, use finite difference approximation
             // This is simplified - a real implementation would use analytical gradients
             let delta = 0.001;
-            for i in 0..geometry.coords.len() {
+            for (i, _) in geometry.coords.iter().enumerate() {
                 let mut geom_plus = geometry.clone();
                 geom_plus.coords[i] += delta;
                 let violation_plus = calculate_constraint_violation(&geom_plus, constraint);
@@ -1215,8 +1215,8 @@ fn calculate_tangent(prev: Option<&Geometry>, current: &Geometry, next: Option<&
     // Normalize tangent
     let norm = tangent.iter().map(|x| x * x).sum::<f64>().sqrt();
     if norm > 0.0 {
-        for i in 0..tangent.len() {
-            tangent[i] /= norm;
+        for val in &mut tangent {
+            *val /= norm;
         }
     }
 

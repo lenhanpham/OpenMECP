@@ -68,6 +68,7 @@ pub enum ConfigError {
 
 /// Main configuration structure containing all program settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Settings {
     /// File extension settings for different QM programs
     pub extensions: ExtensionSettings,
@@ -77,17 +78,6 @@ pub struct Settings {
     pub logging: LoggingSettings,
     /// Cleanup configuration
     pub cleanup: CleanupSettings,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            extensions: ExtensionSettings::default(),
-            general: GeneralSettings::default(),
-            logging: LoggingSettings::default(),
-            cleanup: CleanupSettings::default(),
-        }
-    }
 }
 
 /// File extension settings for different quantum chemistry programs.

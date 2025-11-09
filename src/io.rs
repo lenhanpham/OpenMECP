@@ -5,6 +5,7 @@
 //! in various formats including XYZ, Gaussian input/output, and checkpoint files.
 
 use crate::geometry::Geometry;
+use nalgebra::DVector;
 use std::fs;
 use std::io::Result;
 use std::path::Path;
@@ -48,9 +49,11 @@ pub fn write_xyz(geom: &Geometry, path: &Path) -> Result<()> {
     
     for i in 0..geom.num_atoms {
         let coords = geom.get_atom_coords(i);
+        // Convert from Bohrs to Angstroms for XYZ output
+        let angstrom_coords = crate::geometry::bohr_to_angstrom(&DVector::from_vec(vec![coords[0], coords[1], coords[2]]));
         content.push_str(&format!(
             "{}  {:.8}  {:.8}  {:.8}\n",
-            geom.elements[i], coords[0], coords[1], coords[2]
+            geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
         ));
     }
     
@@ -686,14 +689,14 @@ pub fn build_program_header_with_chk(
     temp_config.method = modified_method;
     
     // Determine checkpoint file name
-    let checkpoint_file = chk_file.unwrap_or_else(|| {
+    let checkpoint_file = chk_file.unwrap_or(
         // Default checkpoint file names based on charge/mult
         if charge == config.charge1 && mult == config.mult1 {
             "state_A.chk"
         } else {
             "state_B.chk"
         }
-    });
+    );
     
     match config.program {
         crate::config::QMProgram::Gaussian => {

@@ -6,9 +6,23 @@
 //! - [`Geometry`]: Molecular structure with element types and Cartesian coordinates
 //! - [`State`]: Electronic state with energy, forces, and associated geometry
 //!
-//! All coordinates are in Angstroms and forces are in Hartree/Bohr.
+//! All coordinates are in Bohrs and forces are in Hartree/Bohr.
 
 use nalgebra::DVector;
+
+/// Unit conversion constants for coordinate systems
+const BOHR_TO_ANGSTROM: f64 = 0.529177210903;
+const ANGSTROM_TO_BOHR: f64 = 1.0 / BOHR_TO_ANGSTROM;
+
+/// Convert coordinates from Angstroms to Bohrs
+pub fn angstrom_to_bohr(coords: &DVector<f64>) -> DVector<f64> {
+    coords * ANGSTROM_TO_BOHR
+}
+
+/// Convert coordinates from Bohrs to Angstroms
+pub fn bohr_to_angstrom(coords: &DVector<f64>) -> DVector<f64> {
+    coords * BOHR_TO_ANGSTROM
+}
 
 /// Represents a molecular geometry with atomic elements and Cartesian coordinates.
 ///
@@ -19,7 +33,7 @@ use nalgebra::DVector;
 ///
 /// # Coordinate System
 ///
-/// - Units: Angstroms (Å)
+/// - Units: Bohrs (a0)
 /// - Coordinate frame: Cartesian (x, y, z)
 /// - Origin: Arbitrary (typically centered for convenience)
 ///

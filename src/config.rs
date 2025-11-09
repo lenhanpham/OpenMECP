@@ -235,7 +235,7 @@ impl Default for Config {
         Self {
             thresholds: Thresholds::default(),
             max_steps: 100,
-            max_step_size: 0.1,
+            max_step_size: 0.3,
             reduced_factor: 0.5,
             nprocs: 1,
             mem: "1GB".to_string(),

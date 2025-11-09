@@ -1341,7 +1341,14 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                     config.switch_step
                 );
             }
-            optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
+            let adaptive_scale = if step == 0 {
+                1.0 // First step, no previous energy to compare
+            } else {
+                let energy_current = state1.energy - state2.energy;
+                let energy_previous = opt_state.energy_history.back().unwrap_or(&energy_current);
+                optimizer::compute_adaptive_scale(energy_current, *energy_previous, grad.norm(), step)
+            };
+            optimizer::bfgs_step(&x_old, &grad, &hessian, &config, adaptive_scale)
         } else if config.use_gediis {
             println!(
                 "Using GEDIIS optimizer (step {} >= switch point {})",
@@ -2312,7 +2319,14 @@ fn run_single_optimization(
             } else {
                 // Fallback to BFGS if solver fails
                 println!("Warning: Constrained step solver failed. Falling back to BFGS.");
-                optimizer::bfgs_step(&x_old, &grad, &hessian, config)
+                let adaptive_scale = if step == 0 {
+                    1.0
+                } else {
+                    let energy_current = state1.energy - state2.energy;
+                    let energy_previous = opt_state.energy_history.back().unwrap_or(&energy_current);
+                    optimizer::compute_adaptive_scale(energy_current, *energy_previous, grad.norm(), step)
+                };
+                optimizer::bfgs_step(&x_old, &grad, &hessian, config, adaptive_scale)
             }
         } else {
             // Choose optimizer based on switch_step configuration
@@ -2328,7 +2342,14 @@ fn run_single_optimization(
             };
 
             if use_bfgs || !opt_state.has_enough_history() {
-                optimizer::bfgs_step(&x_old, &grad, &hessian, config)
+                let adaptive_scale = if step == 0 {
+                    1.0
+                } else {
+                    let energy_current = state1.energy - state2.energy;
+                    let energy_previous = opt_state.energy_history.back().unwrap_or(&energy_current);
+                    optimizer::compute_adaptive_scale(energy_current, *energy_previous, grad.norm(), step)
+                };
+                optimizer::bfgs_step(&x_old, &grad, &hessian, config, adaptive_scale)
             } else if config.use_gediis {
                 optimizer::gediis_step(&opt_state, config)
             } else {
@@ -3371,7 +3392,14 @@ fn run_restart(
             } else {
                 // Fallback to BFGS if solver fails
                 println!("Warning: Constrained step solver failed. Falling back to BFGS.");
-                optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
+                let adaptive_scale = if step == 0 {
+                    1.0
+                } else {
+                    let energy_current = state1.energy - state2.energy;
+                    let energy_previous = opt_state.energy_history.back().unwrap_or(&energy_current);
+                    optimizer::compute_adaptive_scale(energy_current, *energy_previous, grad.norm(), step)
+                };
+                optimizer::bfgs_step(&x_old, &grad, &hessian, &config, adaptive_scale)
             }
         } else {
             // Choose optimizer based on switch_step configuration
@@ -3396,7 +3424,14 @@ fn run_restart(
                         config.switch_step
                     );
                 }
-                optimizer::bfgs_step(&x_old, &grad, &hessian, &config)
+                let adaptive_scale = if step == 0 {
+                    1.0
+                } else {
+                    let energy_current = state1.energy - state2.energy;
+                    let energy_previous = opt_state.energy_history.back().unwrap_or(&energy_current);
+                    optimizer::compute_adaptive_scale(energy_current, *energy_previous, grad.norm(), step)
+                };
+                optimizer::bfgs_step(&x_old, &grad, &hessian, &config, adaptive_scale)
             } else if config.use_gediis {
                 println!(
                     "Using GEDIIS optimizer (step {} >= switch point {})",

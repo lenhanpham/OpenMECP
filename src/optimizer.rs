@@ -360,6 +360,7 @@ pub fn bfgs_step(
     g0: &DVector<f64>,
     hessian: &DMatrix<f64>,
     config: &Config,
+    adaptive_scale: f64,
 ) -> DVector<f64> {
     // Solve H * dk = -g
     let neg_g = -g0;
@@ -370,12 +371,12 @@ pub fn bfgs_step(
         step_dir * config.max_step_size
     });
 
-    // Apply BFGS rho scaling factor
-    dk *= config.bfgs_rho;
+    // Apply adaptive scaling (replaces fixed rho)
+    dk *= adaptive_scale;
 
     // Apply step size limit
-    let mut x_new = x0 + &dk;
     let step_norm = dk.norm();
+    let mut x_new = x0 + &dk;
 
     if step_norm > config.max_step_size {
         let scale = config.max_step_size / step_norm;
@@ -384,6 +385,40 @@ pub fn bfgs_step(
     }
 
     x_new
+}
+
+/// Computes adaptive step scaling based on optimization progress.
+///
+/// This function adjusts the step size based on energy changes and gradient magnitude
+/// to allow natural convergence without fixed multipliers.
+pub fn compute_adaptive_scale(
+    energy_current: f64,
+    energy_previous: f64,
+    gradient_norm: f64,
+    step: usize,
+) -> f64 {
+    // Early iterations: allow larger steps
+    if step < 3 {
+        return 1.0;
+    }
+
+    // If energy increased significantly, reduce step size
+    if energy_current > energy_previous + 0.01 {
+        return 0.3; // Large reduction for energy increase
+    }
+
+    // If energy increased slightly, moderate reduction
+    if energy_current > energy_previous {
+        return 0.7;
+    }
+
+    // Fine tuning region (small gradients)
+    if gradient_norm < 0.01 {
+        return 0.8;
+    }
+
+    // Normal region
+    1.0
 }
 
 /// Updates the Hessian matrix using the PSB (Powell-Symmetric-Broyden) formula.

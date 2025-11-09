@@ -353,7 +353,7 @@ pub fn compute_mecp_gradient(
 /// let g0 = DVector::from_vec(vec![0.1, 0.2, 0.3]);
 /// let hessian = DMatrix::identity(3, 3);
 ///
-/// // let x_new = bfgs_step(&x0, &g0, &hessian, &config);
+/// // let x_new = bfgs_step(&x0, &g0, &hessian, &config, 1.0);
 /// ```
 pub fn bfgs_step(
     x0: &DVector<f64>,
@@ -362,27 +362,31 @@ pub fn bfgs_step(
     config: &Config,
     adaptive_scale: f64,
 ) -> DVector<f64> {
-    // Solve H * dk = -g
+    // Solve H * dk = -g (compute Newton direction)
     let neg_g = -g0;
     let mut dk = hessian.clone().lu().solve(&neg_g).unwrap_or_else(|| {
         // Fallback to steepest descent when Hessian is singular
-        // Scale to max_step_size to maintain stability
-        let step_dir = -g0 / g0.norm();
-        step_dir * config.max_step_size
+        let step_dir = -g0 / (g0.norm() + 1e-14);
+        step_dir
     });
 
-    // Apply adaptive scaling (replaces fixed rho)
-    dk *= adaptive_scale;
-
-    // Apply step size limit
-    let step_norm = dk.norm();
-    let mut x_new = x0 + &dk;
-
-    if step_norm > config.max_step_size {
-        let scale = config.max_step_size / step_norm;
-        println!("current stepsize: {} is reduced to max_size {}", step_norm, config.max_step_size);
-        x_new = x0 + &dk * scale;
+    // Python algorithm (propagationBFGS):
+    // 1. Compute dk = -H^-1 * g
+    // 2. Cap dk to 0.1 if ||dk|| > 0.1
+    // 3. Apply rho=15 multiplier: XNew = X0 + rho * dk
+    
+    // Step 2: Cap direction vector dk to 0.1 (Python's hardcoded limit)
+    let dk_norm = dk.norm();
+    const DIRECTION_LIMIT: f64 = 0.1;  // Python's hardcoded cap on direction
+    if dk_norm > DIRECTION_LIMIT {
+        dk *= DIRECTION_LIMIT / dk_norm;
+        println!("current stepsize: {} is reduced to max_size {}", dk_norm, DIRECTION_LIMIT);
     }
+
+    // Step 3: Apply rho multiplier (from config.bfgs_rho, default 15.0)
+    // This naturally reduces as Hessian improves and dk gets smaller
+    let rho = config.bfgs_rho * adaptive_scale;
+    let x_new = x0 + &dk * rho;
 
     x_new
 }

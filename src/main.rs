@@ -2304,6 +2304,7 @@ fn run_single_optimization(
                 let step_norm = delta_x.norm();
                 if step_norm > config.max_step_size {
                     let scale = config.max_step_size / step_norm;
+                    println!("current stepsize: {} is reduced to max_size {}", step_norm, config.max_step_size);
                     x_old.clone() + delta_x * scale
                 } else {
                     x_old.clone() + delta_x
@@ -3362,6 +3363,7 @@ fn run_restart(
                 let step_norm = delta_x.norm();
                 if step_norm > config.max_step_size {
                     let scale = config.max_step_size / step_norm;
+                    println!("current stepsize: {} is reduced to max_size {}", step_norm, config.max_step_size);
                     x_old.clone() + delta_x * scale
                 } else {
                     x_old.clone() + delta_x

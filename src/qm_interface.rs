@@ -240,9 +240,11 @@ impl QMInterface for GaussianInterface {
 
         for i in 0..geom.num_atoms {
             let coords = geom.get_atom_coords(i);
+            // Convert from Bohrs to Angstroms for QM input
+            let angstrom_coords = crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![coords[0], coords[1], coords[2]]));
             content.push_str(&format!(
                 "{}  {:.8}  {:.8}  {:.8}\n",
-                geom.elements[i], coords[0], coords[1], coords[2]
+                geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
             ));
         }
 

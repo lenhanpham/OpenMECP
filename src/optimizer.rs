@@ -379,6 +379,7 @@ pub fn bfgs_step(
 
     if step_norm > config.max_step_size {
         let scale = config.max_step_size / step_norm;
+        println!("current stepsize: {} is reduced to max_size {}", step_norm, config.max_step_size);
         x_new = x0 + &dk * scale;
     }
 
@@ -799,9 +800,10 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
     }
 
     let step_norm = step.norm();
-    
+
     if step_norm > config.max_step_size {
         let scale = config.max_step_size / step_norm;
+        println!("current stepsize: {} is reduced to max_size {}", step_norm, config.max_step_size);
         x_new = last_geom + &step * scale;
     } else {
         x_new = last_geom + step;
@@ -1053,6 +1055,7 @@ pub fn gediis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f6
 
     if step_norm > config.max_step_size {
         let scale = config.max_step_size / step_norm;
+        println!("current stepsize: {} is reduced to max_size {}", step_norm, config.max_step_size);
         x_new = last_geom + &step * scale;
     }
 

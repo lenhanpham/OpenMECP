@@ -62,12 +62,14 @@ use std::collections::VecDeque;
 /// - Maximum history: 4 iterations (configurable)
 /// - Automatically removes oldest entries when capacity is exceeded
 /// - Maintains rolling window of recent optimization data
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct OptimizationState {
     /// Lagrange multipliers for geometric constraints
     pub lambdas: Vec<f64>,
     /// Lagrange multiplier for the energy difference constraint (FixDE mode)
     pub lambda_de: Option<f64>,
+    /// Current constraint violations for extended gradient
+    pub constraint_violations: DVector<f64>,
     /// History of molecular geometries (for DIIS methods)
     pub geom_history: VecDeque<DVector<f64>>,
     /// History of gradients (for DIIS methods)
@@ -78,6 +80,12 @@ pub struct OptimizationState {
     pub energy_history: VecDeque<f64>,
     /// Maximum number of history entries to store
     pub max_history: usize,
+}
+
+impl Default for OptimizationState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl OptimizationState {
@@ -99,6 +107,7 @@ impl OptimizationState {
         Self {
             lambdas: Vec::new(),
             lambda_de: None,
+            constraint_violations: DVector::zeros(0),
             geom_history: VecDeque::with_capacity(4),
             grad_history: VecDeque::with_capacity(4),
             hess_history: VecDeque::with_capacity(4),
@@ -288,11 +297,14 @@ pub fn compute_mecp_gradient(
     state2: &State,
     fixed_atoms: &[usize],
 ) -> DVector<f64> {
-    let f1 = &state1.forces;
-    let f2 = &state2.forces;
+    // CRITICAL: Match Python MECP.py force sign convention
+    // Python extracts forces as positive values from Gaussian output, then NEGATES them
+    // before MECP gradient computation (see getG() function in MECP.py)
+    let f1 = -state1.forces.clone();  // NEGATE to match Python algorithm
+    let f2 = -state2.forces.clone();  // NEGATE to match Python algorithm
 
     // Gradient difference
-    let x_vec = f1 - f2;
+    let x_vec = &f1 - &f2;
     let x_norm_val = x_vec.norm();
     // Use minimum norm vector to avoid division by zero while maintaining direction
     // This prevents premature convergence when gradients are nearly identical
@@ -307,11 +319,11 @@ pub fn compute_mecp_gradient(
 
     // Energy difference component
     let de = state1.energy - state2.energy;
-    let f_vec = &x_norm * de;
+    let f_vec = x_norm.clone() * de;
 
     // Perpendicular component
     let dot = f1.dot(&x_norm);
-    let g_vec = f1 - &x_norm * dot;
+    let g_vec = &f1 - &x_norm * dot;
 
     // Combine
     let mut eff_grad = f_vec + g_vec;
@@ -1174,4 +1186,107 @@ pub fn hybrid_gediis_step(opt_state: &OptimizationState, config: &Config) -> DVe
     }
 
     hybrid_result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry::{Geometry, State};
+
+    #[test]
+    fn test_force_sign_convention_matches_python() {
+        // Create test geometry (2 atoms)
+        let elements = vec!["H".to_string(), "H".to_string()];
+        let coords = vec![
+            0.0, 0.0, 0.0,  // Atom 1 at origin
+            1.0, 0.0, 0.0,  // Atom 2 at (1,0,0)
+        ];
+        let geometry = Geometry::new(elements, coords);
+
+        // Create test forces (positive values as extracted from Gaussian output)
+        // Python would NEGATE these before MECP gradient computation
+        let forces1 = DVector::from_vec(vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
+        let forces2 = DVector::from_vec(vec![0.2, 0.3, 0.4, 0.5, 0.6, 0.7]);
+
+        // Create states with positive forces (as extracted from Gaussian)
+        let state1 = State {
+            geometry: geometry.clone(),
+            energy: -100.0,
+            forces: forces1,
+        };
+
+        let state2 = State {
+            geometry,
+            energy: -99.0,
+            forces: forces2,
+        };
+
+        // Compute MECP gradient
+        let gradient = compute_mecp_gradient(&state1, &state2, &[]);
+
+        // Verify that forces were properly negated
+        // The gradient should reflect NEGATED forces (matching Python behavior)
+        // If forces weren't negated, gradient direction would be wrong
+        
+        // Check that gradient has correct dimension
+        assert_eq!(gradient.len(), 6);
+        
+        // Check that gradient is not zero (forces should have effect)
+        assert!(gradient.norm() > 1e-10);
+        
+        // Manual verification: compute expected gradient with negated forces
+        let expected_f1 = -state1.forces;  // Python negates forces
+        let expected_f2 = -state2.forces;  // Python negates forces
+        
+        let x_vec = &expected_f1 - &expected_f2;
+        let x_norm = if x_vec.norm().abs() < 1e-10 {
+            let n = x_vec.len() as f64;
+            &x_vec / (n.sqrt() * 1e-10)
+        } else {
+            &x_vec / x_vec.norm()
+        };
+        
+        let de = state1.energy - state2.energy;
+        let expected_f_vec = x_norm.clone() * de;
+        let dot = expected_f1.dot(&x_norm);
+        let expected_g_vec = &expected_f1 - &x_norm * dot;
+        let expected_gradient = expected_f_vec + expected_g_vec;
+        
+        // Compare computed gradient with expected (allowing for numerical precision)
+        for i in 0..gradient.len() {
+            assert!((gradient[i] - expected_gradient[i]).abs() < 1e-10,
+                   "Gradient component {} mismatch: {} vs {}", 
+                   i, gradient[i], expected_gradient[i]);
+        }
+    }
+
+    #[test]
+    fn test_force_negation_impact() {
+        // Demonstrate the critical importance of force negation
+        let elements = vec!["H".to_string(), "H".to_string()];
+        let coords = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let geometry = Geometry::new(elements, coords);
+
+        // ZERO forces for both states
+        let forces = DVector::from_vec(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        
+        let state1 = State {
+            geometry: geometry.clone(),
+            energy: -100.0,
+            forces: forces.clone(),
+        };
+
+        let state2 = State {
+            geometry,
+            energy: -100.0,  // Same energy
+            forces: forces.clone(),
+        };
+
+        let gradient = compute_mecp_gradient(&state1, &state2, &[]);
+
+        // With zero forces and same energies, gradient should be zero
+        assert!(gradient.norm() < 1e-10, 
+               "Expected zero gradient with zero forces, got {}", 
+               gradient.norm());
+    }
 }

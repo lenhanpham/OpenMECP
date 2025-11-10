@@ -112,6 +112,8 @@ pub struct SerializableOptimizationState {
     lambdas: Vec<f64>,
     /// Lagrange multiplier for energy difference constraint (FixDE mode)
     lambda_de: Option<f64>,
+    /// Current constraint violations for extended gradient
+    constraint_violations: Vec<f64>,
     /// History of geometries (for DIIS)
     geom_history: Vec<Vec<f64>>,
     /// History of gradients (for DIIS)
@@ -127,6 +129,7 @@ impl From<&OptimizationState> for SerializableOptimizationState {
         Self {
             lambdas: opt_state.lambdas.clone(),
             lambda_de: opt_state.lambda_de,
+            constraint_violations: opt_state.constraint_violations.data.as_vec().clone(),
             geom_history: opt_state
                 .geom_history
                 .iter()
@@ -156,6 +159,7 @@ impl From<SerializableOptimizationState> for OptimizationState {
         let mut opt_state = OptimizationState::new();
         opt_state.lambdas = ser_opt_state.lambdas;
         opt_state.lambda_de = ser_opt_state.lambda_de;
+        opt_state.constraint_violations = DVector::from_vec(ser_opt_state.constraint_violations);
         opt_state.max_history = ser_opt_state.max_history;
 
         for coords in ser_opt_state.geom_history {

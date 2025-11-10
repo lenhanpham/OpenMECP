@@ -149,7 +149,7 @@ pub trait QMInterface {
     /// - **Gaussian**: State index for TD-DFT excited states
     /// - **ORCA**: State index for excited state calculations
     /// - **Other programs**: May ignore this parameter
-    fn read_output(&self, output_path: &Path, state: usize) -> Result<State>;
+    fn read_output(&self, output_path: &Path, original_geometry: &Geometry, state: usize) -> Result<State>;
 }
 
 /// Gaussian quantum chemistry program interface.
@@ -270,13 +270,13 @@ impl QMInterface for GaussianInterface {
         Ok(())
     }
 
-    fn read_output(&self, output_path: &Path, state: usize) -> Result<State> {
+    fn read_output(&self, output_path: &Path, original_geometry: &Geometry, _state: usize) -> Result<State> {
         let content = fs::read_to_string(output_path)
-            .map_err(|e| QMError::Parse(format!("Failed to read file: {}", e)))?;
-        let mut energy = 0.0_f64;
+            .map_err(QMError::Io)?;
+
+        let mut energy = 0.0;
         let mut forces = Vec::new();
         let mut geom_coords = Vec::new();
-        let mut elements = Vec::new();
         let mut in_forces = false;
         let mut in_geom = false;
         let mut archive_part = String::new();
@@ -290,33 +290,36 @@ impl QMInterface for GaussianInterface {
                     }
                 }
             }
+            // === 1b. Extrapolated Energy (ONIOM fallback) ===
+            else if line.contains("extrapolated energy") {
+                if let Some(eq_pos) = line.find('=') {
+                    if let Some(val) = line[eq_pos + 1..].split_whitespace().next() {
+                        energy = val.parse().unwrap_or(0.0);
+                    }
+                }
+            }
             // === 2. TD-DFT / CIS / TDA Energy ===
+            // CRITICAL: For MECP compatibility, always return ground-state energy
+            // Python MECP.py ignores state parameter and always uses ground state
             else if line.contains("E(TD-HF/TD-DFT)") || line.contains("E(CIS/TDA)") {
-                if state == 0 {
-                    // Ground state
-                    if line.contains("E(TD-HF/TD-DFT)") {
-                        if let Some(eq) = line.find('=') {
-                            if let Some(val) = line[eq + 1..].split_whitespace().next() {
-                                energy = val.parse().unwrap_or(0.0);
-                            }
-                        }
-                    } else if let Some(caps) = CIS_TOTAL_RE.captures(line) {
-                        energy = caps[1].parse().unwrap_or(0.0);
-                    }
-                } else {
-                    // Excited state
-                    if let Some(caps) = EXCITED_RE.captures(line) {
-                        let line_state: usize = caps[1].parse().expect("state number");
-                        if line_state == state {
-                            let ev: f64 = caps[2].parse().expect("eV value");
-                            energy = ev * 0.0367493; // eV → Hartree
+                // Only parse ground state energy for MECP compatibility
+                if line.contains("E(TD-HF/TD-DFT)") {
+                    if let Some(eq) = line.find('=') {
+                        if let Some(val) = line[eq + 1..].split_whitespace().next() {
+                            energy = val.parse().unwrap_or(0.0);
                         }
                     }
+                } else if let Some(caps) = CIS_TOTAL_RE.captures(line) {
+                    energy = caps[1].parse().unwrap_or(0.0);
                 }
             }
             // === 3. MP2 Archive Line ===
             else if self.mp2 && trimmed.starts_with('\\') {
-                archive_part = line.to_string(); // Keep last archive line
+                // Handle multi-line archive entries (Python compatibility)
+                if !archive_part.is_empty() {
+                    archive_part.push('\n'); // Add newline for continuation
+                }
+                archive_part.push_str(trimmed);
             }
             // === 4. Forces Block ===
             else if line.contains("Forces (Hartrees/Bohr)") {
@@ -335,15 +338,14 @@ impl QMInterface for GaussianInterface {
             else if line.contains("Input orientation") || line.contains("Standard orientation") {
                 in_geom = true;
                 geom_coords.clear();
-                elements.clear();
             } else if (line.contains("Distance matrix") || line.contains("Rotational constants"))
                 && in_geom
             {
                 in_geom = false;
             } else if in_geom {
                 if let Some(caps) = GEOM_RE.captures(line) {
-                    let atomic_num: usize = caps[1].parse().unwrap_or(0);
-                    elements.push(atomic_number_to_symbol(atomic_num));
+                    // CRITICAL: Do NOT rebuild elements to preserve atom order
+                    // Python keeps original input order, constraints depend on this
                     geom_coords.push(caps[2].parse().unwrap_or(0.0));
                     geom_coords.push(caps[3].parse().unwrap_or(0.0));
                     geom_coords.push(caps[4].parse().unwrap_or(0.0));
@@ -363,7 +365,7 @@ impl QMInterface for GaussianInterface {
             }
         }
         // === 7. Final Validation ===
-        let n_atoms = elements.len();
+        let n_atoms = original_geometry.num_atoms;
         if n_atoms == 0 {
             return Err(QMError::Parse("No atoms found in geometry".into()));
         }
@@ -386,7 +388,7 @@ impl QMInterface for GaussianInterface {
             energy,
             forces: DVector::from_vec(forces),
             geometry: Geometry::new(
-                elements,
+                original_geometry.elements.clone(), // Preserve original atom order
                 angstrom_to_bohr(&nalgebra::DVector::from_vec(geom_coords))
                     .data
                     .as_vec()
@@ -609,7 +611,7 @@ impl QMInterface for OrcaInterface {
         Ok(())
     }
 
-    fn read_output(&self, output_path: &Path, _state: usize) -> Result<State> {
+    fn read_output(&self, output_path: &Path, _original_geometry: &Geometry, _state: usize) -> Result<State> {
         let base = output_path.with_extension("");
         let engrad_path = base.with_extension("engrad");
         let log_path = output_path;
@@ -844,7 +846,7 @@ impl QMInterface for BagelInterface {
         Ok(())
     }
 
-    fn read_output(&self, output_path: &Path, state: usize) -> Result<State> {
+    fn read_output(&self, output_path: &Path, _original_geometry: &Geometry, state: usize) -> Result<State> {
         // Check if output file exists before attempting to read
         if !output_path.exists() {
             return Err(QMError::Parse(format!(
@@ -1011,7 +1013,7 @@ impl QMInterface for XtbInterface {
         Ok(())
     }
 
-    fn read_output(&self, output_path: &Path, _state: usize) -> Result<State> {
+    fn read_output(&self, output_path: &Path, _original_geometry: &Geometry, _state: usize) -> Result<State> {
         // xTB outputs energy and gradients to .engrad file
         let engrad_path = output_path.with_extension("engrad");
 
@@ -1300,7 +1302,7 @@ impl QMInterface for CustomInterface {
         Ok(())
     }
 
-    fn read_output(&self, output_path: &Path, _state: usize) -> Result<State> {
+    fn read_output(&self, output_path: &Path, _original_geometry: &Geometry, _state: usize) -> Result<State> {
         // Check if output file exists before attempting to read
         if !output_path.exists() {
             return Err(QMError::Parse(format!(

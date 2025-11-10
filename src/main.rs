@@ -1280,8 +1280,8 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let output_ext = get_output_file_base(config.program);
     let initial_a_output = format!("{}/0_state_A.{}", job_dir, output_ext);
     let initial_b_output = format!("{}/0_state_B.{}", job_dir, output_ext);
-    let state1 = qm.read_output(Path::new(&initial_a_output), config.state1)?;
-    let state2 = qm.read_output(Path::new(&initial_b_output), config.state2)?;
+    let state1 = qm.read_output(Path::new(&initial_a_output), &geometry, config.state1)?;
+    let state2 = qm.read_output(Path::new(&initial_b_output), &geometry, config.state2)?;
 
     // FIX: Synchronize geometry from pre-point calculation
     geometry.coords = state1.geometry.coords.clone();
@@ -1307,9 +1307,12 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 constraints,
                 &mut opt_state.lambdas,
             ) {
-                Ok(constrained_grad) => {
+                Ok((constrained_grad, violations)) => {
                     grad = constrained_grad;
                     println!("Constraint forces applied successfully");
+                    
+                    // Store violations for extended gradient (Phase 3)
+                    opt_state.constraint_violations = violations.clone();
 
                     // Report constraint status
                     constraints::report_constraint_status(
@@ -1431,10 +1434,12 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let output_ext = get_output_file_base(config.program);
         let state1_new = qm.read_output(
             Path::new(&format!("{}/{}_state_A.{}", job_dir, step + 1, output_ext)),
+            &geometry,
             config.state1,
         )?;
         let state2_new = qm.read_output(
             Path::new(&format!("{}/{}_state_B.{}", job_dir, step + 1, output_ext)),
+            &geometry,
             config.state2,
         )?;
 
@@ -1455,8 +1460,10 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 constraints,
                 &mut opt_state.lambdas,
             ) {
-                Ok(constrained_grad_new) => {
+                Ok((constrained_grad_new, violations_new)) => {
                     grad_new = constrained_grad_new;
+                    // Store violations for extended gradient (Phase 3)
+                    opt_state.constraint_violations = violations_new.clone();
                 }
                 Err(e) => {
                     println!(
@@ -1797,10 +1804,12 @@ fn run_pes_scan(
                 match (
                     qm.read_output(
                         Path::new(&format!("job_dir/{}_A.{}", converged_step, output_ext)),
+                        &geometry,
                         config.state1,
                     ),
                     qm.read_output(
                         Path::new(&format!("job_dir/{}_B.{}", converged_step, output_ext)),
+                        &geometry,
                         config.state2,
                     ),
                 ) {
@@ -2301,10 +2310,12 @@ fn run_single_optimization(
         let output_ext = get_output_file_base(config.program);
         let state1 = qm.read_output(
             Path::new(&format!("job_dir/{}_A.{}", step, output_ext)),
+            &geometry,
             config.state1,
         )?;
         let state2 = qm.read_output(
             Path::new(&format!("job_dir/{}_B.{}", step, output_ext)),
+            &geometry,
             config.state2,
         )?;
 
@@ -2388,10 +2399,12 @@ fn run_single_optimization(
         let output_ext = get_output_file_base(config.program);
         let state1_new = qm.read_output(
             Path::new(&format!("job_dir/{}_A.{}", step + 1, output_ext)),
+            &geometry,
             config.state1,
         )?;
         let state2_new = qm.read_output(
             Path::new(&format!("job_dir/{}_B.{}", step + 1, output_ext)),
+            &geometry,
             config.state2,
         )?;
         let grad_new = optimizer::compute_mecp_gradient(&state1_new, &state2_new, fixed_atoms);
@@ -2564,7 +2577,7 @@ fn run_lst_interpolation(
     let mut energies_b = Vec::new();
     let mut successful_points = 0;
 
-    for (i, _) in geometries.iter().enumerate() {
+    for (i, geom) in geometries.iter().enumerate() {
         let num = i + 1;
         println!("\n****Running Point {}/{}****", num, geometries.len());
 
@@ -2576,6 +2589,7 @@ fn run_lst_interpolation(
                 let output_ext = get_output_file_base(input_data.config.program);
                 match qm.read_output(
                     Path::new(&format!("job_dir/{}_A.{}", num, output_ext)),
+                    geom,
                     config.state1,
                 ) {
                     Ok(state_a) => {
@@ -2602,6 +2616,7 @@ fn run_lst_interpolation(
                 let output_ext = get_output_file_base(input_data.config.program);
                 match qm.read_output(
                     Path::new(&format!("job_dir/{}_B.{}", num, output_ext)),
+                    geom,
                     config.state2,
                 ) {
                     Ok(state_b) => {
@@ -3377,10 +3392,12 @@ fn run_restart(
         let output_ext = get_output_file_base(config.program);
         let state1 = qm.read_output(
             Path::new(&format!("job_dir/{}_A.{}", step, output_ext)),
+            &geometry,
             config.state1,
         )?;
         let state2 = qm.read_output(
             Path::new(&format!("job_dir/{}_B.{}", step, output_ext)),
+            &geometry,
             config.state2,
         )?;
 
@@ -3611,10 +3628,12 @@ fn run_coordinate_driving(
         let output_ext = get_output_file_base(config.program);
         let state_a = qm.read_output(
             Path::new(&format!("job_dir/drive_{}_A.{}", step, output_ext)),
+            geom,
             config.state1,
         )?;
         let state_b = qm.read_output(
             Path::new(&format!("job_dir/drive_{}_B.{}", step, output_ext)),
+            geom,
             config.state2,
         )?;
 
@@ -3752,10 +3771,12 @@ fn run_path_optimization(
         let output_ext = get_output_file_base(config.program);
         let state_a = qm.read_output(
             Path::new(&format!("job_dir/neb_{}_A.{}", step, output_ext)),
+            geom,
             config.state1,
         )?;
         let state_b = qm.read_output(
             Path::new(&format!("job_dir/neb_{}_B.{}", step, output_ext)),
+            geom,
             config.state2,
         )?;
 

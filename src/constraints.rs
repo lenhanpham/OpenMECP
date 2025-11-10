@@ -398,11 +398,31 @@ impl Error for ConstraintError {}
 
 /// Applies constraint forces using the Lagrange multiplier method.
 ///
-/// This function implements the constrained optimization algorithm by:
-/// 1. Evaluating constraint violations
-/// 2. Building the constraint Jacobian matrix
-/// 3. Solving for Lagrange multipliers using the constraint equation
-/// 4. Applying constraint forces to the gradient
+/// This function implements Python MECP.py compatible constraint handling by:
+/// 1. First step: Diagonal λ initialization: λ = - (c·g)/(c·c)
+/// 2. Subsequent steps: Reuse previous λ values
+/// 3. Apply constraint forces: F_new = F_old + C^T * λ
+/// 4. Return violations for extended gradient optimization
+///
+/// # Python Compatibility
+///
+/// Matches Python MECP.py `addConstLag` behavior exactly:
+/// - Diagonal preconditioner instead of full C Cᵀ λ = -g(x) system
+/// - λ reuse prevents jumps and maintains constraint stability
+/// - Returns violations for extended gradient [F + Cᵀλ, violations]
+///
+/// # Arguments
+///
+/// * `geometry` - Current molecular geometry
+/// * `forces` - Original forces from QM calculation (negative gradient)
+/// * `constraints` - List of geometric constraints to enforce
+/// * `lambdas` - Mutable reference to Lagrange multipliers (updated in-place)
+///
+/// # Returns
+///
+/// Returns a tuple of (modified_forces, violations) where:
+/// - modified_forces: Forces with constraint contributions (F + Cᵀλ)
+/// - violations: Current constraint violation values for extended gradient
 ///
 /// The constraint equation solved is:
 /// C * C^T * λ = -g(x)
@@ -419,100 +439,52 @@ impl Error for ConstraintError {}
 ///
 /// # Returns
 ///
-/// Modified forces with constraint contributions added.
-///
-/// # Errors
-///
-/// Returns `ConstraintError` if:
-/// - The constraint Jacobian is singular (linearly dependent constraints)
-/// - Numerical instability occurs during solving
-/// - Constraints are improperly specified
-///
-/// # Examples
-///
-/// ```rust
-/// use omecp::constraints::{add_constraint_lagrange, Constraint};
-/// use omecp::geometry::Geometry;
-/// use nalgebra::DVector;
-///
-/// let geometry = Geometry::new(/* ... */);
-/// let forces = DVector::from_vec(vec![0.1, -0.2, 0.0, 0.3, -0.1, 0.2]);
-/// let constraints = vec![
-///     Constraint::Bond { atoms: (0, 1), target: 1.5 }
-/// ];
-/// let mut lambdas = vec![0.0];
-///
-/// let constrained_forces = add_constraint_lagrange(
-///     &geometry, forces, &constraints, &mut lambdas
-/// ).unwrap();
-/// ```
+
 pub fn add_constraint_lagrange(
     geometry: &Geometry,
     forces: DVector<f64>,
     constraints: &[Constraint],
     lambdas: &mut Vec<f64>,
-) -> Result<DVector<f64>, ConstraintError> {
-    // If no constraints, return original forces
+) -> Result<(DVector<f64>, DVector<f64>), ConstraintError> {
+    // Return: (modified_forces, violations)
     if constraints.is_empty() {
         lambdas.clear();
-        return Ok(forces);
+        return Ok((forces, DVector::zeros(0)));
     }
 
-    // Ensure lambdas vector has correct size
-    lambdas.resize(constraints.len(), 0.0);
+    let n_constraints = constraints.len();
+    lambdas.resize(n_constraints, 0.0);
 
-    // Evaluate constraint violations
+    // Build Jacobian C (n_constraints × 3*n_atoms)
+    let jacobian = build_constraint_jacobian(geometry, constraints);
     let violations = evaluate_constraints(geometry, constraints);
 
-    // Build constraint Jacobian matrix C (num_constraints × 3*num_atoms)
-    let jacobian = build_constraint_jacobian(geometry, constraints);
-
-    // Check for zero violations - if all constraints are satisfied, no correction needed
-    let max_violation = violations.iter().fold(0.0f64, |acc, &x| acc.max(x.abs()));
-    if max_violation < 1e-12 {
-        lambdas.fill(0.0);
-        return Ok(forces);
-    }
-
-    // Solve the constraint equation: C * C^T * λ = -g(x)
-    // where g(x) are the constraint violations
-    let cct = &jacobian * jacobian.transpose();
-
-    // Check if the matrix is singular
-    let det = cct.determinant();
-    if det.abs() < 1e-14 {
-        return Err(ConstraintError::SingularJacobian);
-    }
-
-    // Solve for Lagrange multipliers
-    let cct_inv = match cct.try_inverse() {
-        Some(inv) => inv,
-        None => return Err(ConstraintError::SingularJacobian),
-    };
-
-    let lambda_vec = cct_inv * (-violations);
-
-    // Update lambdas vector
-    for (i, &lambda) in lambda_vec.iter().enumerate() {
-        if i < lambdas.len() {
-            lambdas[i] = lambda;
+    // === FIRST STEP: Initialize λ using diagonal approximation (like Python) ===
+    // Check if all lambdas are zero (first step)
+    let first_step = lambdas.iter().all(|&l| l == 0.0);
+    if first_step {
+        let g = forces.clone(); // raw gradient (not negated yet)
+        for i in 0..n_constraints {
+            let c_i = jacobian.row(i);
+            let c_vec = DVector::from_vec(c_i.iter().cloned().collect());
+            let c_dot_g = c_vec.dot(&g);
+            let c_dot_c = c_vec.dot(&c_vec);
+            if c_dot_c > 1e-12 {
+                lambdas[i] = -c_dot_g / c_dot_c;
+            } else {
+                lambdas[i] = 0.0;
+            }
         }
     }
 
-    // Check for numerical instability
-    for &lambda in &lambda_vec {
-        if !lambda.is_finite() {
-            return Err(ConstraintError::NumericalInstability(
-                "Lagrange multipliers contain NaN or infinite values".to_string(),
-            ));
-        }
-    }
-
-    // Apply constraint forces: F_new = F_old + C^T * λ
+    // === EVERY STEP: Apply constraint force using CURRENT λ ===
+    let lambda_vec = DVector::from_vec(lambdas.clone());
     let constraint_forces = jacobian.transpose() * lambda_vec;
     let modified_forces = forces + constraint_forces;
 
-    Ok(modified_forces)
+    // === Return extended gradient for optimizer ===
+    // [F + Cᵀλ, violations]  ← this is what Python appends
+    Ok((modified_forces, violations))
 }
 
 /// Validates constraint specifications for correctness.
@@ -719,6 +691,70 @@ pub fn report_constraint_status(
         }
     );
     println!("--- End Constraint Status ---\n");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry::Geometry;
+
+    #[test]
+    fn test_python_compatible_constraint_initialization() {
+        // Test diagonal λ initialization like Python MECP.py
+        let elements = vec!["H".to_string(), "H".to_string()];
+        let coords = vec![0.0, 0.0, 0.0, 1.6, 0.0, 0.0]; // 1.6 Å bond
+        let geometry = Geometry::new(elements, coords);
+
+        let constraints = vec![
+            Constraint::Bond { atoms: (0, 1), target: 1.5 } // Target 1.5 Å
+        ];
+
+        let forces = DVector::from_vec(vec![0.1, 0.0, 0.0, -0.1, 0.0, 0.0]);
+        let mut lambdas = vec![0.0];
+
+        // First call should initialize λ using diagonal approximation
+        let (_constrained_forces, violations) = add_constraint_lagrange(
+            &geometry, forces.clone(), &constraints, &mut lambdas
+        ).unwrap();
+
+        // λ should be non-zero (initialized)
+        assert!(lambdas[0] != 0.0, "λ should be initialized on first step");
+        
+        // Second call should reuse λ (not recompute)
+        let old_lambda = lambdas[0];
+        let (_constrained_forces2, _violations2) = add_constraint_lagrange(
+            &geometry, forces, &constraints, &mut lambdas
+        ).unwrap();
+
+        // λ should be unchanged (reused)
+        assert_eq!(old_lambda, lambdas[0], "λ should be reused on subsequent steps");
+        
+        // Violations should be detected
+        assert!(violations.len() == 1, "Should have one violation");
+        assert!(violations[0].abs() > 1e-10, "Should detect bond length violation");
+    }
+
+    #[test]
+    fn test_constraint_violations_returned() {
+        // Test that violations are properly returned for extended gradient
+        let elements = vec!["H".to_string(), "H".to_string()];
+        let coords = vec![0.0, 0.0, 0.0, 1.5, 0.0, 0.0]; // Perfect bond length
+        let geometry = Geometry::new(elements, coords);
+
+        let constraints = vec![
+            Constraint::Bond { atoms: (0, 1), target: 1.5 } // Perfect match
+        ];
+
+        let forces = DVector::from_vec(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        let mut lambdas = vec![0.0];
+
+        let (_, violations) = add_constraint_lagrange(
+            &geometry, forces, &constraints, &mut lambdas
+        ).unwrap();
+
+        // Perfect bond should have minimal violation
+        assert!(violations[0].abs() < 1e-10, "Perfect bond should have minimal violation");
+    }
 }
 
 /// Calculates the current bond distance between two atoms.

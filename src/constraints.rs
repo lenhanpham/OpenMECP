@@ -463,14 +463,15 @@ pub fn add_constraint_lagrange(
     // Check if all lambdas are zero (first step)
     let first_step = lambdas.iter().all(|&l| l == 0.0);
     if first_step {
-        let g = forces.clone(); // raw gradient (not negated yet)
+        let g = -forces.clone(); // raw gradient
+        let total_constraints = n_constraints as f64;  // Constraint count multiplier (Python compatibility)
         for i in 0..n_constraints {
             let c_i = jacobian.row(i);
             let c_vec = DVector::from_vec(c_i.iter().cloned().collect());
             let c_dot_g = c_vec.dot(&g);
             let c_dot_c = c_vec.dot(&c_vec);
             if c_dot_c > 1e-12 {
-                lambdas[i] = -c_dot_g / c_dot_c;
+                lambdas[i] = (-c_dot_g / c_dot_c) * total_constraints;  // Apply multiplier
             } else {
                 lambdas[i] = 0.0;
             }

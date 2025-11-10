@@ -418,7 +418,20 @@ pub fn bfgs_step(
 
     let x_new = x0 + &dk * rho;
 
-    x_new
+    // Apply step size limiting (equivalent to Python's MaxStep)
+    let step = &x_new - x0;
+    let step_norm = step.norm();
+
+    if step_norm > config.max_step_size {
+        let scale = config.max_step_size / step_norm;
+        println!(
+            "BFGS step size limited: {:.6} -> {:.6} Bohr",
+            step_norm, config.max_step_size
+        );
+        x0 + &step * scale
+    } else {
+        x_new
+    }
 }
 
 /// Computes adaptive step scaling based on optimization progress.

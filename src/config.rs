@@ -121,7 +121,7 @@ impl Default for Thresholds {
 ///
 /// Many optional parameters have sensible defaults:
 /// - `max_steps`: 100 optimization steps
-/// - `max_step_size`: 0.1 bohr
+/// - `max_step_size`: 0.189 bohr (equivalent to 0.1 angstrom)
 /// - `thresholds`: Standard convergence criteria
 /// - `use_gediis`: false (uses GDIIS by default)
 ///
@@ -241,7 +241,7 @@ impl Default for Config {
         Self {
             thresholds: Thresholds::default(),
             max_steps: 100,
-            max_step_size: 0.1,
+            max_step_size: 0.189, // Equivalent to Python's 0.1 Angstrom limit
             reduced_factor: 0.5,
             nprocs: 1,
             mem: "1GB".to_string(),

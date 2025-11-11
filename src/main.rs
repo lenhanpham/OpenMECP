@@ -1288,8 +1288,25 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize optimization
     let mut opt_state = optimizer::OptimizationState::new();
-    let mut x_old = geometry.coords.clone();
-    let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len());
+
+    // Use extended space if constraints are present (coordinates + Lagrange multipliers)
+    let use_extended_space = !constraints.is_empty();
+    let mut x_old = if use_extended_space {
+        // Extended vector: [coordinates, lagrange_multipliers]
+        let mut extended = geometry.coords.clone();
+        extended.extend(opt_state.lambdas.iter().cloned());
+        extended
+    } else {
+        geometry.coords.clone()
+    };
+
+    let coord_size = geometry.coords.len();
+    let extended_size = if use_extended_space {
+        coord_size + constraints.len()
+    } else {
+        coord_size
+    };
+    let mut hessian = DMatrix::identity(extended_size, extended_size);
 
     // Main optimization loop
     for step in 0..config.max_steps {
@@ -1328,6 +1345,16 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        // Create extended gradient if using extended space
+        let extended_grad = if use_extended_space {
+            // KKT gradient: [∇L/∂x; ∇L/∂λ] = [∇f + ∇cᵀλ; c(x)]
+            let mut extended = grad.clone();  // ∇f + ∇cᵀλ (already computed)
+            extended.extend(opt_state.constraint_violations.iter().cloned());  // c(x)
+            extended
+        } else {
+            grad.clone()
+        };
+
         // Choose optimizer based on switch_step configuration
         let use_bfgs = if config.switch_step >= config.max_steps {
             // Always BFGS if switch_step >= max_steps (BFGS-only mode)
@@ -1352,7 +1379,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
             // BFGS uses fixed rho in Python, no adaptive scaling
             // Pass 1.0 as adaptive_scale parameter for compatibility but it won't be used
-            optimizer::bfgs_step(&x_old, &grad, &hessian, &config, 1.0)
+            optimizer::bfgs_step(&x_old, &extended_grad, &hessian, &config, 1.0)
         } else if config.use_gediis {
             if config.use_hybrid_gediis {
                 println!(
@@ -1378,8 +1405,19 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             optimizer::gdiis_step(&opt_state, &config)
         };
 
-        // Update geometry
-        geometry.coords = x_new.clone();
+        // Update geometry and Lagrange multipliers (extract from extended vector if needed)
+        let coords_new = if use_extended_space {
+            x_new.rows(0, coord_size).clone_owned()
+        } else {
+            x_new.clone()
+        };
+        geometry.coords = coords_new;
+
+        // Extract updated Lagrange multipliers from extended vector
+        if use_extended_space {
+            let lambda_start = coord_size;
+            opt_state.lambdas = x_new.rows(lambda_start, constraints.len()).iter().cloned().collect();
+        }
 
         // Run calculations based on program type (following Python MECP.py runEachStep logic)
         match config.program {
@@ -1474,19 +1512,41 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        // Create extended gradient for new step
+        let extended_grad_new = if use_extended_space {
+            // Extended gradient: [gradient, -violations]
+            let mut extended = grad_new.clone();
+            extended.extend(opt_state.constraint_violations.iter().map(|&v| -v));
+            extended
+        } else {
+            grad_new.clone()
+        };
+
+        // Extract coordinates for convergence checking
+        let coords_new = if use_extended_space {
+            x_new.rows(0, coord_size).clone_owned()
+        } else {
+            x_new.clone()
+        };
+        let coords_old = if use_extended_space {
+            x_old.rows(0, coord_size).clone_owned()
+        } else {
+            x_old.clone()
+        };
+
         // Check convergence
         let conv = optimizer::check_convergence(
             state1_new.energy,
             state2_new.energy,
-            &x_old,
-            &x_new,
+            &coords_old,
+            &coords_new,
             &grad_new,
             &config,
         );
 
         // Compute current values for display
         let de = (state1_new.energy - state2_new.energy).abs();
-        let disp_vec = &x_new - &x_old;
+        let disp_vec = &coords_new - &coords_old;
         let rms_disp = disp_vec.norm() / (disp_vec.len() as f64).sqrt();
         let max_disp = disp_vec.iter().map(|x| x.abs()).fold(0.0, f64::max);
         let rms_grad = grad_new.norm() / (grad_new.len() as f64).sqrt();
@@ -1513,14 +1573,14 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         // Update Hessian
         let sk = &x_new - &x_old;
-        let yk = &grad_new - &grad;
+        let yk = &extended_grad_new - &extended_grad;
         hessian = optimizer::update_hessian_psb(&hessian, &sk, &yk);
 
         // Add to history for GDIIS/GEDIIS
         let energy_diff = state1_new.energy - state2_new.energy;
         opt_state.add_to_history(
-            state1_new.geometry.coords.clone(),
-            grad_new.clone(),
+            x_new.clone(),  // Store extended vector
+            extended_grad.clone(),  // Store extended gradient
             hessian.clone(),
             energy_diff,
         );
@@ -1549,7 +1609,14 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        x_old = state1_new.geometry.coords.clone();
+        // Update x_old for next iteration (extended vector)
+        x_old = if use_extended_space {
+            let mut extended = state1_new.geometry.coords.clone();
+            extended.extend(opt_state.lambdas.iter().cloned());
+            extended
+        } else {
+            state1_new.geometry.coords.clone()
+        };
     }
 
     // Clean up temporary files even if optimization didn't converge

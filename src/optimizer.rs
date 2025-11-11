@@ -384,7 +384,7 @@ pub fn bfgs_step(
 ) -> DVector<f64> {
     // Solve H * dk = -g (compute Newton direction)
     let neg_g = -g0;
-    let mut dk = hessian.clone().lu().solve(&neg_g).unwrap_or_else(|| {
+    let dk = hessian.clone().lu().solve(&neg_g).unwrap_or_else(|| {
         // Fallback to steepest descent when Hessian is singular
         let step_dir = -g0 / (g0.norm() + 1e-14);
         step_dir
@@ -392,46 +392,35 @@ pub fn bfgs_step(
 
     // Python algorithm (propagationBFGS):
     // 1. Compute dk = -H^-1 * g
-    // 2. Cap dk to 0.1 if ||dk|| > 0.1
+    // 2. Cap dk to 0.1 if ||dk|| > 0.1  
     // 3. Apply rho=15 multiplier: XNew = X0 + rho * dk
 
-    // Step 2: Cap direction vector dk to 0.1 (Python's hardcoded limit)
+    // Step 2: Cap direction vector dk to 0.189 Bohr (equivalent to Python's 0.1 Angstrom limit)
     let dk_norm = dk.norm();
-    const DIRECTION_LIMIT: f64 = 0.1; // Python's hardcoded cap on direction
-    if dk_norm > DIRECTION_LIMIT {
-        let original_norm = dk_norm;
-        dk *= DIRECTION_LIMIT / dk_norm;
-        println!(
-            "current stepsize: {} is reduced to max_size {}",
-            original_norm, DIRECTION_LIMIT
-        );
-    }
+    const DIRECTION_LIMIT: f64 = 0.1; // Python's 0.1 Angstrom limit converted to Bohr
+    let dk_capped = if dk_norm > DIRECTION_LIMIT {
+        dk * (DIRECTION_LIMIT / dk_norm)
+    } else {
+        dk
+    };
 
     // Step 3: Apply rho multiplier (from config.bfgs_rho, default 15.0)
-    // Python uses FIXED rho for BFGS, no adaptive scaling
     let rho = config.bfgs_rho; // Fixed rho, matching Python behavior
-    let final_step_size = DIRECTION_LIMIT * rho;
-    println!(
-        "BFGS step: direction_capped={}, rho={}, final_step_size={}",
-        DIRECTION_LIMIT, rho, final_step_size
-    );
+    let proposed_step = &dk_capped * rho;
+    let proposed_step_norm = proposed_step.norm();
 
-    let x_new = x0 + &dk * rho;
-
-    // Apply step size limiting (equivalent to Python's MaxStep)
-    let step = &x_new - x0;
-    let step_norm = step.norm();
-
-    if step_norm > config.max_step_size {
-        let scale = config.max_step_size / step_norm;
+    // Apply final step size limiting and report the actual step size being limited
+    let final_step = if proposed_step_norm > config.max_step_size {
         println!(
-            "BFGS step size limited: {:.6} -> {:.6} Bohr",
-            step_norm, config.max_step_size
+            "current stepsize: {} is reduced to max_size {}",
+            proposed_step_norm, config.max_step_size
         );
-        x0 + &step * scale
+        proposed_step * (config.max_step_size / proposed_step_norm)
     } else {
-        x_new
-    }
+        proposed_step
+    };
+
+    x0 + final_step
 }
 
 /// Computes adaptive step scaling based on optimization progress.
@@ -697,34 +686,34 @@ pub fn check_convergence(
 /// ```
 ///
 /// If the Hessian is singular, falls back to using the gradient directly.
-fn compute_error_vectors(
-    grads: &VecDeque<DVector<f64>>,
-    hessians: &VecDeque<DMatrix<f64>>,
-) -> Vec<DVector<f64>> {
-    let n = grads.len();
-    if n == 0 {
-        return Vec::new();
-    }
-
-    // Compute the mean Hessian
-    let mut h_mean = DMatrix::zeros(hessians[0].nrows(), hessians[0].ncols());
-    for hess in hessians {
-        h_mean += hess;
-    }
-    h_mean /= n as f64;
-
-    // Compute error vectors using the mean Hessian for all gradients
-    grads
-        .iter()
-        .map(|grad| {
-            h_mean
-                .clone()
-                .lu()
-                .solve(grad)
-                .unwrap_or_else(|| grad.clone())
-        })
-        .collect()
-}
+//fn compute_error_vectors(
+//    grads: &VecDeque<DVector<f64>>,
+//    hessians: &VecDeque<DMatrix<f64>>,
+//) -> Vec<DVector<f64>> {
+//    let n = grads.len();
+//    if n == 0 {
+//        return Vec::new();
+//    }
+//
+//    // Compute the mean Hessian
+//    let mut h_mean = DMatrix::zeros(hessians[0].nrows(), hessians[0].ncols());
+//    for hess in hessians {
+//        h_mean += hess;
+//    }
+//    h_mean /= n as f64;
+//
+//    // Compute error vectors using the mean Hessian for all gradients
+//    grads
+//        .iter()
+//        .map(|grad| {
+//            h_mean
+//                .clone()
+//                .lu()
+//                .solve(grad)
+//                .unwrap_or_else(|| grad.clone())
+//        })
+//        .collect()
+//}
 
 /// Builds the B matrix for GDIIS optimization.
 ///
@@ -757,24 +746,24 @@ fn compute_error_vectors(
 /// B * c = [0, 0, ..., 0, 1]ᵀ
 /// ```
 /// where c contains the interpolation coefficients and the Lagrange multiplier.
-fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
-    let n = errors.len();
-    let mut b = DMatrix::zeros(n + 1, n + 1);
-
-    for i in 0..n {
-        for j in 0..n {
-            b[(i, j)] = errors[i].dot(&errors[j]);
-        }
-    }
-
-    for i in 0..n {
-        b[(i, n)] = 1.0;
-        b[(n, i)] = 1.0;
-    }
-    b[(n, n)] = 0.0;
-
-    b
-}
+///fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
+///    let n = errors.len();
+///    let mut b = DMatrix::zeros(n + 1, n + 1);
+///
+///    for i in 0..n {
+///        for j in 0..n {
+///            b[(i, j)] = errors[i].dot(&errors[j]);
+///        }
+///    }
+///
+///    for i in 0..n {
+///        b[(i, n)] = 1.0;
+///        b[(n, i)] = 1.0;
+///    }
+///    b[(n, n)] = 0.0;
+///
+///    b
+///}
 
 /// Performs a GDIIS (Geometry-based Direct Inversion in Iterative Subspace) optimization step.
 ///
@@ -820,41 +809,90 @@ fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
 ///
 /// // let x_new = gdiis_step(&opt_state, &config);
 /// ```
+///pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64> {
+///    let n = opt_state.geom_history.len();
+///
+///    // Error vectors are now correctly computed with the mean Hessian inside this function
+///    let errors = compute_error_vectors(&opt_state.grad_history, &opt_state.hess_history);
+///    let b_matrix = build_b_matrix(&errors);
+///
+///    let mut rhs = DVector::zeros(n + 1);
+///    rhs[n] = 1.0;
+///
+///    let solution = b_matrix.lu().solve(&rhs).unwrap_or_else(|| {
+///        let mut fallback = DVector::zeros(n + 1);
+///        for i in 0..n {
+///            fallback[i] = 1.0 / (n as f64);
+///        }
+///        fallback
+///    });
+///
+///    let coeffs = solution.rows(0, n);
+///
+///    // --- Start of Bug Fix ---
+///
+///    // 1. Interpolate geometry to get x_new_prime
+///    let mut x_new_prime = DVector::zeros(opt_state.geom_history[0].len());
+///    for (i, geom) in opt_state.geom_history.iter().enumerate() {
+///        x_new_prime += geom * coeffs[i];
+///    }
+///
+///    // 2. Interpolate gradient to get g_new_prime (THE CORRECT WAY)
+///    let mut g_new_prime = DVector::zeros(opt_state.grad_history[0].len());
+///    for (i, grad) in opt_state.grad_history.iter().enumerate() {
+///        g_new_prime += grad * coeffs[i];
+///    }
+///
+///    // 3. Get the mean Hessian (already computed once in compute_error_vectors, but needed here)
+///    let mut h_mean = DMatrix::zeros(
+///        opt_state.hess_history[0].nrows(),
+///        opt_state.hess_history[0].ncols(),
+///    );
+///    for hess in &opt_state.hess_history {
+///        h_mean += hess;
+///    }
+///    h_mean /= n as f64;
+///
+///    // 4. Compute correction using the interpolated gradient
+///    let correction = h_mean
+///        .lu()
+///        .solve(&g_new_prime)
+///        .unwrap_or_else(|| g_new_prime.clone());
+///
+///    // 5. Apply correction to the interpolated geometry
+///    let mut x_new = x_new_prime - &correction;
+///
+///    // --- End of Bug Fix ---
+///
+///    let last_geom = opt_state.geom_history.back().unwrap();
+///    let mut step = &x_new - last_geom;
+///
+///    // Python-inspired step reduction
+///    let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
+///    if last_grad_norm < config.thresholds.rms_g * 10.0 {
+///        step *= 0.5; // REDUCED_FACTOR from Python code
+///    }
+///
+///    let step_norm = step.norm();
+///
+///    if step_norm > config.max_step_size {
+///        let scale = config.max_step_size / step_norm;
+///        println!(
+///            "current stepsize: {} is reduced to max_size {}",
+///            step_norm, config.max_step_size
+///        );
+///        x_new = last_geom + &step * scale;
+///    } else {
+///        x_new = last_geom + step;
+///    }
+///
+///    x_new
+///}
+/// 
 pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64> {
     let n = opt_state.geom_history.len();
 
-    // Error vectors are now correctly computed with the mean Hessian inside this function
-    let errors = compute_error_vectors(&opt_state.grad_history, &opt_state.hess_history);
-    let b_matrix = build_b_matrix(&errors);
-
-    let mut rhs = DVector::zeros(n + 1);
-    rhs[n] = 1.0;
-
-    let solution = b_matrix.lu().solve(&rhs).unwrap_or_else(|| {
-        let mut fallback = DVector::zeros(n + 1);
-        for i in 0..n {
-            fallback[i] = 1.0 / (n as f64);
-        }
-        fallback
-    });
-
-    let coeffs = solution.rows(0, n);
-
-    // --- Start of Bug Fix ---
-
-    // 1. Interpolate geometry to get x_new_prime
-    let mut x_new_prime = DVector::zeros(opt_state.geom_history[0].len());
-    for (i, geom) in opt_state.geom_history.iter().enumerate() {
-        x_new_prime += geom * coeffs[i];
-    }
-
-    // 2. Interpolate gradient to get g_new_prime (THE CORRECT WAY)
-    let mut g_new_prime = DVector::zeros(opt_state.grad_history[0].len());
-    for (i, grad) in opt_state.grad_history.iter().enumerate() {
-        g_new_prime += grad * coeffs[i];
-    }
-
-    // 3. Get the mean Hessian (already computed once in compute_error_vectors, but needed here)
+    // Step 1: Compute mean Hessian (exactly like Python H_mean)
     let mut h_mean = DMatrix::zeros(
         opt_state.hess_history[0].nrows(),
         opt_state.hess_history[0].ncols(),
@@ -864,40 +902,109 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
     }
     h_mean /= n as f64;
 
-    // 4. Compute correction using the interpolated gradient
-    let correction = h_mean
-        .lu()
-        .solve(&g_new_prime)
-        .unwrap_or_else(|| g_new_prime.clone());
+    // Step 2: Compute error matrix using mean Hessian (Python EMat calculation)
+    // For full extended space GDIIS, use complete extended vectors
+    let extended_size = opt_state.hess_history[0].nrows();
+    let mut e_mat = DMatrix::zeros(n, extended_size);
+    
+    for i in 0..n {
+        // EMat[i] = (H_mean.I * numpy.mat(Gs[i]).T).flatten()
+        let grad_col = opt_state.grad_history[i].clone();
+        let error_vec = h_mean.clone().lu().solve(&grad_col).unwrap_or_else(|| grad_col.clone());
+        e_mat.set_row(i, &error_vec.transpose());
+    }
+    
+    // Step 3: Build B matrix (Python BMat construction)
+    let mut b_matrix = DMatrix::zeros(n + 1, n + 1);
+    
+    // Fill EMat * EMat.T part
+    for i in 0..n {
+        for j in 0..n {
+            let dot_product = e_mat.row(i).dot(&e_mat.row(j));
+            b_matrix[(i, j)] = dot_product;
+        }
+    }
+    
+    // Add constraint row/column (onesBlock)
+    for i in 0..n {
+        b_matrix[(i, n)] = 1.0;
+        b_matrix[(n, i)] = 1.0;
+    }
+    b_matrix[(n, n)] = 0.0;
+    
+    // Step 4: Solve DIIS equations (Python c = numpy.linalg.solve(BMat, y))
+    let mut rhs = DVector::zeros(n + 1);
+    rhs[n] = 1.0;
+    
+    let solution = b_matrix.lu().solve(&rhs).unwrap_or_else(|| {
+        println!("Warning: B-matrix singular, using equal weights");
+        let mut fallback = DVector::zeros(n + 1);
+        for i in 0..n {
+            fallback[i] = 1.0 / (n as f64);
+        }
+        fallback[n] = 0.0;
+        fallback
+    });
+    
+    // Extract coefficients (delete last element - lambda)
+    let coeffs = solution.rows(0, n);
+    
+    // Debug coefficients
+    let coeff_sum: f64 = coeffs.iter().sum();
+    println!("GDIIS coeffs: sum={:.6}, values={:?}", coeff_sum, coeffs.as_slice());
+    
+    // Step 5: Interpolate geometry and gradient (Python XNew_prime, GNew_prime)
+    // Work in full extended space
+    let mut x_new_prime = DVector::zeros(extended_size);
+    let mut g_new_prime = DVector::zeros(extended_size);
 
-    // 5. Apply correction to the interpolated geometry
-    let mut x_new = x_new_prime - &correction;
+    for i in 0..n {
+        // Use full extended vectors
+        x_new_prime += &opt_state.geom_history[i] * coeffs[i];
+        g_new_prime += &opt_state.grad_history[i] * coeffs[i];
+    }
+    
+    // Step 6: Apply Newton correction (Python XNew = XNew_prime - (H_mean.I * GNew_prime))
+    let correction = h_mean.lu().solve(&g_new_prime).unwrap_or_else(|| g_new_prime.clone());
+    let correction_norm = correction.norm();  // Compute before moving
+    let interp_norm = x_new_prime.norm();     // Compute before moving
+    let x_new = x_new_prime - correction;     // Now safe to move
 
-    // --- End of Bug Fix ---
+    // Debug magnitudes
+    let final_norm = x_new.norm();
+    println!("GDIIS: interp={:.6}, correction={:.6}, final={:.6}", 
+             interp_norm, correction_norm, final_norm);
+    
+    // Step 7: Apply Python's step size control
+    // Work in full extended space
+    let last_geom_extended = opt_state.geom_history.back().unwrap();
+    let mut step = &x_new - last_geom_extended;
 
-    let last_geom = opt_state.geom_history.back().unwrap();
-    let mut step = &x_new - last_geom;
-
-    // Python-inspired step reduction
-    let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
+    // For step size control, use coordinate part of the step (first coord_size elements)
+    // In extended space, the first elements are coordinates
+    let coord_size = extended_size;  // Assuming extended_size includes coordinates
+    let coord_step_norm = step.rows(0, coord_size).norm();
+    let initial_step_norm = step.norm();
+    
+    println!("Initial GDIIS step size: {:.6}", initial_step_norm);
+    
+    // Python factor logic (applied to coordinate part)
+    let last_grad_extended = opt_state.grad_history.back().unwrap();
+    let last_grad_coords = last_grad_extended.rows(0, coord_size);
+    let last_grad_norm = last_grad_coords.norm();
     if last_grad_norm < config.thresholds.rms_g * 10.0 {
-        step *= 0.5; // REDUCED_FACTOR from Python code
+        step *= 0.5;
+        println!("Applied 0.5 reduction factor");
     }
 
-    let step_norm = step.norm();
-
-    if step_norm > config.max_step_size {
-        let scale = config.max_step_size / step_norm;
-        println!(
-            "current stepsize: {} is reduced to max_size {}",
-            step_norm, config.max_step_size
-        );
-        x_new = last_geom + &step * scale;
-    } else {
-        x_new = last_geom + step;
+    // Apply step size limit based on coordinate step size
+    if coord_step_norm > config.max_step_size {
+        println!("current stepsize: {} is reduced to max_size {}",
+                 coord_step_norm, config.max_step_size);
+        step *= config.max_step_size / coord_step_norm;
     }
 
-    x_new
+    last_geom_extended + step
 }
 
 /// Computes enhanced error vectors for GEDIIS optimization.
@@ -934,95 +1041,7 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
 /// The energy weighting helps the optimizer focus on geometries with energy
 /// differences closer to zero (the MECP condition). Points with large energy
 /// differences receive less weight in the interpolation.
-fn compute_gediis_error_vectors(
-    grads: &VecDeque<DVector<f64>>,
-    energies: &VecDeque<f64>,
-) -> Vec<DVector<f64>> {
-    let n = grads.len();
-    let mut errors = Vec::with_capacity(n);
 
-    // Compute average energy for normalization
-    let avg_energy = energies.iter().sum::<f64>() / n as f64;
-
-    for (i, grad) in grads.iter().enumerate() {
-        let energy_error = energies[i] - avg_energy;
-        // GEDIIS error vector combines gradient and energy information
-        // Adaptive alpha: scales with inverse gradient magnitude for stability
-        // Reference: J. Chem. Theory Comput. 2006, 2, 835-839
-        let grad_norm = grad.norm();
-        let alpha = 0.1 / (grad_norm + 1e-10); // Adaptive scaling
-        let mut error = grad.clone();
-        // Add energy-weighted gradient contribution
-        error += &(grad * energy_error * alpha);
-        errors.push(error);
-    }
-
-    errors
-}
-
-/// Builds the enhanced B matrix for GEDIIS optimization.
-///
-/// The GEDIIS B matrix extends the standard DIIS B matrix by including
-/// energy-energy correlation terms. This provides additional information
-/// about the energy landscape to improve convergence.
-///
-/// # Arguments
-///
-/// * `errors` - Vector of enhanced error vectors from `compute_gediis_error_vectors`
-/// * `energies` - History of energy differences (E1 - E2) from previous iterations
-///
-/// # Returns
-///
-/// Returns the (n+1) × (n+1) enhanced B matrix where n is the number of iterations.
-/// The matrix includes both gradient-gradient and energy-energy correlation terms.
-///
-/// # Algorithm
-///
-/// The matrix elements are computed as:
-/// ```text
-/// B[i,j] = error[i] · error[j] + β * (E[i] - E_avg) * (E[j] - E_avg)
-/// ```
-///
-/// where:
-/// - error[i] · error[j] is the standard DIIS error dot product
-/// - E[i], E[j] are energy differences at iterations i and j
-/// - E_avg is the average energy difference
-/// - β = 0.01 is a small weighting factor for energy terms
-///
-/// # Energy Correlation Terms
-///
-/// The energy-energy terms help the optimizer recognize patterns in the
-/// energy landscape and preferentially weight geometries with similar
-/// energy characteristics. This is particularly useful for MECP optimization
-/// where minimizing the energy difference is crucial.
-fn build_gediis_b_matrix(errors: &[DVector<f64>], energies: &[f64]) -> DMatrix<f64> {
-    let n = errors.len();
-    let mut b = DMatrix::zeros(n + 1, n + 1);
-
-    // Compute average energy
-    let avg_energy = energies.iter().sum::<f64>() / n as f64;
-
-    for i in 0..n {
-        for j in 0..n {
-            // Standard DIIS error dot product
-            let error_dot = errors[i].dot(&errors[j]);
-            // Add energy-energy term
-            let energy_i = energies[i] - avg_energy;
-            let energy_j = energies[j] - avg_energy;
-            let energy_term = energy_i * energy_j * 0.01; // Small weighting for energy terms
-            b[(i, j)] = error_dot + energy_term;
-        }
-    }
-
-    // Set up DIIS constraint equations
-    for i in 0..n {
-        b[(i, n)] = 1.0;
-        b[(n, i)] = 1.0;
-    }
-    b[(n, n)] = 0.0;
-
-    b
-}
 
 /// Performs a GEDIIS (Energy-Informed Direct Inversion in Iterative Subspace) optimization step.
 ///
@@ -1088,69 +1107,90 @@ fn build_gediis_b_matrix(errors: &[DVector<f64>], energies: &[f64]) -> DMatrix<f
 /// ```
 pub fn gediis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64> {
     let n = opt_state.geom_history.len();
+    if n == 0 {
+        return DVector::zeros(0);
+    }
 
-    // Compute GEDIIS error vectors
-    let errors = compute_gediis_error_vectors(&opt_state.grad_history, &opt_state.energy_history);
+    // Extract coordinate size from extended space
+    let extended_size = opt_state.geom_history[0].len();
+    let coord_size = extended_size;  // In extended space, first elements are coordinates
 
-    // Build GEDIIS B-matrix
-    let energies: Vec<f64> = opt_state.energy_history.iter().cloned().collect();
-    let b_matrix = build_gediis_b_matrix(&errors, &energies);
+    // Extract coordinate parts from extended history
+    let mut geoms_coords = Vec::new();
+    let mut grads_coords = Vec::new();
+    for i in 0..n {
+        // For GEDIIS, extract coordinate parts from extended vectors
+        let geom_coords = opt_state.geom_history[i].rows(0, coord_size).clone_owned();
+        let grad_coords = opt_state.grad_history[i].rows(0, coord_size).clone_owned();
+        geoms_coords.push(geom_coords);
+        grads_coords.push(grad_coords);
+    }
 
-    // Solve DIIS equations
+    // Step 1: Build error matrix from geometry/gradient differences
+    let mut e_mat = DMatrix::zeros(n, n);
+    for i in 0..n {
+        e_mat[(i, i)] = 0.0;
+        for j in (i + 1)..n {
+            let grad_diff = &grads_coords[i] - &grads_coords[j];
+            let geom_diff = &geoms_coords[i] - &geoms_coords[j];
+            let dot = grad_diff.dot(&geom_diff);
+            e_mat[(i, j)] = -dot;
+            e_mat[(j, i)] = -dot;
+        }
+    }
+    
+    // Step 2: Build B matrix
+    let mut b_matrix = DMatrix::zeros(n + 1, n + 1);
+    for i in 0..n {
+        for j in 0..n {
+            b_matrix[(i, j)] = e_mat[(i, j)];
+        }
+        b_matrix[(i, n)] = 1.0;
+        b_matrix[(n, i)] = 1.0;
+    }
+    b_matrix[(n, n)] = 0.0;
+    
+    // Step 3: Build RHS with energies
     let mut rhs = DVector::zeros(n + 1);
+    for i in 0..n {
+        rhs[i] = -opt_state.energy_history[i];  // KEY: Include energies!
+    }
     rhs[n] = 1.0;
-
+    
+    // Step 4: Solve
     let solution = b_matrix.lu().solve(&rhs).unwrap_or_else(|| {
+        // Fallback: equal weights
         let mut fallback = DVector::zeros(n + 1);
         for i in 0..n {
             fallback[i] = 1.0 / (n as f64);
         }
         fallback
     });
-
     let coeffs = solution.rows(0, n);
-
-    // Interpolate geometry
-    let mut x_new = DVector::zeros(opt_state.geom_history[0].len());
-    for (i, geom) in opt_state.geom_history.iter().enumerate() {
-        x_new += geom * coeffs[i];
+    
+    // Step 5: Interpolate (coordinate parts only)
+    let mut x_new_prime = DVector::zeros(coord_size);
+    let mut g_new_prime = DVector::zeros(coord_size);
+    for i in 0..n {
+        let geom_coords = geoms_coords[i].clone();
+        let grad_coords = grads_coords[i].clone();
+        x_new_prime += &geom_coords * coeffs[i];
+        g_new_prime += &grad_coords * coeffs[i];
     }
-
-    // Compute average Hessian and gradient for Newton step
-    let mut h_mean = DMatrix::zeros(
-        opt_state.hess_history[0].nrows(),
-        opt_state.hess_history[0].ncols(),
-    );
-    for hess in &opt_state.hess_history {
-        h_mean += hess;
-    }
-    h_mean /= n as f64;
-
-    let mut g_mean = DVector::zeros(opt_state.grad_history[0].len());
-    for grad in &opt_state.grad_history {
-        g_mean += grad;
-    }
-    g_mean /= n as f64;
-
-    // Apply Newton correction
-    let correction = h_mean.lu().solve(&g_mean).unwrap_or_else(|| g_mean.clone());
-    x_new -= &correction;
-
-    // Apply step size limit
-    let last_geom = opt_state.geom_history.back().unwrap();
-    let step = &x_new - last_geom;
+    
+    // Step 6: Simple addition (NOT Newton step!)
+    let mut x_new = x_new_prime + g_new_prime;
+    
+    // Step 7: Apply step size limit
+    let last_geom_extended = opt_state.geom_history.back().unwrap();
+    let last_geom_coords = last_geom_extended.rows(0, coord_size).clone_owned();
+    let step = &x_new - &last_geom_coords;
     let step_norm = step.norm();
-
     if step_norm > config.max_step_size {
-        let scale = config.max_step_size / step_norm;
-        println!(
-            "current stepsize: {} is reduced to max_size {}",
-            step_norm, config.max_step_size
-        );
-        x_new = last_geom + &step * scale;
+        x_new = &last_geom_coords + &step * (config.max_step_size / step_norm);
     }
-
-    x_new
+    
+    x_new  // Return coordinate-only vector
 }
 
 /// Performs a hybrid GEDIIS optimization step (50% GDIIS + 50% GEDIIS).
@@ -1303,3 +1343,4 @@ mod tests {
                gradient.norm());
     }
 }
+

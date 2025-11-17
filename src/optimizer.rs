@@ -885,7 +885,7 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
     // Python-inspired step reduction
     let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
     if last_grad_norm < config.thresholds.rms_g * 10.0 {
-        step *= 0.5; // REDUCED_FACTOR from Python code
+        step *= config.reduced_factor; // Use configurable reduced_factor
     }
 
     let step_norm = step.norm();
@@ -1141,6 +1141,15 @@ pub fn gediis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f6
     let correction = h_mean.lu().solve(&g_mean).unwrap_or_else(|| g_mean.clone());
     x_new -= &correction;
 
+    // Python-inspired step reduction (matches GDIIS behavior)
+    let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
+    if last_grad_norm < config.thresholds.rms_g * 10.0 {
+        let last_geom = opt_state.geom_history.back().unwrap();
+        let mut step = &x_new - last_geom;
+        step *= config.reduced_factor;
+        x_new = last_geom + step;
+    }
+
     // Apply step size limit
     let last_geom = opt_state.geom_history.back().unwrap();
     let step = &x_new - last_geom;
@@ -1203,6 +1212,15 @@ pub fn hybrid_gediis_step(opt_state: &OptimizationState, config: &Config) -> DVe
     let mut hybrid_result = DVector::zeros(n);
     for i in 0..n {
         hybrid_result[i] = 0.5 * gdiis_result[i] + 0.5 * gediis_result[i];
+    }
+
+    // Python-inspired step reduction for hybrid final step
+    let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
+    if last_grad_norm < config.thresholds.rms_g * 10.0 {
+        let last_geom = opt_state.geom_history.back().unwrap().clone();
+        let mut hybrid_step = &hybrid_result - &last_geom;
+        hybrid_step *= config.reduced_factor;
+        hybrid_result = last_geom + hybrid_step;
     }
 
     let last_geom = opt_state.geom_history.back().unwrap().clone();

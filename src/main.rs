@@ -616,8 +616,7 @@ fn print_configuration(
     println!("  Method:                     {}", input_config.method);
     println!("  Memory:                     {}", input_config.mem);
     println!("  Processors:                 {}", input_config.nprocs);
-    println!("  Charge (State 1):           {}", input_config.charge1);
-    println!("  Charge (State 2):           {}", input_config.charge2);
+    println!("  Charge of system:           {}", input_config.charge);
     println!("  Multiplicity (State 1):     {}", input_config.mult1);
     println!("  Multiplicity (State 2):     {}", input_config.mult2);
     println!("  Run Mode:                   {:?}", input_config.run_mode);
@@ -968,7 +967,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Build headers
     let header_a = io::build_program_header_with_basename(
         &input_data.config,
-        input_data.config.charge1,
+        input_data.config.charge,
         input_data.config.mult1,
         &input_data.config.td1,
         input_data.config.state1,
@@ -977,7 +976,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     let header_b = io::build_program_header_with_basename(
         &input_data.config,
-        input_data.config.charge2,
+        input_data.config.charge,
         input_data.config.mult2,
         &input_data.config.td2,
         input_data.config.state2,
@@ -1000,7 +999,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // This means NO force, NO guess=read, just the basic method
         let pre_header_a = build_raw_program_header(
             &input_data.config,
-            input_data.config.charge1,
+            input_data.config.charge,
             input_data.config.mult1,
             &input_data.config.td1,
             input_data.config.state1,
@@ -1008,7 +1007,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         );
         let pre_header_b = build_raw_program_header(
             &input_data.config,
-            input_data.config.charge2,
+            input_data.config.charge,
             input_data.config.mult2,
             &input_data.config.td2,
             input_data.config.state2,
@@ -1160,7 +1159,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Rebuild headers with read mode (includes force + guess=read)
         header_a = io::build_program_header_with_chk(
             &config,
-            config.charge1,
+            config.charge,
             config.mult1,
             &config.td1,
             config.state1,
@@ -1170,7 +1169,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         header_b = io::build_program_header_with_chk(
             &config,
-            config.charge2,
+            config.charge,
             config.mult2,
             &config.td2,
             config.state2,
@@ -1203,7 +1202,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Rebuild headers with new run mode (read mode)
         header_a = io::build_program_header_with_basename(
             &config,
-            config.charge1,
+            config.charge,
             config.mult1,
             &config.td1,
             config.state1,
@@ -1212,7 +1211,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         header_b = io::build_program_header_with_basename(
             &config,
-            config.charge2,
+            config.charge,
             config.mult2,
             &config.td2,
             config.state2,
@@ -1312,7 +1311,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 Ok((constrained_grad, violations)) => {
                     grad = constrained_grad;
                     println!("Constraint forces applied successfully");
-                    
+
                     // Store violations for extended gradient (Phase 3)
                     opt_state.constraint_violations = violations.clone();
 
@@ -2180,7 +2179,7 @@ fn run_single_optimization(
         // This means NO force, NO guess=read, just the basic method
         let pre_header_a = build_raw_program_header(
             config,
-            config.charge1,
+            config.charge,
             config.mult1,
             &config.td1,
             config.state1,
@@ -2188,7 +2187,7 @@ fn run_single_optimization(
         );
         let pre_header_b = build_raw_program_header(
             config,
-            config.charge2,
+            config.charge,
             config.mult2,
             &config.td2,
             config.state2,
@@ -2282,14 +2281,14 @@ fn run_single_optimization(
     // Phase 2: Main optimization loop with proper headers (including guess=read for Normal mode)
     let header_a = io::build_program_header(
         config,
-        config.charge1,
+        config.charge,
         config.mult1,
         &config.td1,
         config.state1,
     );
     let header_b = io::build_program_header(
         config,
-        config.charge2,
+        config.charge,
         config.mult2,
         &config.td2,
         config.state2,
@@ -2529,14 +2528,14 @@ fn run_lst_interpolation(
     // Build headers
     let header_a = io::build_program_header(
         config,
-        config.charge1,
+        config.charge,
         config.mult1,
         &config.td1,
         config.state1,
     );
     let header_b = io::build_program_header(
         config,
-        config.charge2,
+        config.charge,
         config.mult2,
         &config.td2,
         config.state2,
@@ -3355,14 +3354,14 @@ fn run_restart(
     // Build headers
     let header_a = io::build_program_header(
         &config,
-        config.charge1,
+        config.charge,
         config.mult1,
         &config.td1,
         config.state1,
     );
     let header_b = io::build_program_header(
         &config,
-        config.charge2,
+        config.charge,
         config.mult2,
         &config.td2,
         config.state2,
@@ -3591,14 +3590,14 @@ fn run_coordinate_driving(
     // Build headers
     let header_a = io::build_program_header(
         config,
-        config.charge1,
+        config.charge,
         config.mult1,
         &config.td1,
         config.state1,
     );
     let header_b = io::build_program_header(
         config,
-        config.charge2,
+        config.charge,
         config.mult2,
         &config.td2,
         config.state2,
@@ -3734,14 +3733,14 @@ fn run_path_optimization(
     // Build headers for QM calculations
     let header_a = io::build_program_header(
         config,
-        config.charge1,
+        config.charge,
         config.mult1,
         &config.td1,
         config.state1,
     );
     let header_b = io::build_program_header(
         config,
-        config.charge2,
+        config.charge,
         config.mult2,
         &config.td2,
         config.state2,

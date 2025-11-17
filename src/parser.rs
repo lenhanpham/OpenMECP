@@ -475,7 +475,7 @@ fn parse_constraint(line: &str, constraints: &mut Vec<Constraint>) -> Result<()>
         "r" | "bond" => {
             if parts.len() < 4 {
                 return Err(ParseError::Parse(format!(
-                    "Bond constraint requires 4 parameters: 'r atom1 atom2 target_distance'. Got: '{}'", 
+                    "Bond constraint requires 4 parameters: 'r atom1 atom2 target_distance'. Got: '{}'",
                     line
                 )));
             }
@@ -500,7 +500,7 @@ fn parse_constraint(line: &str, constraints: &mut Vec<Constraint>) -> Result<()>
         "a" | "angle" => {
             if parts.len() < 5 {
                 return Err(ParseError::Parse(format!(
-                    "Angle constraint requires 5 parameters: 'a atom1 atom2 atom3 target_angle'. Got: '{}'", 
+                    "Angle constraint requires 5 parameters: 'a atom1 atom2 atom3 target_angle'. Got: '{}'",
                     line
                 )));
             }
@@ -530,7 +530,7 @@ fn parse_constraint(line: &str, constraints: &mut Vec<Constraint>) -> Result<()>
         "d" | "dihedral" => {
             if parts.len() < 6 {
                 return Err(ParseError::Parse(format!(
-                    "Dihedral constraint requires 6 parameters: 'd atom1 atom2 atom3 atom4 target_dihedral'. Got: '{}'", 
+                    "Dihedral constraint requires 6 parameters: 'd atom1 atom2 atom3 atom4 target_dihedral'. Got: '{}'",
                     line
                 )));
             }
@@ -548,7 +548,7 @@ fn parse_constraint(line: &str, constraints: &mut Vec<Constraint>) -> Result<()>
                 for j in (i + 1)..4 {
                     if atoms[i] == atoms[j] {
                         return Err(ParseError::Parse(format!(
-                            "Dihedral constraint atoms must be unique. Got atoms {}, {}, {}, {} in line '{}'", 
+                            "Dihedral constraint atoms must be unique. Got atoms {}, {}, {}, {} in line '{}'",
                             a + 1, b + 1, c + 1, d + 1, line
                         )));
                     }
@@ -562,7 +562,7 @@ fn parse_constraint(line: &str, constraints: &mut Vec<Constraint>) -> Result<()>
         }
         _ => {
             return Err(ParseError::Parse(format!(
-                "Unknown constraint type '{}'. Supported types: 'r' (bond), 'a' (angle), 'd' (dihedral). Line: '{}'", 
+                "Unknown constraint type '{}'. Supported types: 'r' (bond), 'a' (angle), 'd' (dihedral). Line: '{}'",
                 constraint_type, line
             )));
         }
@@ -574,7 +574,7 @@ fn parse_constraint(line: &str, constraints: &mut Vec<Constraint>) -> Result<()>
 fn parse_atom_index(s: &str, atom_description: &str, full_line: &str) -> Result<usize> {
     let index = s.parse::<usize>()
         .map_err(|_| ParseError::Parse(format!(
-            "Invalid {} index '{}' in constraint line '{}'. Atom indices must be positive integers.", 
+            "Invalid {} index '{}' in constraint line '{}'. Atom indices must be positive integers.",
             atom_description, s, full_line
         )))?;
 
@@ -592,7 +592,7 @@ fn parse_atom_index(s: &str, atom_description: &str, full_line: &str) -> Result<
 fn parse_distance_target(s: &str, full_line: &str) -> Result<f64> {
     let distance = s.parse::<f64>()
         .map_err(|_| ParseError::Parse(format!(
-            "Invalid distance target '{}' in constraint line '{}'. Distance must be a positive number.", 
+            "Invalid distance target '{}' in constraint line '{}'. Distance must be a positive number.",
             s, full_line
         )))?;
 
@@ -732,7 +732,7 @@ fn validate_constraints_against_geometry(
         for j in (i + 1)..constraints.len() {
             if constraints_are_equivalent(&constraints[i], &constraints[j]) {
                 return Err(ParseError::Parse(format!(
-                    "Duplicate constraints found: constraint {} and {} define the same geometric parameter", 
+                    "Duplicate constraints found: constraint {} and {} define the same geometric parameter",
                     i + 1, j + 1
                 )));
             }
@@ -876,8 +876,7 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
     match key.as_str() {
         "nprocs" => config.nprocs = value.parse().unwrap_or(1),
         "mem" => config.mem = value.to_string(),
-        "charge" => config.charge1 = value.parse().unwrap_or(0),
-        "charge2" => config.charge2 = value.parse().unwrap_or(config.charge1),
+        "charge" => config.charge = value.parse().unwrap_or(0),
         "mult1" => config.mult1 = value.parse().unwrap_or(1),
         "mult2" => config.mult2 = value.parse().unwrap_or(1),
         "method" => config.method = value.to_string(),
@@ -1895,7 +1894,7 @@ mod tests {
             &mut fixed_atoms,
         );
         assert!(result.is_ok());
-        assert_eq!(config.charge1, 1);
+        assert_eq!(config.charge, 1);
 
         // Test mult1 with inline comment
         let result = parse_parameter("mult1 = 3 # triplet state", &mut config, &mut fixed_atoms);

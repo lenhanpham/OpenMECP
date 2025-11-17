@@ -415,7 +415,6 @@ H  1.2  0.0  0.5
 
 | Keyword                 | Type    | Default    | Description                                               |
 | ----------------------- | ------- | ---------- | --------------------------------------------------------- |
-| `charge2`               | integer | `charge`   | Charge of state 2 (if different)                          |
 | `td1`                   | string  | `""`       | TD-DFT keywords for state 1                               |
 | `td2`                   | string  | `""`       | TD-DFT keywords for state 2                               |
 | `mode`                  | string  | `normal`   | Run mode (see [Run Modes](#run-modes))                    |

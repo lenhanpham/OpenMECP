@@ -141,14 +141,6 @@ pub const KEYWORDS: &[Keyword] = &[
         required: false,
     },
     Keyword {
-        name: "charge2",
-        category: KeywordCategory::Required,
-        description: "Molecular charge for the second electronic state (defaults to 'charge' if not specified)",
-        default_value: None,
-        example: Some("charge = 0\ncharge2 = 1"),
-        required: false,
-    },
-    Keyword {
         name: "mult1",
         category: KeywordCategory::Required,
         description: "Spin multiplicity for the first electronic state (2S+1, where S is spin)",

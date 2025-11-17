@@ -348,7 +348,7 @@ fn build_orca_header_internal(
 
     // Replace *** with proper .gbw file paths (following Python logic)
     let method_line = if method_line.contains("***") {
-        let gbw_file = if charge == config.charge1 && mult == config.mult1 {
+        let gbw_file = if mult == config.mult1 {
             format!("{}/state_A.gbw", input_basename)
         } else {
             format!("{}/state_B.gbw", input_basename)
@@ -667,7 +667,7 @@ pub fn build_program_header_with_basename(
 ///
 /// * `config` - The global configuration for the MECP calculation
 /// * `charge` - Molecular charge for the current state
-/// * `mult` - Spin multiplicity for the current state  
+/// * `mult` - Spin multiplicity for the current state
 /// * `td_or_tail` - TD-DFT keywords (Gaussian) or tail section content (ORCA)
 /// * `state` - State index for multi-reference calculations (BAGEL)
 /// * `chk_file` - Optional custom checkpoint file name. If None, uses default naming
@@ -696,7 +696,7 @@ pub fn build_program_header_with_chk(
     // Determine checkpoint file name
     let checkpoint_file = chk_file.unwrap_or(
         // Default checkpoint file names based on charge/mult
-        if charge == config.charge1 && mult == config.mult1 {
+        if mult == config.mult1 {
             "state_A.chk"
         } else {
             "state_B.chk"
@@ -1107,7 +1107,7 @@ mod tests {
         let mut config = Config::default();
         config.program = crate::config::QMProgram::Gaussian;
         config.method = "B3LYP".to_string();
-        config.charge1 = 0;
+        config.charge = 0;
         config.mult1 = 1;
         let header = build_program_header(&config, 0, 1, "", 0);
         assert!(header.contains("%chk=state_A.chk"));
@@ -1140,9 +1140,8 @@ mod tests {
         config.program = crate::config::QMProgram::Orca;
         config.method = "B3LYP def2-SVP".to_string();
         config.run_mode = crate::config::RunMode::Normal;
-        config.charge1 = 0;
+        config.charge = 0;
         config.mult1 = 1;
-        config.charge2 = 0;
         config.mult2 = 3;
 
         // Test default behavior (should use "calc" as default basename)

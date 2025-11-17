@@ -155,10 +155,8 @@ pub struct Config {
     pub nprocs: usize,
     /// Memory allocation (e.g., "4GB", "8GB")
     pub mem: String,
-    /// Charge for state 1
-    pub charge1: i32,
-    /// Charge for state 2 (defaults to charge1 if not specified)
-    pub charge2: i32,
+    /// Charge for system
+    pub charge: i32,
     /// Spin multiplicity for state 1 (2S+1, where S is total spin)
     pub mult1: usize,
     /// Spin multiplicity for state 2
@@ -257,8 +255,7 @@ impl Default for Config {
             reduced_factor: 0.5,
             nprocs: 1,
             mem: "1GB".to_string(),
-            charge1: 0,
-            charge2: 0,
+            charge: 0,
             mult1: 1,
             mult2: 1,
             method: String::new(),
@@ -342,7 +339,7 @@ pub enum RunMode {
     ///
     /// **Program-specific behavior:**
     /// - **Gaussian**: Generates .chk files in Phase 1, uses `guess=read` in Phase 2
-    /// - **ORCA**: Generates .gbw files in Phase 1, uses `!moread` in Phase 2  
+    /// - **ORCA**: Generates .gbw files in Phase 1, uses `!moread` in Phase 2
     /// - **XTB**: Runs pre-point for initialization, no checkpoint files needed
     /// - **BAGEL**: Validates model file in Phase 1, uses same model in Phase 2
     /// - **Custom**: Follows Gaussian-like behavior (depends on interface configuration)

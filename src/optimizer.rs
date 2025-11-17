@@ -59,7 +59,7 @@ use std::collections::VecDeque;
 ///
 /// # Capacity and History Management
 ///
-/// - Maximum history: 4 iterations (configurable)
+/// - Maximum history: configurable via `max_history` parameter (default: 5)
 /// - Automatically removes oldest entries when capacity is exceeded
 /// - Maintains rolling window of recent optimization data
 #[derive(Debug, Clone)]
@@ -84,35 +84,39 @@ pub struct OptimizationState {
 
 impl Default for OptimizationState {
     fn default() -> Self {
-        Self::new()
+        Self::new(4) // Default max_history value
     }
 }
 
 impl OptimizationState {
     /// Creates a new empty `OptimizationState`.
     ///
-    /// Initializes all history containers with capacity for 4 entries and
-    /// sets the maximum history size to 4 iterations.
+    /// Initializes all history containers with capacity for `max_history` entries and
+    /// sets the maximum history size to `max_history` iterations.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_history` - Maximum number of history entries to store (default: 5)
     ///
     /// # Examples
     ///
     /// ```
     /// use omecp::optimizer::OptimizationState;
     ///
-    /// let opt_state = OptimizationState::new();
-    /// assert_eq!(opt_state.max_history, 4);
+    /// let opt_state = OptimizationState::new(5);
+    /// assert_eq!(opt_state.max_history, 5);
     /// assert!(opt_state.geom_history.is_empty());
     /// ```
-    pub fn new() -> Self {
+    pub fn new(max_history: usize) -> Self {
         Self {
             lambdas: Vec::new(),
             lambda_de: None,
             constraint_violations: DVector::zeros(0),
-            geom_history: VecDeque::with_capacity(4),
-            grad_history: VecDeque::with_capacity(4),
-            hess_history: VecDeque::with_capacity(4),
-            energy_history: VecDeque::with_capacity(4),
-            max_history: 4,
+            geom_history: VecDeque::with_capacity(max_history),
+            grad_history: VecDeque::with_capacity(max_history),
+            hess_history: VecDeque::with_capacity(max_history),
+            energy_history: VecDeque::with_capacity(max_history),
+            max_history,
         }
     }
 
@@ -798,7 +802,7 @@ fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
 ///
 /// - Requires at least 3 iterations of history (checked via `has_enough_history()`)
 /// - History includes geometries, gradients, and Hessian estimates
-/// - Uses the most recent 4 iterations for DIIS extrapolation
+/// - Uses the most recent `max_history` iterations for DIIS extrapolation (configurable, default: 5)
 ///
 /// # Arguments
 ///
@@ -1240,17 +1244,17 @@ mod tests {
         // Verify that forces were properly negated
         // The gradient should reflect NEGATED forces (matching Python behavior)
         // If forces weren't negated, gradient direction would be wrong
-        
+
         // Check that gradient has correct dimension
         assert_eq!(gradient.len(), 6);
-        
+
         // Check that gradient is not zero (forces should have effect)
         assert!(gradient.norm() > 1e-10);
-        
+
         // Manual verification: compute expected gradient with negated forces
         let expected_f1 = -state1.forces;  // Python negates forces
         let expected_f2 = -state2.forces;  // Python negates forces
-        
+
         let x_vec = &expected_f1 - &expected_f2;
         let x_norm = if x_vec.norm().abs() < 1e-10 {
             let n = x_vec.len() as f64;
@@ -1258,17 +1262,17 @@ mod tests {
         } else {
             &x_vec / x_vec.norm()
         };
-        
+
         let de = state1.energy - state2.energy;
         let expected_f_vec = x_norm.clone() * de;
         let dot = expected_f1.dot(&x_norm);
         let expected_g_vec = &expected_f1 - &x_norm * dot;
         let expected_gradient = expected_f_vec + expected_g_vec;
-        
+
         // Compare computed gradient with expected (allowing for numerical precision)
         for i in 0..gradient.len() {
             assert!((gradient[i] - expected_gradient[i]).abs() < 1e-10,
-                   "Gradient component {} mismatch: {} vs {}", 
+                   "Gradient component {} mismatch: {} vs {}",
                    i, gradient[i], expected_gradient[i]);
         }
     }
@@ -1282,7 +1286,7 @@ mod tests {
 
         // ZERO forces for both states
         let forces = DVector::from_vec(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
-        
+
         let state1 = State {
             geometry: geometry.clone(),
             energy: -100.0,
@@ -1298,8 +1302,8 @@ mod tests {
         let gradient = compute_mecp_gradient(&state1, &state2, &[]);
 
         // With zero forces and same energies, gradient should be zero
-        assert!(gradient.norm() < 1e-10, 
-               "Expected zero gradient with zero forces, got {}", 
+        assert!(gradient.norm() < 1e-10,
+               "Expected zero gradient with zero forces, got {}",
                gradient.norm());
     }
 }

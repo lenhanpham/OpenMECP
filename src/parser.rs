@@ -840,6 +840,23 @@ fn parse_scan(line: &str, config: &mut Config) -> Result<()> {
     Ok(())
 }
 
+/// Parses a boolean value from a string, supporting multiple formats.
+///
+/// Supports:
+/// - `true`/`false` (case-insensitive)
+/// - `yes`/`no` (case-insensitive)
+/// - `1`/`0`
+///
+/// Returns `false` for any unrecognized value.
+fn parse_bool(value: &str) -> bool {
+    let value_lower = value.trim().to_lowercase();
+    match value_lower.as_str() {
+        "true" | "yes" | "1" => true,
+        "false" | "no" | "0" => false,
+        _ => false, // Default to false for unrecognized values
+    }
+}
+
 fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>) -> Result<()> {
     let parts: Vec<&str> = line.splitn(2, '=').collect();
     if parts.len() != 2 {
@@ -884,9 +901,18 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         }
         "td1" => config.td1 = value.to_string(),
         "td2" => config.td2 = value.to_string(),
-        "mp2" => config.mp2 = value.to_lowercase() == "true",
+        "mp2" => config.mp2 = parse_bool(value),
         "max_steps" => config.max_steps = value.parse().unwrap_or(100),
         "max_step_size" => config.max_step_size = value.parse().unwrap_or(0.1),
+        "max_history" => {
+            config.max_history = value.parse().unwrap_or_else(|_| {
+                eprintln!(
+                    "Warning: Invalid max_history value '{}', using default (5)",
+                    value
+                );
+                5
+            });
+        }
         "fix_de" => config.fix_de = value.parse().unwrap_or(0.0),
         "de_thresh" => config.thresholds.de = value.parse().unwrap_or(0.000050),
         "rms_thresh" => config.thresholds.rms = value.parse().unwrap_or(0.0025),
@@ -900,8 +926,8 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "drive_end" => config.drive_end = value.parse().unwrap_or(0.0),
         "drive_steps" => config.drive_steps = value.parse().unwrap_or(10),
         "drive_type" => config.drive_type = value.to_string(),
-        "use_gediis" => config.use_gediis = value.to_lowercase() == "true",
-        "use_hybrid_gediis" => config.use_hybrid_gediis = value.to_lowercase() == "true",
+        "use_gediis" => config.use_gediis = parse_bool(value),
+        "use_hybrid_gediis" => config.use_hybrid_gediis = parse_bool(value),
         "switch_step" => {
             config.switch_step = value.parse().unwrap_or_else(|_| {
                 eprintln!(
@@ -956,14 +982,15 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
                 .program_commands
                 .insert("bagel".to_string(), value.to_string());
         }
-        "isoniom" => config.is_oniom = value.to_lowercase() == "true",
+        "isoniom" => config.is_oniom = parse_bool(value),
         "chargeandmultforoniom1" => config.charge_and_mult_oniom1 = value.to_string(),
         "chargeandmultforoniom2" => config.charge_and_mult_oniom2 = value.to_string(),
         "basis" => config.basis_set = value.to_string(),
         "solvent" => config.solvent = value.to_string(),
         "dispersion" => config.dispersion = value.to_string(),
         "checkpoint" => config.checkpoint_file = value.to_string(),
-        "restart" => config.restart = value.to_lowercase() == "true",
+        "restart" => config.restart = parse_bool(value),
+        "print_checkpoint" => config.print_checkpoint = parse_bool(value),
         _ => {}
     }
     Ok(())

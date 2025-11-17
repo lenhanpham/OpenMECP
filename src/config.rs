@@ -234,6 +234,18 @@ pub struct Config {
     pub switch_step: usize,
     /// Scaling factor for BFGS step (rho in Python MECP.py)
     pub bfgs_rho: f64,
+    /// Maximum number of history entries for DIIS optimizers (GDIIS/GEDIIS)
+    ///
+    /// Controls how many previous iterations are retained for interpolation
+    /// in DIIS-based optimization methods. Larger values can improve convergence
+    /// but use more memory. Default: 5.
+    pub max_history: usize,
+    /// Enable or disable checkpoint JSON file generation
+    ///
+    /// When enabled (default: true), checkpoint files are saved during optimization
+    /// to allow restarting calculations. When disabled, no checkpoint files are created.
+    /// Supports: true/false, yes/no, 1/0
+    pub print_checkpoint: bool,
 }
 
 impl Default for Config {
@@ -281,6 +293,8 @@ impl Default for Config {
             use_hybrid_gediis: true, // Match Python's hybrid behavior
             switch_step: 3,          // Default to current behavior (BFGS for first 3 steps)
             bfgs_rho: 15.0,
+            max_history: 5,          // Default history size for DIIS methods
+            print_checkpoint: false,   // Default to saving checkpoints for backward compatibility
         }
     }
 }

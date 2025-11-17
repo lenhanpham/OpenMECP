@@ -261,7 +261,7 @@ fn main() {
 
                 match run_create_input(geometry_path, output_path) {
                     Ok(output_file) => {
-                        println!("✓ Template input file created successfully!");
+                        println!(" Template input file created successfully!");
                         println!("  Output file: {}", output_file.display());
                         println!("\nNext steps:");
                         println!("  1. Review and edit the generated template file");
@@ -634,9 +634,11 @@ fn print_configuration(
         "  Max Step Size (Bohr):       {}",
         input_config.max_step_size
     );
+    println!("  Max History:                {}", input_config.max_history);
     println!("  Use GEDIIS:                 {}", input_config.use_gediis);
     println!("  Switch Step:                {}", input_config.switch_step);
     println!("  Restart Mode:               {}", input_config.restart);
+    println!("  Print Checkpoint:           {}", input_config.print_checkpoint);
 
     if !input_config.bagel_model.is_empty() {
         println!("  BAGEL Model:                {}", input_config.bagel_model);
@@ -1287,7 +1289,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     geometry.coords = state1.geometry.coords.clone();
 
     // Initialize optimization
-    let mut opt_state = optimizer::OptimizationState::new();
+    let mut opt_state = optimizer::OptimizationState::new(config.max_history);
     let mut x_old = geometry.coords.clone();
     let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len());
 
@@ -1525,17 +1527,19 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             energy_diff,
         );
 
-        // Save checkpoint with dynamic filename based on input file
-        let checkpoint_filename = format!("{}.json", job_dir);
-        let checkpoint = checkpoint::Checkpoint::new(
-            step,
-            &geometry,
-            &state1_new.geometry.coords,
-            &hessian,
-            &opt_state,
-            &config,
-        );
-        checkpoint.save(Path::new(&checkpoint_filename))?;
+        // Save checkpoint with dynamic filename based on input file (if enabled)
+        if config.print_checkpoint {
+            let checkpoint_filename = format!("{}.json", job_dir);
+            let checkpoint = checkpoint::Checkpoint::new(
+                step,
+                &geometry,
+                &state1_new.geometry.coords,
+                &hessian,
+                &opt_state,
+                &config,
+            );
+            checkpoint.save(Path::new(&checkpoint_filename))?;
+        }
 
         // Periodic cleanup during optimization to prevent file accumulation
         let cleanup_freq = cleanup_manager.config().cleanup_frequency();
@@ -2302,7 +2306,7 @@ fn run_single_optimization(
     qm.run_calculation(Path::new(&initial_a_path))?;
     qm.run_calculation(Path::new(&initial_b_path))?;
 
-    let mut opt_state = optimizer::OptimizationState::new();
+    let mut opt_state = optimizer::OptimizationState::new(config.max_history);
     let mut x_old = geometry.coords.clone();
     let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len());
 

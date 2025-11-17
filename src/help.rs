@@ -323,6 +323,14 @@ pub const KEYWORDS: &[Keyword] = &[
         required: false,
     },
     Keyword {
+        name: "max_history",
+        category: KeywordCategory::Convergence,
+        description: "Maximum number of history entries for DIIS optimizers (GDIIS/GEDIIS). Controls how many previous iterations are retained for interpolation. Larger values can improve convergence but use more memory.",
+        default_value: Some("5"),
+        example: Some("max_history = 5"),
+        required: false,
+    },
+    Keyword {
         name: "reduced_factor",
         category: KeywordCategory::Convergence,
         description: "Factor for reducing GDIIS step size when RMS gradient is near convergence",
@@ -370,6 +378,14 @@ pub const KEYWORDS: &[Keyword] = &[
         description: "Restart optimization from checkpoint file",
         default_value: Some("false"),
         example: Some("restart = true"),
+        required: false,
+    },
+    Keyword {
+        name: "print_checkpoint",
+        category: KeywordCategory::Advanced,
+        description: "Enable or disable checkpoint JSON file generation (supports true/false, yes/no, 1/0)",
+        default_value: Some("true"),
+        example: Some("print_checkpoint = false"),
         required: false,
     },
     Keyword {
@@ -1000,6 +1016,7 @@ pub fn print_examples() {
     println!("# Optional convergence thresholds");
     println!("de_thresh = 0.000050");
     println!("rms_thresh = 0.0025");
+    println!("max_history = 4");
     println!();
     println!("# Program settings");
     println!("program = gaussian");

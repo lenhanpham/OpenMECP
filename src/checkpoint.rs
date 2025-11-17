@@ -156,11 +156,12 @@ impl From<&OptimizationState> for SerializableOptimizationState {
 
 impl From<SerializableOptimizationState> for OptimizationState {
     fn from(ser_opt_state: SerializableOptimizationState) -> Self {
-        let mut opt_state = OptimizationState::new();
+        // Use max_history from serialized state to preserve the original configuration
+        let mut opt_state = OptimizationState::new(ser_opt_state.max_history);
         opt_state.lambdas = ser_opt_state.lambdas;
         opt_state.lambda_de = ser_opt_state.lambda_de;
         opt_state.constraint_violations = DVector::from_vec(ser_opt_state.constraint_violations);
-        opt_state.max_history = ser_opt_state.max_history;
+        // max_history is already set in new()
 
         for coords in ser_opt_state.geom_history {
             opt_state.geom_history.push_back(DVector::from_vec(coords));

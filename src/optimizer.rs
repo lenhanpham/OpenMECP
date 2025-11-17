@@ -889,12 +889,13 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
     }
 
     let step_norm = step.norm();
+    let gdiis_trial_norm = step_norm;
 
     if step_norm > config.max_step_size {
         let scale = config.max_step_size / step_norm;
         println!(
-            "current stepsize: {} is reduced to max_size {}",
-            step_norm, config.max_step_size
+            "GDIIS trial stepsize: {:.10} is reduced to max_size {:.3}",
+            gdiis_trial_norm, config.max_step_size
         );
         x_new = last_geom + &step * scale;
     } else {
@@ -1144,12 +1145,13 @@ pub fn gediis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f6
     let last_geom = opt_state.geom_history.back().unwrap();
     let step = &x_new - last_geom;
     let step_norm = step.norm();
+    let gediis_trial_norm = step_norm;
 
     if step_norm > config.max_step_size {
         let scale = config.max_step_size / step_norm;
         println!(
-            "current stepsize: {} is reduced to max_size {}",
-            step_norm, config.max_step_size
+            "GEDIIS trial stepsize: {:.10} is reduced to max_size {:.3}",
+            gediis_trial_norm, config.max_step_size
         );
         x_new = last_geom + &step * scale;
     }
@@ -1158,6 +1160,7 @@ pub fn gediis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f6
 }
 
 /// Performs a hybrid GEDIIS optimization step (50% GDIIS + 50% GEDIIS).
+/// Logs three distinct step sizes: GDIIS trial, GEDIIS trial, and Hybrid final.
 ///
 /// This function implements Python's hybrid approach which averages results
 /// from GDIIS and GEDIIS optimizers. This combines the robust convergence of
@@ -1202,6 +1205,23 @@ pub fn hybrid_gediis_step(opt_state: &OptimizationState, config: &Config) -> DVe
         hybrid_result[i] = 0.5 * gdiis_result[i] + 0.5 * gediis_result[i];
     }
 
+    let last_geom = opt_state.geom_history.back().unwrap().clone();
+    let hybrid_final_step = &hybrid_result - &last_geom;
+    let hybrid_final_norm = hybrid_final_step.norm();
+
+    if hybrid_final_norm > config.max_step_size {
+        let scale = config.max_step_size / hybrid_final_norm;
+        println!(
+            "Hybrid final stepsize: {:.10} is reduced to max_size {:.3}",
+            hybrid_final_norm, config.max_step_size
+        );
+        hybrid_result = last_geom + &hybrid_final_step * scale;
+    } else {
+        println!(
+            "Hybrid final stepsize: {:.10} is within max_size {:.3} (no reduction)",
+            hybrid_final_norm, config.max_step_size
+        );
+    }
     hybrid_result
 }
 

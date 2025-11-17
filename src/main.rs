@@ -633,11 +633,15 @@ fn print_configuration(
         "  Max Step Size (Bohr):       {}",
         input_config.max_step_size
     );
-    println!("  Max History:                {}", input_config.max_history);
-    println!("  Use GEDIIS:                 {}", input_config.use_gediis);
-    println!("  Switch Step:                {}", input_config.switch_step);
-    println!("  Restart Mode:               {}", input_config.restart);
-    println!("  Print Checkpoint:           {}", input_config.print_checkpoint);
+    println!("  Max History:                {} {}", input_config.max_history, if input_config.max_history == 5 { "(default)" } else { "" });
+    println!();
+    println!("  Optimizers:");
+    println!("    Use GEDIIS:               {}", if input_config.use_gediis { "true" } else { "false (default)" });
+    println!("    Use Hybrid GEDIIS:        {}", if input_config.use_hybrid_gediis { "true (default)" } else { "false" });
+    println!("    Switch Step:              {}", input_config.switch_step);
+    println!("    BFGS Rho:                 {}", input_config.bfgs_rho);
+    println!("    Reduced Factor:           {}", input_config.reduced_factor);
+    println!("    Print Checkpoint:         {}", if input_config.print_checkpoint { "true (default)" } else { "false" });
 
     if !input_config.bagel_model.is_empty() {
         println!("  BAGEL Model:                {}", input_config.bagel_model);
@@ -648,6 +652,55 @@ fn print_configuration(
             "  Custom Interface File:      {}",
             input_config.custom_interface_file
         );
+    }
+
+    // Advanced Parameters section
+    let has_advanced_params = !input_config.basis_set.is_empty()
+        || !input_config.solvent.is_empty()
+        || !input_config.dispersion.is_empty()
+        || input_config.mp2
+        || input_config.fix_de != 0.0
+        || !input_config.program_commands.is_empty();
+
+    if has_advanced_params {
+        println!();
+        println!("Advanced Parameters:");
+        println!("  MP2 Method:               {}", if input_config.mp2 { "true" } else { "false (default)" });
+        if input_config.fix_de != 0.0 {
+            println!("  Fix ΔE (eV):              {} eV", input_config.fix_de);
+        } else {
+            println!("  Fix ΔE (eV):              0.0 (default)");
+        }
+        if !input_config.basis_set.is_empty() {
+            println!("  Basis Set:                {}", input_config.basis_set);
+        }
+        if !input_config.solvent.is_empty() {
+            println!("  Solvent:                  {}", input_config.solvent);
+        }
+        if !input_config.dispersion.is_empty() {
+            println!("  Dispersion:               {}", input_config.dispersion);
+        }
+        if !input_config.program_commands.is_empty() {
+            println!("  Program Commands:         {} custom commands", input_config.program_commands.len());
+        }
+    }
+
+    // File Management section
+    println!();
+    println!("File Management:");
+    println!("  Checkpoint File:          {}", input_config.checkpoint_file);
+    println!("  Restart Mode:             {}", if input_config.restart { "true" } else { "false (default)" });
+
+    // Scanning section
+    println!();
+    println!("Scanning:");
+    if input_config.scans.is_empty() {
+        println!("  Number of Scans:          {} (default)", input_config.scans.len());
+    } else {
+        println!("  Number of Scans:          {}", input_config.scans.len());
+        for (i, scan) in input_config.scans.iter().enumerate() {
+            println!("    Scan {}:                 {:?}", i + 1, scan);
+        }
     }
 
     if input_config.state1 > 0 || input_config.state2 > 0 {
@@ -682,31 +735,31 @@ fn print_configuration(
     }
 
     // Print thresholds
-    println!("\nConvergence Thresholds:");
+    println!("Convergence Thresholds:");
     println!(
-        "  Energy Difference (ΔE):     {:>12.8} hartree",
+        "  Energy Difference (ΔE):     {:>12.8} hartree ",
         input_config.thresholds.de
     );
     println!(
-        "  RMS Gradient:               {:>12.8} hartree/bohr",
+        "  RMS Gradient:               {:>12.8} hartree/bohr ",
         input_config.thresholds.rms_g
     );
     println!(
-        "  Max Gradient:               {:>12.8} hartree/bohr",
+        "  Max Gradient:               {:>12.8} hartree/bohr ",
         input_config.thresholds.max_g
     );
     println!(
-        "  RMS Displacement:           {:>12.8} bohr",
+        "  RMS Displacement:           {:>12.8} bohr ",
         input_config.thresholds.rms
     );
     println!(
-        "  Max Displacement:           {:>12.8} bohr",
+        "  Max Displacement:           {:>12.8} bohr ",
         input_config.thresholds.max_dis
     );
 
     // Print settings from omecp_config.cfg if loaded
     if let Some(ref settings) = settings_manager {
-        println!("\nConfiguration File Settings (omecp_config.cfg):");
+        println!("Configuration File Settings (omecp_config.cfg):");
 
         // Print file extensions
         println!("  Output File Extensions:");
@@ -748,7 +801,7 @@ fn print_configuration(
             settings.cleanup().verbose
         );
         println!(
-            "    Cleanup Frequency:         {} steps",
+            "    Cleanup Frequency:         {} steps ",
             settings.cleanup().cleanup_frequency
         );
         if !settings.cleanup().preserve_extensions.is_empty() {

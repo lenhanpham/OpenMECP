@@ -435,6 +435,7 @@ H  1.2  0.0  0.5
 | `rms_thresh`            | float   | `0.0025`   | RMS gradient convergence threshold                        |
 | `max_dis_thresh`        | float   | `0.004`    | Max displacement convergence threshold                    |
 | `max_g_thresh`          | float   | `0.0007`   | Max gradient convergence threshold                        |
+| `max_history`           | integer | `4`        | Max iterations used for DIIS extrapolation                |
 | `rms_g_thresh`          | float   | `0.0005`   | RMS gradient convergence threshold                        |
 | `custom_interface_file` | string  | `""`       | Path to custom QM interface JSON config                   |
 

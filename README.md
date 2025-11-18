@@ -413,8 +413,8 @@ H  1.2  0.0  0.5
 
 | Keyword                 | Type    | Default    | Description                                               |
 |-------------------------|---------|------------|-----------------------------------------------------------|
-| `td_a`                  | string  | `""`       | TD-DFT keywords for state 1                               |
-| `td_b`                  | string  | `""`       | TD-DFT keywords for state 2                               |
+| `td_a`                  | string  | `""`       | TD-DFT keywords for state A                               |
+| `td_b`                  | string  | `""`       | TD-DFT keywords for state B                               |
 | `mode`                  | string  | `normal`   | Run mode (see [Run Modes](#run-modes))                    |
 | `max_steps`             | integer | `100`      | Maximum optimization steps                                |
 | `max_step_size`         | float   | `0.1`      | Maximum step size (Bohr)                                  |
@@ -888,15 +888,15 @@ Contains all intermediate calculations:
 
 ```
 running_dir/
-├── 0_A.gjf          # Initial state A input
-├── 0_A.log          # Initial state A output
-├── 0_B.gjf          # Initial state B input
-├── 0_B.log          # Initial state B output
-├── 1_A.gjf          # Step 1 state A input
-├── 1_A.log          # Step 1 state A output
+├── input_basename_0_state_A.gjf          # Initial state A input
+├── input_basename_0_state_A.log          # Initial state A output
+├── input_basename_0_state_B.gjf          # Initial state B input
+├── input_basename_0_state_B.log          # Initial state B output
+├── input_basename_1_state_A.gjf          # Step 1 state A input
+├── input_basename_1_state_A.log          # Step 1 state A output
 ...
-├── state_A.chk      # State A checkpoint
-└── state_B.chk      # State B checkpoint
+├── input_basename_state_A.chk      # State A checkpoint
+└── input_basename_state_B.chk      # State B checkpoint
 ```
 
 ### Scan Output

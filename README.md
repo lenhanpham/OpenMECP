@@ -385,7 +385,7 @@ H  1.2  0.0  0.5
 ### Required Keywords
 
 | Keyword   | Type    | Description                  | Example            |
-|-----------|---------|------------------------------|--------------------|
+| --------- | ------- | ---------------------------- | ------------------ |
 | `program` | string  | QM program to use            | `gaussian`, `orca` |
 | `method`  | string  | QM method and basis set      | `B3LYP/6-31G*`     |
 | `nprocs`  | integer | Number of processors         | `4`                |
@@ -402,6 +402,7 @@ H  1.2  0.0  0.5
   mem = 8GB
   method = n scf(maxcycle=500,xqc) uwb97xd/def2svpp scrf=(smd,solvent=acetonitrile)
   ```
+
 - Orca: 
   
   ```
@@ -411,31 +412,108 @@ H  1.2  0.0  0.5
 
 ### Optional Keywords
 
-| Keyword                 | Type    | Default    | Description                                               |
-|-------------------------|---------|------------|-----------------------------------------------------------|
-| `td_a`                  | string  | `""`       | TD-DFT keywords for state A                               |
-| `td_b`                  | string  | `""`       | TD-DFT keywords for state B                               |
-| `mode`                  | string  | `normal`   | Run mode (see [Run Modes](#run-modes))                    |
-| `max_steps`             | integer | `100`      | Maximum optimization steps                                |
-| `max_step_size`         | float   | `0.1`      | Maximum step size (Bohr)                                  |
-| `fixedatoms`            | string  | `""`       | Fixed atom indices (e.g., `1,3-5,7`)                      |
-| `fix_de`                | float   | `0.0`      | Target energy difference (eV)                             |
-| `state_a`               | integer | `0`        | Excited state index for state 1 (TD-DFT)                  |
-| `state_b`               | integer | `0`        | Excited state index for state 2 (TD-DFT)                  |
-| `use_gediis`            | boolean | `false`    | Use GEDIIS optimizer instead of GDIIS                     |
-| `switch_step`           | integer | `3`        | Step to switch from BFGS to DIIS optimizers               |
-| `drive_type`            | string  | `""`       | Coordinate type for driving (`bond`, `angle`, `dihedral`) |
-| `drive_atoms`           | string  | `""`       | Atom indices for coordinate driving                       |
-| `drive_start`           | float   | `0.0`      | Starting value for coordinate driving                     |
-| `drive_end`             | float   | `0.0`      | Ending value for coordinate driving                       |
-| `drive_steps`           | integer | `10`       | Number of steps for coordinate driving                    |
-| `de_thresh`             | float   | `0.000050` | Energy difference convergence threshold                   |
-| `rms_thresh`            | float   | `0.0025`   | RMS gradient convergence threshold                        |
-| `max_dis_thresh`        | float   | `0.004`    | Max displacement convergence threshold                    |
-| `max_g_thresh`          | float   | `0.0007`   | Max gradient convergence threshold                        |
-| `max_history`           | integer | `4`        | Max iterations used for DIIS extrapolation                |
-| `rms_g_thresh`          | float   | `0.0005`   | RMS gradient convergence threshold                        |
-| `custom_interface_file` | string  | `""`       | Path to custom QM interface JSON config                   |
+#### TD-DFT and State Selection
+
+| Keyword   | Type    | Default | Description                                |
+| --------- | ------- | ------- | ------------------------------------------ |
+| `td_a`    | string  | `""`    | TD-DFT keywords for state A (short form)   |
+| `td_b`    | string  | `""`    | TD-DFT keywords for state B (short form)   |
+| `state_a` | integer | `0`     | Excited state index for state A (0=ground) |
+| `state_b` | integer | `0`     | Excited state index for state B (0=ground) |
+| `mp2`     | boolean | `false` | Use MP2 instead of DFT (Gaussian only)     |
+
+**Note**: You can also use long forms `td_state_a` and `td_state_b` instead of `td_a` and `td_b`.
+
+#### Run Mode and Optimization
+
+| Keyword         | Type    | Default  | Description                            |
+| --------------- | ------- | -------- | -------------------------------------- |
+| `mode`          | string  | `normal` | Run mode (see [Run Modes](#run-modes)) |
+| `max_steps`     | integer | `100`    | Maximum optimization steps             |
+| `max_step_size` | float   | `0.1`    | Maximum step size (Bohr)               |
+| `restart`       | boolean | `false`  | Enable restart from checkpoint file    |
+
+#### Optimizer Settings
+
+| Keyword             | Type    | Default | Description                                    |
+| ------------------- | ------- | ------- | ---------------------------------------------- |
+| `use_gediis`        | boolean | `false` | Use GEDIIS optimizer instead of GDIIS          |
+| `use_hybrid_gediis` | boolean | `true`  | Use hybrid GDIIS/GEDIIS optimizer              |
+| `switch_step`       | integer | `3`     | Step to switch from BFGS to DIIS optimizers    |
+| `max_history`       | integer | `5`     | Max iterations used for DIIS extrapolation     |
+| `reduced_factor`    | float   | `0.5`   | Step size reduction factor for GDIIS           |
+| `bfgs_rho`          | float   | `15.0`  | Scaling factor for BFGS step size              |
+| `print_checkpoint`  | boolean | `false` | Enable/disable checkpoint JSON file generation |
+
+#### Convergence Thresholds
+
+| Keyword          | Type  | Default    | Description                           |
+| ---------------- | ----- | ---------- | ------------------------------------- |
+| `de_thresh`      | float | `0.000050` | Energy difference threshold (hartree) |
+| `rms_thresh`     | float | `0.0025`   | RMS displacement threshold (bohr)     |
+| `max_dis_thresh` | float | `0.004`    | Max displacement threshold (bohr)     |
+| `max_g_thresh`   | float | `0.0007`   | Max gradient threshold (hartree/bohr) |
+| `rms_g_thresh`   | float | `0.0005`   | RMS gradient threshold (hartree/bohr) |
+
+#### Constraints and Fixed Atoms
+
+| Keyword      | Type   | Default | Description                          |
+| ------------ | ------ | ------- | ------------------------------------ |
+| `fixedatoms` | string | `""`    | Fixed atom indices (e.g., `1,3-5,7`) |
+
+#### Coordinate Driving
+
+| Keyword            | Type    | Default | Description                                           |
+| ------------------ | ------- | ------- | ----------------------------------------------------- |
+| `drive_type`       | string  | `""`    | Coordinate type (`bond`, `angle`, `dihedral`)         |
+| `drive_atoms`      | string  | `""`    | Atom indices for coordinate driving (comma-separated) |
+| `drive_start`      | float   | `0.0`   | Starting value for coordinate driving                 |
+| `drive_end`        | float   | `0.0`   | Ending value for coordinate driving                   |
+| `drive_steps`      | integer | `10`    | Number of steps for coordinate driving                |
+| `drive_coordinate` | string  | `""`    | Reaction coordinate specification                     |
+
+#### Fix-dE Mode
+
+| Keyword  | Type  | Default | Description                   |
+| -------- | ----- | ------- | ----------------------------- |
+| `fix_de` | float | `0.0`   | Target energy difference (eV) |
+
+#### Program Commands
+
+| Keyword     | Type   | Default  | Description      |
+| ----------- | ------ | -------- | ---------------- |
+| `gau_comm`  | string | `"g16"`  | Gaussian command |
+| `orca_comm` | string | `"orca"` | ORCA command     |
+
+#### ONIOM-Specific
+
+| Keyword                  | Type    | Default | Description                             |
+| ------------------------ | ------- | ------- | --------------------------------------- |
+| `isoniom`                | boolean | `false` | Enable ONIOM (QM/MM) calculation        |
+| `chargeandmultforoniom1` | string  | `""`    | Charge/multiplicity for state A (ONIOM) |
+| `chargeandmultforoniom2` | string  | `""`    | Charge/multiplicity for state B (ONIOM) |
+
+#### Advanced Settings
+
+| Keyword                 | Type   | Default | Description                             |
+| ----------------------- | ------ | ------- | --------------------------------------- |
+| `basis`                 | string | `""`    | Basis set specification                 |
+| `solvent`               | string | `""`    | Solvent model specification             |
+| `dispersion`            | string | `""`    | Dispersion correction                   |
+| `custom_interface_file` | string | `""`    | Path to custom QM interface JSON config |
+
+#### Deprecated Keywords (Backward Compatibility)
+
+| New Keyword | Status     | Description                     |
+| ----------- | ---------- | ------------------------------- |
+| `mult_a`    | Deprecated | Multiplicity for state A        |
+| `mult_b`    | Deprecated | Multiplicity for state B        |
+| `td_a`      | Deprecated | TD-DFT keywords for state A     |
+| `td_b`      | Deprecated | TD-DFT keywords for state B     |
+| `state_a`   | Deprecated | Excited state index for state A |
+| `state_b`   | Deprecated | Excited state index for state B |
+
+**Note**: Deprecated keywords still work but will show warnings. Please use the new keywords in new input files.
 
 #### Optimizer Switching Control
 

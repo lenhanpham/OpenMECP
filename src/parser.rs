@@ -920,6 +920,18 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
             eprintln!("Warning: 'td2' is deprecated. Please use 'td_state_b' or 'td_b' instead.");
             config.td_state_b = value.to_string();
         }
+        // State selection for TD-DFT
+        "state_a" => config.state_a = value.parse().unwrap_or(0),
+        "state_b" => config.state_b = value.parse().unwrap_or(0),
+        // Old keywords (deprecated, backward compatibility)
+        "state1" => {
+            eprintln!("Warning: 'state1' is deprecated. Please use 'state_a' instead.");
+            config.state_a = value.parse().unwrap_or(0);
+        }
+        "state2" => {
+            eprintln!("Warning: 'state2' is deprecated. Please use 'state_b' instead.");
+            config.state_b = value.parse().unwrap_or(0);
+        }
         "mp2" => config.mp2 = parse_bool(value),
         "max_steps" => config.max_steps = value.parse().unwrap_or(100),
         "max_step_size" => config.max_step_size = value.parse().unwrap_or(0.1),
@@ -1009,6 +1021,8 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "dispersion" => config.dispersion = value.to_string(),
         "restart" => config.restart = parse_bool(value),
         "print_checkpoint" => config.print_checkpoint = parse_bool(value),
+        "reduced_factor" => config.reduced_factor = value.parse().unwrap_or(0.5),
+        "bfgs_rho" => config.bfgs_rho = value.parse().unwrap_or(15.0),
         _ => {}
     }
     Ok(())
@@ -1919,5 +1933,32 @@ mod tests {
         let result = parse_parameter("mult_state_a = 3 # triplet state", &mut config, &mut fixed_atoms);
         assert!(result.is_ok());
         assert_eq!(config.mult_state_a, 3);
+    }
+
+    #[test]
+    fn test_state_selection_parsing() {
+        let mut config = Config::default();
+        let mut fixed_atoms = Vec::new();
+
+        // Test state_a parsing
+        let result = parse_parameter("state_a = 1", &mut config, &mut fixed_atoms);
+        assert!(result.is_ok());
+        assert_eq!(config.state_a, 1);
+
+        // Test state_b parsing
+        let result = parse_parameter("state_b = 2", &mut config, &mut fixed_atoms);
+        assert!(result.is_ok());
+        assert_eq!(config.state_b, 2);
+
+        // Test deprecated state1 keyword
+        let mut config2 = Config::default();
+        let result = parse_parameter("state1 = 3", &mut config2, &mut fixed_atoms);
+        assert!(result.is_ok());
+        assert_eq!(config2.state_a, 3);
+
+        // Test deprecated state2 keyword
+        let result = parse_parameter("state2 = 4", &mut config2, &mut fixed_atoms);
+        assert!(result.is_ok());
+        assert_eq!(config2.state_b, 4);
     }
 }

@@ -357,14 +357,6 @@ pub const KEYWORDS: &[Keyword] = &[
 
     // ADVANCED OPTIONS
     Keyword {
-        name: "checkpoint",
-        category: KeywordCategory::Advanced,
-        description: "Checkpoint file path for saving/restarting calculations",
-        default_value: Some("\"mecp.chk\""),
-        example: Some("checkpoint = \"restart.chk\""),
-        required: false,
-    },
-    Keyword {
         name: "restart",
         category: KeywordCategory::Advanced,
         description: "Restart optimization from checkpoint file",

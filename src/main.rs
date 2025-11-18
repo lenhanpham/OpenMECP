@@ -688,7 +688,7 @@ fn print_configuration(
     // File Management section
     println!();
     println!("File Management:");
-    println!("  Checkpoint File:          {}", input_config.checkpoint_file);
+    println!("  Checkpoint File:          <job_name>.json (auto-generated from input filename)");
     println!("  Restart Mode:             {}", if input_config.restart { "true" } else { "false (default)" });
 
     // Scanning section
@@ -1581,8 +1581,8 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         // Save checkpoint with dynamic filename based on input file (if enabled)
         if config.print_checkpoint {
-            let checkpoint_filename = format!("{}.json", job_dir);
-            let checkpoint = checkpoint::Checkpoint::new(
+            let checkpoint_filename: String = format!("{}.json", job_dir);
+            let checkpoint: checkpoint::Checkpoint = checkpoint::Checkpoint::new(
                 step,
                 &geometry,
                 &state1_new.geometry.coords,
@@ -1594,7 +1594,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Periodic cleanup during optimization to prevent file accumulation
-        let cleanup_freq = cleanup_manager.config().cleanup_frequency();
+        let cleanup_freq: u32 = cleanup_manager.config().cleanup_frequency();
         if cleanup_freq > 0 && (step + 1) % cleanup_freq as usize == 0 {
             println!(
                 "Performing periodic cleanup (every {} steps)...",

@@ -195,8 +195,6 @@ pub struct Config {
     pub solvent: String,
     /// Dispersion correction
     pub dispersion: String,
-    /// Checkpoint file name for saving/restarting
-    pub checkpoint_file: String,
     /// Enable restart mode (read checkpoint file)
     pub restart: bool,
     /// Path to custom QM interface JSON configuration
@@ -275,7 +273,6 @@ impl Default for Config {
             basis_set: String::new(),
             solvent: String::new(),
             dispersion: String::new(),
-            checkpoint_file: "mecp.chk".to_string(),
             restart: false,
             custom_interface_file: String::new(),
             state1: 0,

@@ -220,32 +220,32 @@ pub struct InputData {
 /// // Geometry will be read from molecule.xyz
 /// ```
 pub fn parse_input(path: &Path) -> Result<InputData> {
-    let content = fs::read_to_string(path)?;
-    let mut config = Config::default();
-    let mut elements = Vec::new();
-    let mut coords = Vec::new();
-    let mut constraints = Vec::new();
-    let mut tail1 = String::new();
-    let mut tail2 = String::new();
-    let mut fixed_atoms = Vec::new();
-    let mut lst1_elements = Vec::new();
-    let mut lst1_coords = Vec::new();
-    let mut lst2_elements = Vec::new();
-    let mut lst2_coords = Vec::new();
-    let mut oniom_layer_info = Vec::new();
+    let content: String = fs::read_to_string(path)?;
+    let mut config: Config = Config::default();
+    let mut elements: Vec<String> = Vec::new();
+    let mut coords: Vec<f64> = Vec::new();
+    let mut constraints: Vec<Constraint> = Vec::new();
+    let mut tail1: String = String::new();
+    let mut tail2: String = String::new();
+    let mut fixed_atoms: Vec<usize> = Vec::new();
+    let mut lst1_elements: Vec<String> = Vec::new();
+    let mut lst1_coords: Vec<f64> = Vec::new();
+    let mut lst2_elements: Vec<String> = Vec::new();
+    let mut lst2_coords: Vec<f64> = Vec::new();
+    let mut oniom_layer_info: Vec<String> = Vec::new();
 
-    let mut in_geom = false;
-    let mut in_tail1 = false;
-    let mut in_tail2 = false;
-    let mut in_constr = false;
-    let mut in_lst1 = false;
-    let mut in_lst2 = false;
+    let mut in_geom: bool = false;
+    let mut in_tail1: bool = false;
+    let mut in_tail2: bool = false;
+    let mut in_constr: bool = false;
+    let mut in_lst1: bool = false;
+    let mut in_lst2: bool = false;
 
-    let geom_re = Regex::new(r"^\s*(\S+)\s+(-?\d+\.?\d*)").unwrap();
+    let geom_re: Regex = Regex::new(r"^\s*(\S+)\s+(-?\d+\.?\d*)").unwrap();
 
     for line in content.lines() {
-        let line_lower = line.to_lowercase();
-        let trimmed = line_lower.trim();
+        let line_lower: String = line.to_lowercase();
+        let trimmed: &str = line_lower.trim();
 
         if trimmed.starts_with('#') {
             continue;
@@ -282,8 +282,8 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
         if in_geom {
             if line.trim().starts_with('@') {
                 // External geometry file
-                let filename = line.trim().strip_prefix('@').unwrap().trim();
-                let external_path = Path::new(filename);
+                let filename: &str = line.trim().strip_prefix('@').unwrap().trim();
+                let external_path: &Path = Path::new(filename);
                 let (ext_elements, ext_coords) = read_external_geometry(external_path)?;
                 elements = ext_elements;
                 coords = ext_coords;
@@ -987,7 +987,6 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "basis" => config.basis_set = value.to_string(),
         "solvent" => config.solvent = value.to_string(),
         "dispersion" => config.dispersion = value.to_string(),
-        "checkpoint" => config.checkpoint_file = value.to_string(),
         "restart" => config.restart = parse_bool(value),
         "print_checkpoint" => config.print_checkpoint = parse_bool(value),
         _ => {}

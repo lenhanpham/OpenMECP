@@ -564,7 +564,7 @@ fn run_create_settings_template() -> Result<(), Box<dyn std::error::Error>> {
 ///    - Check convergence
 ///    - Update Hessian and history
 ///    - Save checkpoint
-/// 4. **Completion**: Save final geometry to `final.xyz`
+/// 4. **Completion**: Save final geometry to `{basename}_mecp.xyz`
 ///
 /// # Run Modes
 ///
@@ -992,7 +992,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     // Check if restart is requested
     if input_data.config.restart {
-        return run_restart(input_data, &*qm, job_dir);
+        return run_restart(input_data, &*qm, job_dir, &naming);
     }
 
     // Check if LST interpolation is requested
@@ -1558,7 +1558,9 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         if conv.is_converged() {
             println!("\nConverged at step {}", step + 1);
-            io::write_xyz(&geometry, Path::new("final.xyz"))?;
+            let final_xyz = naming.final_mecp_xyz();
+            io::write_xyz(&geometry, Path::new(&final_xyz))?;
+            println!("Final geometry saved to {}", final_xyz);
 
             // Clean up temporary files after successful convergence
             if let Err(e) = cleanup_manager.cleanup_directory(Path::new(job_dir)) {
@@ -3389,6 +3391,7 @@ fn run_restart(
     input_data: parser::InputData,
     qm: &dyn qm_interface::QMInterface,
     job_dir: &str,
+    naming: &omecp::naming::FileNaming,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n****Restarting from checkpoint****");
 
@@ -3575,8 +3578,9 @@ fn run_restart(
 
         if conv.is_converged() {
             println!("\n****Congrats! MECP has converged****");
-            println!("Final geometry saved to final.xyz");
-            io::write_xyz(&geometry, Path::new("final.xyz"))?;
+            let final_xyz = naming.final_mecp_xyz();
+            println!("Final geometry saved to {}", final_xyz);
+            io::write_xyz(&geometry, Path::new(&final_xyz))?;
             return Ok(());
         }
 

@@ -236,7 +236,7 @@ omecp input.inp > output.log
 
 ### 5. Check Results
 
-- Optimized geometry: `final.xyz`
+- Optimized geometry: `{input_basename}_mecp.xyz` (e.g., `compound_xyz_123_mecp.xyz`)
 - Intermediate geometries: `running_dir/` directory
 - Convergence information: stdout
 
@@ -941,9 +941,11 @@ Converged at step 8
 ****Congrats! MECP has converged****
 ```
 
-### final.xyz
+### Final MECP Geometry File
 
-Final optimized geometry in XYZ format:
+Final optimized geometry in XYZ format: `{input_basename}_mecp.xyz`
+
+For example, if your input file is `compound_xyz_123.input`, the final geometry will be saved as `compound_xyz_123_mecp.xyz`.
 
 ```
 10

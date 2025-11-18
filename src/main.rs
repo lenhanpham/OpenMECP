@@ -617,15 +617,15 @@ fn print_configuration(
     println!("  Memory:                     {}", input_config.mem);
     println!("  Processors:                 {}", input_config.nprocs);
     println!("  Charge of system:           {}", input_config.charge);
-    println!("  Multiplicity (State 1):     {}", input_config.mult1);
-    println!("  Multiplicity (State 2):     {}", input_config.mult2);
+    println!("  Multiplicity (State A):     {}", input_config.mult_state_a);
+    println!("  Multiplicity (State B):     {}", input_config.mult_state_b);
     println!("  Run Mode:                   {:?}", input_config.run_mode);
 
-    if !input_config.td1.is_empty() {
-        println!("  TD-DFT (State 1):           {}", input_config.td1);
+    if !input_config.td_state_a.is_empty() {
+        println!("  TD-DFT (State A):           {}", input_config.td_state_a);
     }
-    if !input_config.td2.is_empty() {
-        println!("  TD-DFT (State 2):           {}", input_config.td2);
+    if !input_config.td_state_b.is_empty() {
+        println!("  TD-DFT (State B):           {}", input_config.td_state_b);
     }
 
     println!("  Max Steps:                  {}", input_config.max_steps);
@@ -703,9 +703,9 @@ fn print_configuration(
         }
     }
 
-    if input_config.state1 > 0 || input_config.state2 > 0 {
-        println!("  TD-DFT State (State 1):     {}", input_config.state1);
-        println!("  TD-DFT State (State 2):     {}", input_config.state2);
+    if input_config.state_a > 0 || input_config.state_b > 0 {
+        println!("  TD-DFT State (State A):     {}", input_config.state_a);
+        println!("  TD-DFT State (State B):     {}", input_config.state_b);
     }
 
     if input_config.is_oniom {
@@ -714,11 +714,11 @@ fn print_configuration(
             input_config.oniom_layer_info.join(",")
         );
         println!(
-            "  ONIOM Charge/Mult 1:        {}",
+            "  ONIOM Charge/Mult A:        {}",
             input_config.charge_and_mult_oniom1
         );
         println!(
-            "  ONIOM Charge/Mult 2:        {}",
+            "  ONIOM Charge/Mult B:        {}",
             input_config.charge_and_mult_oniom2
         );
     }
@@ -895,6 +895,9 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|s| s.to_str())
         .unwrap_or("mecp_job");
 
+    // Initialize dynamic file naming system
+    let naming = omecp::naming::FileNaming::new(input_path);
+
     println!("Parsed {} atoms", input_data.geometry.num_atoms);
     println!(
         "Program: {:?}, Mode: {:?}",
@@ -1021,19 +1024,19 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let header_a = io::build_program_header_with_basename(
         &input_data.config,
         input_data.config.charge,
-        input_data.config.mult1,
-        &input_data.config.td1,
-        input_data.config.state1,
-        job_dir,
+        input_data.config.mult_state_a,
+        &input_data.config.td_state_a,
+        input_data.config.state_a,
+        &naming.orca_basename(job_dir),
     );
 
     let header_b = io::build_program_header_with_basename(
         &input_data.config,
         input_data.config.charge,
-        input_data.config.mult2,
-        &input_data.config.td2,
-        input_data.config.state2,
-        job_dir,
+        input_data.config.mult_state_b,
+        &input_data.config.td_state_b,
+        input_data.config.state_b,
+        &naming.orca_basename(job_dir),
     );
 
     // Run pre-point calculations for stable/inter_read modes
@@ -1053,18 +1056,18 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let pre_header_a = build_raw_program_header(
             &input_data.config,
             input_data.config.charge,
-            input_data.config.mult1,
-            &input_data.config.td1,
-            input_data.config.state1,
-            "state_A.chk",
+            input_data.config.mult_state_a,
+            &input_data.config.td_state_a,
+            input_data.config.state_a,
+            &naming.state_a_chk(),
         );
         let pre_header_b = build_raw_program_header(
             &input_data.config,
             input_data.config.charge,
-            input_data.config.mult2,
-            &input_data.config.td2,
-            input_data.config.state2,
-            "state_B.chk",
+            input_data.config.mult_state_b,
+            &input_data.config.td_state_b,
+            input_data.config.state_b,
+            &naming.state_b_chk(),
         );
 
         println!("Pre-point headers (raw, no modifications):");
@@ -1073,8 +1076,8 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         // Write and run pre-point calculations
         let ext = get_input_file_extension(input_data.config.program);
-        let pre_a_path = format!("{}/pre_A.{}", job_dir, ext);
-        let pre_b_path = format!("{}/pre_B.{}", job_dir, ext);
+        let pre_a_path = naming.pre_a(job_dir, ext);
+        let pre_b_path = naming.pre_b(job_dir, ext);
 
         qm.write_input(
             &input_data.geometry,
@@ -1115,11 +1118,11 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         match input_data.config.program {
             config::QMProgram::Gaussian => {
                 println!("Checking Gaussian checkpoint files...");
-                // Gaussian creates state_A.chk and state_B.chk in root directory (current working directory)
-                let state_a_chk = "state_A.chk";
-                let state_b_chk = "state_B.chk";
+                // Gaussian creates checkpoint files in root directory (current working directory)
+                let state_a_chk = naming.state_a_chk();
+                let state_b_chk = naming.state_b_chk();
 
-                if Path::new(state_a_chk).exists() && Path::new(state_b_chk).exists() {
+                if Path::new(&state_a_chk).exists() && Path::new(&state_b_chk).exists() {
                     println!(
                         "✓ Gaussian checkpoint files found: {} and {}",
                         state_a_chk, state_b_chk
@@ -1137,10 +1140,10 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 if print_level >= 1 {
                     println!("Renaming ORCA wavefunction files...");
                 }
-                let pre_a_gbw = format!("{}/pre_A.gbw", job_dir);
-                let pre_b_gbw = format!("{}/pre_B.gbw", job_dir);
-                let state_a_gbw = format!("{}/state_A.gbw", job_dir);
-                let state_b_gbw = format!("{}/state_B.gbw", job_dir);
+                let pre_a_gbw = naming.pre_a_gbw(job_dir);
+                let pre_b_gbw = naming.pre_b_gbw(job_dir);
+                let state_a_gbw = naming.state_a_gbw(job_dir);
+                let state_b_gbw = naming.state_b_gbw(job_dir);
 
                 // Rename ORCA files (more efficient than copying)
                 if Path::new(&pre_a_gbw).exists() && Path::new(&pre_b_gbw).exists() {
@@ -1213,20 +1216,20 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         header_a = io::build_program_header_with_chk(
             &config,
             config.charge,
-            config.mult1,
-            &config.td1,
-            config.state1,
-            Some("state_A.chk"),
+            config.mult_state_a,
+            &config.td_state_a,
+            config.state_a,
+            Some(&naming.state_a_chk()),
             Some(job_dir),
         );
 
         header_b = io::build_program_header_with_chk(
             &config,
             config.charge,
-            config.mult2,
-            &config.td2,
-            config.state2,
-            Some("state_B.chk"),
+            config.mult_state_b,
+            &config.td_state_b,
+            config.state_b,
+            Some(&naming.state_b_chk()),
             Some(job_dir),
         );
 
@@ -1256,19 +1259,19 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         header_a = io::build_program_header_with_basename(
             &config,
             config.charge,
-            config.mult1,
-            &config.td1,
-            config.state1,
-            job_dir,
+            config.mult_state_a,
+            &config.td_state_a,
+            config.state_a,
+            &naming.orca_basename(job_dir),
         );
 
         header_b = io::build_program_header_with_basename(
             &config,
             config.charge,
-            config.mult2,
-            &config.td2,
-            config.state2,
-            job_dir,
+            config.mult_state_b,
+            &config.td_state_b,
+            config.state_b,
+            &naming.orca_basename(job_dir),
         );
 
         println!("****Headers rebuilt for read mode****");
@@ -1283,10 +1286,10 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                     println!("and then use the read model of OpenMECP, rather than the stable mode, in order to use RI.");
 
                     // Copy wavefunction files for subsequent calculations
-                    let pre_a_gbw = format!("{}/pre_A.gbw", job_dir);
-                    let pre_b_gbw = format!("{}/pre_B.gbw", job_dir);
-                    let state_a_gbw = format!("{}/state_A.gbw", job_dir);
-                    let state_b_gbw = format!("{}/state_B.gbw", job_dir);
+                    let pre_a_gbw = naming.pre_a_gbw(job_dir);
+                    let pre_b_gbw = naming.pre_b_gbw(job_dir);
+                    let state_a_gbw = naming.state_a_gbw(job_dir);
+                    let state_b_gbw = naming.state_b_gbw(job_dir);
 
                     if Path::new(&pre_a_gbw).exists() {
                         std::fs::copy(&pre_a_gbw, &state_a_gbw)?;
@@ -1312,8 +1315,8 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Run initial calculations
     println!("\n****Running initial calculations****");
     let ext = get_input_file_extension(config.program);
-    let initial_a_path = format!("{}/0_state_A.{}", job_dir, ext);
-    let initial_b_path = format!("{}/0_state_B.{}", job_dir, ext);
+    let initial_a_path = naming.step_state_a(job_dir, 0, ext);
+    let initial_b_path = naming.step_state_b(job_dir, 0, ext);
 
     qm.write_input(
         &geometry,
@@ -1332,13 +1335,13 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     qm.run_calculation(Path::new(&initial_b_path))?;
 
     let output_ext = get_output_file_base(config.program);
-    let initial_a_output = format!("{}/0_state_A.{}", job_dir, output_ext);
-    let initial_b_output = format!("{}/0_state_B.{}", job_dir, output_ext);
-    let state1 = qm.read_output(Path::new(&initial_a_output), &geometry, config.state1)?;
-    let state2 = qm.read_output(Path::new(&initial_b_output), &geometry, config.state2)?;
+    let initial_a_output = naming.step_state_a(job_dir, 0, output_ext);
+    let initial_b_output = naming.step_state_b(job_dir, 0, output_ext);
+    let state_a = qm.read_output(Path::new(&initial_a_output), &geometry, config.state_a)?;
+    let state_b = qm.read_output(Path::new(&initial_b_output), &geometry, config.state_b)?;
 
     // FIX: Synchronize geometry from pre-point calculation
-    geometry.coords = state1.geometry.coords.clone();
+    geometry.coords = state_a.geometry.coords.clone();
 
     // Initialize optimization
     let mut opt_state = optimizer::OptimizationState::new(config.max_history);
@@ -1350,7 +1353,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         println!("\n****Step {}****", step + 1);
 
         // Compute MECP gradient
-        let mut grad = optimizer::compute_mecp_gradient(&state1, &state2, fixed_atoms);
+        let mut grad = optimizer::compute_mecp_gradient(&state_a, &state_b, fixed_atoms);
 
         // Apply constraint forces if constraints are present
         if !constraints.is_empty() {
@@ -1440,8 +1443,8 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             config::QMProgram::Gaussian | config::QMProgram::Orca | config::QMProgram::Custom => {
                 // Standard Gaussian/ORCA workflow
                 let ext = get_input_file_extension(config.program);
-                let step_name_a = format!("{}/{}_state_A.{}", job_dir, step + 1, ext);
-                let step_name_b = format!("{}/{}_state_B.{}", job_dir, step + 1, ext);
+                let step_name_a = naming.step_state_a(job_dir, step + 1, ext);
+                let step_name_b = naming.step_state_b(job_dir, step + 1, ext);
 
                 qm.write_input(
                     &geometry,
@@ -1486,25 +1489,25 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         // Read output files based on program type
         let output_ext = get_output_file_base(config.program);
-        let state1_new = qm.read_output(
-            Path::new(&format!("{}/{}_state_A.{}", job_dir, step + 1, output_ext)),
+        let state_a_new = qm.read_output(
+            Path::new(&naming.step_state_a(job_dir, step + 1, output_ext)),
             &geometry,
-            config.state1,
+            config.state_a,
         )?;
-        let state2_new = qm.read_output(
-            Path::new(&format!("{}/{}_state_B.{}", job_dir, step + 1, output_ext)),
+        let state_b_new = qm.read_output(
+            Path::new(&naming.step_state_b(job_dir, step + 1, output_ext)),
             &geometry,
-            config.state2,
+            config.state_b,
         )?;
 
         // CRITICAL FIX: Update main geometry with the actual geometry from QM output
-        geometry.coords = state1_new.geometry.coords.clone();
+        geometry.coords = state_a_new.geometry.coords.clone();
 
         // Manage ORCA wavefunction files (following Python MECP.py logic)
-        manage_orca_wavefunction_files(step + 1, &config, &geometry, job_dir)?;
+        manage_orca_wavefunction_files(step + 1, &config, &geometry, job_dir, &naming)?;
 
         // Compute new gradient for Hessian update
-        let mut grad_new = optimizer::compute_mecp_gradient(&state1_new, &state2_new, fixed_atoms);
+        let mut grad_new = optimizer::compute_mecp_gradient(&state_a_new, &state_b_new, fixed_atoms);
 
         // Apply constraint forces to new gradient as well
         if !constraints.is_empty() {
@@ -1530,8 +1533,8 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         // Check convergence
         let conv = optimizer::check_convergence(
-            state1_new.energy,
-            state2_new.energy,
+            state_a_new.energy,
+            state_b_new.energy,
             &x_old,
             &x_new,
             &grad_new,
@@ -1539,7 +1542,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         );
 
         // Compute current values for display
-        let de = (state1_new.energy - state2_new.energy).abs();
+        let de = (state_a_new.energy - state_b_new.energy).abs();
         let disp_vec = &x_new - &x_old;
         let rms_disp = disp_vec.norm() / (disp_vec.len() as f64).sqrt();
         let max_disp = disp_vec.iter().map(|x| x.abs()).fold(0.0, f64::max);
@@ -1549,7 +1552,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Print energy and convergence status
         println!(
             "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
-            state1_new.energy, state2_new.energy, de
+            state_a_new.energy, state_b_new.energy, de
         );
         print_convergence_status(&conv, de, rms_grad, max_grad, rms_disp, max_disp, &config);
 
@@ -1571,9 +1574,9 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         hessian = optimizer::update_hessian_psb(&hessian, &sk, &yk);
 
         // Add to history for GDIIS/GEDIIS
-        let energy_diff = state1_new.energy - state2_new.energy;
+        let energy_diff = state_a_new.energy - state_b_new.energy;
         opt_state.add_to_history(
-            state1_new.geometry.coords.clone(),
+            state_a_new.geometry.coords.clone(),
             grad_new.clone(),
             hessian.clone(),
             energy_diff,
@@ -1585,7 +1588,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             let checkpoint: checkpoint::Checkpoint = checkpoint::Checkpoint::new(
                 step,
                 &geometry,
-                &state1_new.geometry.coords,
+                &state_a_new.geometry.coords,
                 &hessian,
                 &opt_state,
                 &config,
@@ -1605,7 +1608,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        x_old = state1_new.geometry.coords.clone();
+        x_old = state_a_new.geometry.coords.clone();
     }
 
     // Clean up temporary files even if optimization didn't converge
@@ -1637,6 +1640,7 @@ fn manage_orca_wavefunction_files(
     config: &config::Config,
     geometry: &geometry::Geometry,
     job_dir: &str,
+    naming: &omecp::naming::FileNaming,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Only manage files for ORCA program
     if config.program != config::QMProgram::Orca {
@@ -1657,8 +1661,8 @@ fn manage_orca_wavefunction_files(
 
     if delete_gbw {
         // Delete .gbw files for noread mode (following Python logic)
-        let gbw_a = format!("{}/{}_state_A.gbw", job_dir, step);
-        let gbw_b = format!("{}/{}_state_B.gbw", job_dir, step);
+        let gbw_a = naming.step_state_a_gbw(job_dir, step);
+        let gbw_b = naming.step_state_b_gbw(job_dir, step);
 
         if Path::new(&gbw_a).exists() {
             validation::log_file_operation("Delete", &gbw_a, None, print_level);
@@ -1676,11 +1680,11 @@ fn manage_orca_wavefunction_files(
         }
     } else {
         // Rename .gbw files for reuse (more efficient than copying)
-        let gbw_a = format!("{}/{}_state_A.gbw", job_dir, step);
-        let gbw_b = format!("{}/{}_state_B.gbw", job_dir, step);
+        let gbw_a = naming.step_state_a_gbw(job_dir, step);
+        let gbw_b = naming.step_state_b_gbw(job_dir, step);
 
         if Path::new(&gbw_a).exists() {
-            let dest_a = format!("{}/state_A.gbw", job_dir);
+            let dest_a = naming.state_a_gbw(job_dir);
 
             // Remove existing destination file if it exists
             if Path::new(&dest_a).exists() {
@@ -1695,7 +1699,7 @@ fn manage_orca_wavefunction_files(
             }
         }
         if Path::new(&gbw_b).exists() {
-            let dest_b = format!("{}/state_B.gbw", job_dir);
+            let dest_b = naming.state_b_gbw(job_dir);
 
             // Remove existing destination file if it exists
             if Path::new(&dest_b).exists() {
@@ -1861,12 +1865,12 @@ fn run_pes_scan(
                     qm.read_output(
                         Path::new(&format!("job_dir/{}_A.{}", converged_step, output_ext)),
                         &geometry,
-                        config.state1,
+                        config.state_a,
                     ),
                     qm.read_output(
                         Path::new(&format!("job_dir/{}_B.{}", converged_step, output_ext)),
                         &geometry,
-                        config.state2,
+                        config.state_b,
                     ),
                 ) {
                     (Ok(state_a), Ok(state_b)) => (state_a.energy, state_b.energy),
@@ -2233,17 +2237,17 @@ fn run_single_optimization(
         let pre_header_a = build_raw_program_header(
             config,
             config.charge,
-            config.mult1,
-            &config.td1,
-            config.state1,
+            config.mult_state_a,
+            &config.td_state_a,
+            config.state_a,
             "a.chk",
         );
         let pre_header_b = build_raw_program_header(
             config,
             config.charge,
-            config.mult2,
-            &config.td2,
-            config.state2,
+            config.mult_state_b,
+            &config.td_state_b,
+            config.state_b,
             "b.chk",
         );
 
@@ -2335,16 +2339,16 @@ fn run_single_optimization(
     let header_a = io::build_program_header(
         config,
         config.charge,
-        config.mult1,
-        &config.td1,
-        config.state1,
+        config.mult_state_a,
+        &config.td_state_a,
+        config.state_a,
     );
     let header_b = io::build_program_header(
         config,
         config.charge,
-        config.mult2,
-        &config.td2,
-        config.state2,
+        config.mult_state_b,
+        &config.td_state_b,
+        config.state_b,
     );
 
     // For Normal mode, we start from step 0 but with checkpoint reading enabled
@@ -2364,18 +2368,18 @@ fn run_single_optimization(
 
     for step in 0..config.max_steps {
         let output_ext = get_output_file_base(config.program);
-        let state1 = qm.read_output(
+        let state_a = qm.read_output(
             Path::new(&format!("job_dir/{}_A.{}", step, output_ext)),
             &geometry,
-            config.state1,
+            config.state_a,
         )?;
-        let state2 = qm.read_output(
+        let state_b = qm.read_output(
             Path::new(&format!("job_dir/{}_B.{}", step, output_ext)),
             &geometry,
-            config.state2,
+            config.state_b,
         )?;
 
-        let grad = optimizer::compute_mecp_gradient(&state1, &state2, fixed_atoms);
+        let grad = optimizer::compute_mecp_gradient(&state_a, &state_b, fixed_atoms);
 
         let x_new = if !constraints.is_empty() {
             println!("Using Lagrange multiplier constrained optimization");
@@ -2423,7 +2427,7 @@ fn run_single_optimization(
                 let adaptive_scale = if step == 0 {
                     1.0
                 } else {
-                    let energy_current = state1.energy - state2.energy;
+                    let energy_current = state_a.energy - state_b.energy;
                     let energy_previous =
                         opt_state.energy_history.back().unwrap_or(&energy_current);
                     optimizer::compute_adaptive_scale(
@@ -2453,21 +2457,21 @@ fn run_single_optimization(
         qm.run_calculation(Path::new(&step_b_path))?;
 
         let output_ext = get_output_file_base(config.program);
-        let state1_new = qm.read_output(
+        let state_a_new = qm.read_output(
             Path::new(&format!("job_dir/{}_A.{}", step + 1, output_ext)),
             &geometry,
-            config.state1,
+            config.state_a,
         )?;
-        let state2_new = qm.read_output(
+        let state_b_new = qm.read_output(
             Path::new(&format!("job_dir/{}_B.{}", step + 1, output_ext)),
             &geometry,
-            config.state2,
+            config.state_b,
         )?;
-        let grad_new = optimizer::compute_mecp_gradient(&state1_new, &state2_new, fixed_atoms);
+        let grad_new = optimizer::compute_mecp_gradient(&state_a_new, &state_b_new, fixed_atoms);
 
         let conv = optimizer::check_convergence(
-            state1_new.energy,
-            state2_new.energy,
+            state_a_new.energy,
+            state_b_new.energy,
             &x_old,
             &x_new,
             &grad_new,
@@ -2475,7 +2479,7 @@ fn run_single_optimization(
         );
 
         // Compute current values for display
-        let de = (state1_new.energy - state2_new.energy).abs();
+        let de = (state_a_new.energy - state_b_new.energy).abs();
         let disp_vec = &x_new - &x_old;
         let rms_disp = disp_vec.norm() / (disp_vec.len() as f64).sqrt();
         let max_disp = disp_vec.iter().map(|x| x.abs()).fold(0.0, f64::max);
@@ -2508,14 +2512,14 @@ fn run_single_optimization(
         let sk = &x_new - &x_old;
         let yk = &grad_new - &grad;
         hessian = optimizer::update_hessian_psb(&hessian, &sk, &yk);
-        let energy_diff = state1_new.energy - state2_new.energy;
+        let energy_diff = state_a_new.energy - state_b_new.energy;
         opt_state.add_to_history(
-            state1_new.geometry.coords.clone(),
+            state_a_new.geometry.coords.clone(),
             grad_new.clone(),
             hessian.clone(),
             energy_diff,
         );
-        x_old = state1_new.geometry.coords.clone();
+        x_old = state_a_new.geometry.coords.clone();
     }
 
     Ok(())
@@ -2582,16 +2586,16 @@ fn run_lst_interpolation(
     let header_a = io::build_program_header(
         config,
         config.charge,
-        config.mult1,
-        &config.td1,
-        config.state1,
+        config.mult_state_a,
+        &config.td_state_a,
+        config.state_a,
     );
     let header_b = io::build_program_header(
         config,
         config.charge,
-        config.mult2,
-        &config.td2,
-        config.state2,
+        config.mult_state_b,
+        &config.td_state_b,
+        config.state_b,
     );
 
     // Write input files
@@ -2646,7 +2650,7 @@ fn run_lst_interpolation(
                 match qm.read_output(
                     Path::new(&format!("job_dir/{}_A.{}", num, output_ext)),
                     geom,
-                    config.state1,
+                    config.state_a,
                 ) {
                     Ok(state_a) => {
                         energies_a.push(state_a.energy);
@@ -2673,7 +2677,7 @@ fn run_lst_interpolation(
                 match qm.read_output(
                     Path::new(&format!("job_dir/{}_B.{}", num, output_ext)),
                     geom,
-                    config.state2,
+                    config.state_b,
                 ) {
                     Ok(state_b) => {
                         energies_b.push(state_b.energy);
@@ -3134,8 +3138,8 @@ fn run_pre_point_bagel(
         geometry,
         &input_data.config.bagel_model,
         "job_dir/pre_B.json",
-        input_data.config.mult2 as i32,
-        input_data.config.state2,
+        input_data.config.mult_state_b as i32,
+        input_data.config.state_b,
         &geometry.elements,
     )?;
 
@@ -3143,8 +3147,8 @@ fn run_pre_point_bagel(
         geometry,
         &input_data.config.bagel_model,
         "job_dir/pre_A.json",
-        input_data.config.mult1 as i32,
-        input_data.config.state1,
+        input_data.config.mult_state_a as i32,
+        input_data.config.state_a,
         &geometry.elements,
     )?;
 
@@ -3357,8 +3361,8 @@ fn run_bagel_step(
         geometry,
         &config.bagel_model,
         &step_name_a,
-        config.mult1 as i32,
-        config.state1,
+        config.mult_state_a as i32,
+        config.state_a,
         elements,
     )?;
 
@@ -3366,8 +3370,8 @@ fn run_bagel_step(
         geometry,
         &config.bagel_model,
         &step_name_b,
-        config.mult2 as i32,
-        config.state2,
+        config.mult_state_b as i32,
+        config.state_b,
         elements,
     )?;
 
@@ -3408,16 +3412,16 @@ fn run_restart(
     let header_a = io::build_program_header(
         &config,
         config.charge,
-        config.mult1,
-        &config.td1,
-        config.state1,
+        config.mult_state_a,
+        &config.td_state_a,
+        config.state_a,
     );
     let header_b = io::build_program_header(
         &config,
         config.charge,
-        config.mult2,
-        &config.td2,
-        config.state2,
+        config.mult_state_b,
+        &config.td_state_b,
+        config.state_b,
     );
 
     // Continue optimization from the next step
@@ -3446,19 +3450,19 @@ fn run_restart(
         qm.run_calculation(Path::new(&step_name_b))?;
 
         let output_ext = get_output_file_base(config.program);
-        let state1 = qm.read_output(
+        let state_a = qm.read_output(
             Path::new(&format!("job_dir/{}_A.{}", step, output_ext)),
             &geometry,
-            config.state1,
+            config.state_a,
         )?;
-        let state2 = qm.read_output(
+        let state_b = qm.read_output(
             Path::new(&format!("job_dir/{}_B.{}", step, output_ext)),
             &geometry,
-            config.state2,
+            config.state_b,
         )?;
 
         // Compute MECP gradient
-        let grad = optimizer::compute_mecp_gradient(&state1, &state2, fixed_atoms);
+        let grad = optimizer::compute_mecp_gradient(&state_a, &state_b, fixed_atoms);
 
         // Choose optimizer
         let x_new = if !constraints.is_empty() {
@@ -3546,8 +3550,8 @@ fn run_restart(
 
         // Check convergence
         let conv = optimizer::check_convergence(
-            state1.energy,
-            state2.energy,
+            state_a.energy,
+            state_b.energy,
             &x_old,
             &x_new,
             &grad,
@@ -3555,7 +3559,7 @@ fn run_restart(
         );
 
         // Compute current values for display
-        let de = (state1.energy - state2.energy).abs();
+        let de = (state_a.energy - state_b.energy).abs();
         let disp_vec = &x_new - &x_old;
         let rms_disp = disp_vec.norm() / (disp_vec.len() as f64).sqrt();
         let max_disp = disp_vec.iter().map(|x| x.abs()).fold(0.0, f64::max);
@@ -3565,7 +3569,7 @@ fn run_restart(
         // Print energy and convergence status
         println!(
             "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
-            state1.energy, state2.energy, de
+            state_a.energy, state_b.energy, de
         );
         print_convergence_status(&conv, de, rms_grad, max_grad, rms_disp, max_disp, &config);
 
@@ -3644,16 +3648,16 @@ fn run_coordinate_driving(
     let header_a = io::build_program_header(
         config,
         config.charge,
-        config.mult1,
-        &config.td1,
-        config.state1,
+        config.mult_state_a,
+        &config.td_state_a,
+        config.state_a,
     );
     let header_b = io::build_program_header(
         config,
         config.charge,
-        config.mult2,
-        &config.td2,
-        config.state2,
+        config.mult_state_b,
+        &config.td_state_b,
+        config.state_b,
     );
 
     // Run calculations along the path
@@ -3685,12 +3689,12 @@ fn run_coordinate_driving(
         let state_a = qm.read_output(
             Path::new(&format!("job_dir/drive_{}_A.{}", step, output_ext)),
             geom,
-            config.state1,
+            config.state_a,
         )?;
         let state_b = qm.read_output(
             Path::new(&format!("job_dir/drive_{}_B.{}", step, output_ext)),
             geom,
-            config.state2,
+            config.state_b,
         )?;
 
         energies_a.push(state_a.energy);
@@ -3787,16 +3791,16 @@ fn run_path_optimization(
     let header_a = io::build_program_header(
         config,
         config.charge,
-        config.mult1,
-        &config.td1,
-        config.state1,
+        config.mult_state_a,
+        &config.td_state_a,
+        config.state_a,
     );
     let header_b = io::build_program_header(
         config,
         config.charge,
-        config.mult2,
-        &config.td2,
-        config.state2,
+        config.mult_state_b,
+        &config.td_state_b,
+        config.state_b,
     );
 
     // Run calculations along the optimized path
@@ -3828,12 +3832,12 @@ fn run_path_optimization(
         let state_a = qm.read_output(
             Path::new(&format!("job_dir/neb_{}_A.{}", step, output_ext)),
             geom,
-            config.state1,
+            config.state_a,
         )?;
         let state_b = qm.read_output(
             Path::new(&format!("job_dir/neb_{}_B.{}", step, output_ext)),
             geom,
-            config.state2,
+            config.state_b,
         )?;
 
         energies_a.push(state_a.energy);

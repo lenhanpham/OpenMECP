@@ -114,8 +114,8 @@ impl Default for Thresholds {
 /// - `program`: QM program to use (Gaussian, ORCA, etc.)
 /// - `nprocs`: Number of processors
 /// - `mem`: Memory allocation (e.g., "4GB")
-/// - `charge1`, `charge2`: Molecular charges for both states
-/// - `mult1`, `mult2`: Spin multiplicities for both states
+/// - `charge`: Molecular charge (shared for both states)
+/// - `mult_state_a`, `mult_state_b`: Spin multiplicities for states A and B
 ///
 /// # Optional Fields
 ///
@@ -136,10 +136,9 @@ impl Default for Thresholds {
 /// config.program = QMProgram::Gaussian;
 /// config.nprocs = 4;
 /// config.mem = "4GB".to_string();
-/// config.charge1 = 0;
-/// config.charge2 = 0;
-/// config.mult1 = 1;  // Singlet
-/// config.mult2 = 3;  // Triplet
+/// config.charge = 0;
+/// config.mult_state_a = 1;  // Singlet for state A
+/// config.mult_state_b = 3;  // Triplet for state B
 /// ```
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Config {
@@ -157,20 +156,20 @@ pub struct Config {
     pub mem: String,
     /// Charge for system
     pub charge: i32,
-    /// Spin multiplicity for state 1 (2S+1, where S is total spin)
-    pub mult1: usize,
-    /// Spin multiplicity for state 2
-    pub mult2: usize,
+    /// Spin multiplicity for state A (2S+1, where S is total spin)
+    pub mult_state_a: usize,
+    /// Spin multiplicity for state B
+    pub mult_state_b: usize,
     /// Quantum chemistry method and basis set (e.g., "B3LYP/6-31G*")
     pub method: String,
     /// Quantum chemistry program to use
     pub program: QMProgram,
     /// Execution mode for the calculation
     pub run_mode: RunMode,
-    /// TD-DFT keywords for state 1 (Gaussian format)
-    pub td1: String,
-    /// TD-DFT keywords for state 2 (Gaussian format)
-    pub td2: String,
+    /// TD-DFT keywords for state A (Gaussian format)
+    pub td_state_a: String,
+    /// TD-DFT keywords for state B (Gaussian format)
+    pub td_state_b: String,
     /// Use MP2 instead of DFT (if supported by QM program)
     pub mp2: bool,
     /// Target energy difference in eV (for FixDE mode)
@@ -199,10 +198,10 @@ pub struct Config {
     pub restart: bool,
     /// Path to custom QM interface JSON configuration
     pub custom_interface_file: String,
-    /// State index for TD-DFT state 1 (0 = ground state, 1+ = excited states)
-    pub state1: usize,
-    /// State index for TD-DFT state 2
-    pub state2: usize,
+    /// State index for TD-DFT state A (0 = ground state, 1+ = excited states)
+    pub state_a: usize,
+    /// State index for TD-DFT state B
+    pub state_b: usize,
     /// Reaction coordinate for path following
     pub drive_coordinate: String,
     /// Starting value for coordinate driving
@@ -254,13 +253,13 @@ impl Default for Config {
             nprocs: 1,
             mem: "1GB".to_string(),
             charge: 0,
-            mult1: 1,
-            mult2: 1,
+            mult_state_a: 1,
+            mult_state_b: 1,
             method: String::new(),
             program: QMProgram::Gaussian,
             run_mode: RunMode::Normal,
-            td1: String::new(),
-            td2: String::new(),
+            td_state_a: String::new(),
+            td_state_b: String::new(),
             mp2: false,
             fix_de: 0.0,
             scans: Vec::new(),
@@ -275,8 +274,8 @@ impl Default for Config {
             dispersion: String::new(),
             restart: false,
             custom_interface_file: String::new(),
-            state1: 0,
-            state2: 0,
+            state_a: 0,
+            state_b: 0,
             drive_coordinate: String::new(),
             drive_start: 0.0,
             drive_end: 0.0,

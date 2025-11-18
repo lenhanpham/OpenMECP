@@ -46,8 +46,8 @@
 //! nprocs = 4
 //! mem = 4GB
 //! charge = 0
-//! mult1 = 1
-//! mult2 = 3
+//! mult_state_a = 1  # or mult_a = 1
+//! mult_state_b = 3  # or mult_b = 3
 //! ```
 //!
 //! ## Optional Sections
@@ -877,8 +877,18 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "nprocs" => config.nprocs = value.parse().unwrap_or(1),
         "mem" => config.mem = value.to_string(),
         "charge" => config.charge = value.parse().unwrap_or(0),
-        "mult1" => config.mult1 = value.parse().unwrap_or(1),
-        "mult2" => config.mult2 = value.parse().unwrap_or(1),
+        // New keywords (preferred)
+        "mult_state_a" | "mult_a" => config.mult_state_a = value.parse().unwrap_or(1),
+        "mult_state_b" | "mult_b" => config.mult_state_b = value.parse().unwrap_or(1),
+        // Old keywords (deprecated, backward compatibility)
+        "mult1" => {
+            eprintln!("Warning: 'mult1' is deprecated. Please use 'mult_state_a' or 'mult_a' instead.");
+            config.mult_state_a = value.parse().unwrap_or(1);
+        }
+        "mult2" => {
+            eprintln!("Warning: 'mult2' is deprecated. Please use 'mult_state_b' or 'mult_b' instead.");
+            config.mult_state_b = value.parse().unwrap_or(1);
+        }
         "method" => config.method = value.to_string(),
         "program" => {
             config.program = match value.to_lowercase().as_str() {
@@ -898,8 +908,18 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
                 _ => RunMode::Normal,
             };
         }
-        "td1" => config.td1 = value.to_string(),
-        "td2" => config.td2 = value.to_string(),
+        // New keywords (preferred)
+        "td_state_a" | "td_a" => config.td_state_a = value.to_string(),
+        "td_state_b" | "td_b" => config.td_state_b = value.to_string(),
+        // Old keywords (deprecated, backward compatibility)
+        "td1" => {
+            eprintln!("Warning: 'td1' is deprecated. Please use 'td_state_a' or 'td_a' instead.");
+            config.td_state_a = value.to_string();
+        }
+        "td2" => {
+            eprintln!("Warning: 'td2' is deprecated. Please use 'td_state_b' or 'td_b' instead.");
+            config.td_state_b = value.to_string();
+        }
         "mp2" => config.mp2 = parse_bool(value),
         "max_steps" => config.max_steps = value.parse().unwrap_or(100),
         "max_step_size" => config.max_step_size = value.parse().unwrap_or(0.1),
@@ -1895,9 +1915,9 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(config.charge, 1);
 
-        // Test mult1 with inline comment
-        let result = parse_parameter("mult1 = 3 # triplet state", &mut config, &mut fixed_atoms);
+        // Test mult_state_a with inline comment
+        let result = parse_parameter("mult_state_a = 3 # triplet state", &mut config, &mut fixed_atoms);
         assert!(result.is_ok());
-        assert_eq!(config.mult1, 3);
+        assert_eq!(config.mult_state_a, 3);
     }
 }

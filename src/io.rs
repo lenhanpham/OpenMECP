@@ -287,7 +287,7 @@ fn build_gaussian_header_internal_with_chk(
 /// * `charge` - Molecular charge for the current state
 /// * `mult` - Spin multiplicity for the current state
 /// * `tail` - Additional ORCA keywords (tail section content)
-/// * `input_basename` - Basename of input file for .gbw paths (e.g., "compound_x" for "compound_x.inp")
+/// * `input_basename` - Full path prefix for .gbw files (e.g., "job_dir/compound_xyz_123")
 ///
 /// # Returns
 ///
@@ -321,7 +321,7 @@ pub fn build_orca_header(
 /// * `charge` - Molecular charge for the current state
 /// * `mult` - Spin multiplicity for the current state
 /// * `tail` - Additional ORCA keywords (tail section content)
-/// * `input_basename` - Basename of input file for .gbw paths (e.g., "calc" for "calc.inp")
+/// * `input_basename` - Full path prefix for .gbw files (e.g., "job_dir/compound_xyz_123")
 ///
 /// # Returns
 ///
@@ -347,11 +347,12 @@ fn build_orca_header_internal(
     };
 
     // Replace *** with proper .gbw file paths (following Python logic)
+    // input_basename should be the full path prefix (e.g., "job_dir/compound_xyz_123")
     let method_line = if method_line.contains("***") {
-        let gbw_file = if mult == config.mult1 {
-            format!("{}/state_A.gbw", input_basename)
+        let gbw_file = if mult == config.mult_state_a {
+            format!("{}_state_A.gbw", input_basename)
         } else {
-            format!("{}/state_B.gbw", input_basename)
+            format!("{}_state_B.gbw", input_basename)
         };
         method_line.replace("***", &gbw_file)
     } else {
@@ -635,8 +636,8 @@ pub fn build_program_header(
 /// config.method = "B3LYP def2-SVP".to_string();
 /// config.run_mode = RunMode::Read;
 ///
-/// // This will generate ORCA header with "calc/state_A.gbw" paths
-/// let header = io::build_program_header_with_basename(&config, 0, 1, "", 0, "calc");
+/// // This will generate ORCA header with "calc/compound_xyz_123_state_A.gbw" paths
+/// let header = io::build_program_header_with_basename(&config, 0, 1, "", 0, "calc/compound_xyz_123");
 /// ```
 pub fn build_program_header_with_basename(
     config: &crate::config::Config,
@@ -671,7 +672,7 @@ pub fn build_program_header_with_basename(
 /// * `td_or_tail` - TD-DFT keywords (Gaussian) or tail section content (ORCA)
 /// * `state` - State index for multi-reference calculations (BAGEL)
 /// * `chk_file` - Optional custom checkpoint file name. If None, uses default naming
-/// * `input_basename` - Optional basename of input file for ORCA .gbw paths (e.g., "calc" for "calc.inp")
+/// * `input_basename` - Optional full path prefix for ORCA .gbw files (e.g., "job_dir/compound_xyz_123")
 ///
 /// # Returns
 ///
@@ -696,7 +697,7 @@ pub fn build_program_header_with_chk(
     // Determine checkpoint file name
     let checkpoint_file = chk_file.unwrap_or(
         // Default checkpoint file names based on charge/mult
-        if mult == config.mult1 {
+        if mult == config.mult_state_a {
             "state_A.chk"
         } else {
             "state_B.chk"
@@ -1108,7 +1109,7 @@ mod tests {
         config.program = crate::config::QMProgram::Gaussian;
         config.method = "B3LYP".to_string();
         config.charge = 0;
-        config.mult1 = 1;
+        config.mult_state_a = 1;
         let header = build_program_header(&config, 0, 1, "", 0);
         assert!(header.contains("%chk=state_A.chk"));
         assert!(header.contains("%nprocshared="));
@@ -1141,8 +1142,8 @@ mod tests {
         config.method = "B3LYP def2-SVP".to_string();
         config.run_mode = crate::config::RunMode::Normal;
         config.charge = 0;
-        config.mult1 = 1;
-        config.mult2 = 3;
+        config.mult_state_a = 1;
+        config.mult_state_b = 3;
 
         // Test default behavior (should use "calc" as default basename)
         let header = build_program_header(&config, 0, 1, "", 0);

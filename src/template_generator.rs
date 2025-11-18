@@ -192,12 +192,12 @@ fn generate_template(_elements: Vec<String>, _coords: &Vec<f64>, geometry_path: 
 nprocs = 30 #processors
 mem = 120GB # memory to be used. change this into the maxcore value if you want to use ORCA
 method = n scf(maxcycle=500,xqc) uwb97xd/def2svpp scrf=(smd,solvent=acetonitrile) # your keywords line. It will be presented in the job files. Don't write guess=mix or stable=opt; they will be added automatically.
-td1 =  # keywords for TD-DFT of state A (only for Gaussian; please write it in the tail part for ORCA)
-td2 = # keywords for TD-DFT of state B (only for Gaussian; please write it in the tail part for ORCA)
+td_state_a =  # keywords for TD-DFT of state A (only for Gaussian; please write it in the tail part for ORCA). Can also use short form: td_a
+td_state_b = # keywords for TD-DFT of state B (only for Gaussian; please write it in the tail part for ORCA). Can also use short form: td_b
 mp2 = false #set true for MP2 or doubly hybrid calculation in Gaussian
 charge = 1
-mult1 = 3 # multiplicity of state A
-mult2 = 1 # multiplicity of state B
+mult_state_a = 3 # multiplicity of state A. Can also use short form: mult_a
+mult_state_b = 1 # multiplicity of state B. Can also use short form: mult_b
 mode = normal #normal; stable; read; inter_read; noread
 
 #This subset is optional. It controls the convergence threshols, and the details of the GDIIS algorithm. Shown here are the default values.
@@ -209,6 +209,8 @@ rms_g_thresh = 0.0005
 max_steps = 300
 max_step_size = 0.1
 max_history = 4
+use_gediis = false 
+use_hybrid_gediis = true  # only effective when use_gediis = true
 reduced_factor = 0.5 # the gdiis stepsize will be reduced by this factor when rms_gradient is close to converge
 
 # Optimization settings
@@ -224,8 +226,8 @@ xtb_comm = xtb
 bagel_comm = mpirun -np 36 /opt/bagel/bin/BAGEL
 bagel_model = model.inp
 
-#state1 = 0 #only set it for the multireference calculation using BAGEL
-#state2 = 1 #only set it for the multireference calculation using BAGEL
+#state_a = 0 #only set it for the multireference calculation using BAGEL
+#state_b = 1 #only set it for the multireference calculation using BAGEL
 
 #Between *geom and *, write the cartesian coordinate of your initial geometry (in angstrom)
 *geom

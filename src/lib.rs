@@ -130,8 +130,8 @@
 //! nprocs = 4
 //! mem = 4GB
 //! charge = 0
-//! mult1 = 1
-//! mult2 = 3
+//! mult_state_a = 1  # or mult_a = 1
+//! mult_state_b = 3  # or mult_b = 3
 //! ```
 //!
 //! # Examples
@@ -172,6 +172,8 @@ pub mod help;
 pub mod io;
 /// Linear synchronous transit interpolation
 pub mod lst;
+/// Dynamic file naming based on input file basename
+pub mod naming;
 pub mod optimizer;
 pub mod parser;
 /// PES scanning functionality

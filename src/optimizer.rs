@@ -276,8 +276,8 @@ pub fn solve_constrained_step(
 ///
 /// # Arguments
 ///
-/// * `state1` - Electronic state 1 (energy, forces, geometry)
-/// * `state2` - Electronic state 2 (energy, forces, geometry)
+/// * `state_a` - Electronic state 1 (energy, forces, geometry)
+/// * `state_b` - Electronic state 2 (energy, forces, geometry)
 /// * `fixed_atoms` - List of atom indices to fix during optimization (0-based)
 ///
 /// # Returns
@@ -293,19 +293,19 @@ pub fn solve_constrained_step(
 /// let mut opt_state = OptimizationState::new();
 /// let fixed_atoms = vec![0]; // Fix first atom
 ///
-/// // let gradient = compute_mecp_gradient(&state1, &state2, &[], &mut opt_state, &fixed_atoms);
-/// // assert_eq!(gradient.len(), state1.geometry.num_atoms * 3);
+/// // let gradient = compute_mecp_gradient(&state_a, &state_b, &[], &mut opt_state, &fixed_atoms);
+/// // assert_eq!(gradient.len(), state_a.geometry.num_atoms * 3);
 /// ```
 pub fn compute_mecp_gradient(
-    state1: &State,
-    state2: &State,
+    state_a: &State,
+    state_b: &State,
     fixed_atoms: &[usize],
 ) -> DVector<f64> {
     // CRITICAL: Match Python MECP.py force sign convention
     // Python extracts forces as positive values from Gaussian output, then NEGATES them
     // before MECP gradient computation (see getG() function in MECP.py)
-    let f1 = -state1.forces.clone();  // NEGATE to match Python algorithm
-    let f2 = -state2.forces.clone();  // NEGATE to match Python algorithm
+    let f1 = -state_a.forces.clone();  // NEGATE to match Python algorithm
+    let f2 = -state_b.forces.clone();  // NEGATE to match Python algorithm
 
     // Gradient difference
     let x_vec = &f1 - &f2;
@@ -322,7 +322,7 @@ pub fn compute_mecp_gradient(
     };
 
     // Energy difference component
-    let de = state1.energy - state2.energy;
+    let de = state_a.energy - state_b.energy;
     let f_vec = x_norm.clone() * de;
 
     // Perpendicular component
@@ -1264,20 +1264,20 @@ mod tests {
         let forces2 = DVector::from_vec(vec![0.2, 0.3, 0.4, 0.5, 0.6, 0.7]);
 
         // Create states with positive forces (as extracted from Gaussian)
-        let state1 = State {
+        let state_a = State {
             geometry: geometry.clone(),
             energy: -100.0,
             forces: forces1,
         };
 
-        let state2 = State {
+        let state_b = State {
             geometry,
             energy: -99.0,
             forces: forces2,
         };
 
         // Compute MECP gradient
-        let gradient = compute_mecp_gradient(&state1, &state2, &[]);
+        let gradient = compute_mecp_gradient(&state_a, &state_b, &[]);
 
         // Verify that forces were properly negated
         // The gradient should reflect NEGATED forces (matching Python behavior)
@@ -1290,8 +1290,8 @@ mod tests {
         assert!(gradient.norm() > 1e-10);
 
         // Manual verification: compute expected gradient with negated forces
-        let expected_f1 = -state1.forces;  // Python negates forces
-        let expected_f2 = -state2.forces;  // Python negates forces
+        let expected_f1 = -state_a.forces;  // Python negates forces
+        let expected_f2 = -state_b.forces;  // Python negates forces
 
         let x_vec = &expected_f1 - &expected_f2;
         let x_norm = if x_vec.norm().abs() < 1e-10 {
@@ -1301,7 +1301,7 @@ mod tests {
             &x_vec / x_vec.norm()
         };
 
-        let de = state1.energy - state2.energy;
+        let de = state_a.energy - state_b.energy;
         let expected_f_vec = x_norm.clone() * de;
         let dot = expected_f1.dot(&x_norm);
         let expected_g_vec = &expected_f1 - &x_norm * dot;
@@ -1325,19 +1325,19 @@ mod tests {
         // ZERO forces for both states
         let forces = DVector::from_vec(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
 
-        let state1 = State {
+        let state_a = State {
             geometry: geometry.clone(),
             energy: -100.0,
             forces: forces.clone(),
         };
 
-        let state2 = State {
+        let state_b = State {
             geometry,
             energy: -100.0,  // Same energy
             forces: forces.clone(),
         };
 
-        let gradient = compute_mecp_gradient(&state1, &state2, &[]);
+        let gradient = compute_mecp_gradient(&state_a, &state_b, &[]);
 
         // With zero forces and same energies, gradient should be zero
         assert!(gradient.norm() < 1e-10,

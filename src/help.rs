@@ -141,19 +141,19 @@ pub const KEYWORDS: &[Keyword] = &[
         required: false,
     },
     Keyword {
-        name: "mult1",
+        name: "mult_state_a (or mult_a)",
         category: KeywordCategory::Required,
-        description: "Spin multiplicity for the first electronic state (2S+1, where S is spin)",
+        description: "Spin multiplicity for state A (2S+1, where S is spin)",
         default_value: Some("1"),
-        example: Some("mult1 = 1  # Singlet\nmult1 = 3  # Triplet"),
+        example: Some("mult_state_a = 1  # Singlet\nmult_a = 3  # Triplet"),
         required: false,
     },
     Keyword {
-        name: "mult2",
+        name: "mult_state_b (or mult_b)",
         category: KeywordCategory::Required,
-        description: "Spin multiplicity for the second electronic state",
+        description: "Spin multiplicity for state B",
         default_value: Some("1"),
-        example: Some("mult2 = 1  # Singlet\nmult2 = 3  # Triplet"),
+        example: Some("mult_state_b = 1  # Singlet\nmult_b = 3  # Triplet"),
         required: false,
     },
     Keyword {
@@ -175,19 +175,19 @@ pub const KEYWORDS: &[Keyword] = &[
 
     // OPTIONAL PARAMETERS
     Keyword {
-        name: "td1",
+        name: "td_state_a (or td_a)",
         category: KeywordCategory::Optional,
-        description: "TD-DFT keywords for first state (Gaussian only, specified in *tail1 for ORCA)",
+        description: "TD-DFT keywords for state A (Gaussian only, specified in *tail1 for ORCA)",
         default_value: Some("\".\""),
-        example: Some("td1 = \"nstates=10\""),
+        example: Some("td_state_a = \"nstates=10\"\ntd_a = \"nstates=10\""),
         required: false,
     },
     Keyword {
-        name: "td2",
+        name: "td_state_b (or td_b)",
         category: KeywordCategory::Optional,
-        description: "TD-DFT keywords for second state (Gaussian only, specified in *tail2 for ORCA)",
+        description: "TD-DFT keywords for state B (Gaussian only, specified in *tail2 for ORCA)",
         default_value: Some("\".\""),
-        example: Some("td2 = \"nstates=10\""),
+        example: Some("td_state_b = \"nstates=10\"\ntd_b = \"nstates=10\""),
         required: false,
     },
     Keyword {
@@ -207,19 +207,19 @@ pub const KEYWORDS: &[Keyword] = &[
         required: false,
     },
     Keyword {
-        name: "state1",
+        name: "state_a",
         category: KeywordCategory::Optional,
-        description: "State index for multireference calculations in BAGEL (0-based)",
+        description: "State index for multireference calculations in BAGEL (0-based) for state A",
         default_value: Some("0"),
-        example: Some("state1 = 0"),
+        example: Some("state_a = 0"),
         required: false,
     },
     Keyword {
-        name: "state2",
+        name: "state_b",
         category: KeywordCategory::Optional,
-        description: "State index for multireference calculations in BAGEL (0-based)",
+        description: "State index for multireference calculations in BAGEL (0-based) for state B",
         default_value: Some("1"),
-        example: Some("state2 = 1"),
+        example: Some("state_b = 1"),
         required: false,
     },
 
@@ -993,8 +993,8 @@ pub fn print_examples() {
     println!("mem = 120GB");
     println!("method = n scf(maxcycle=500,xqc) uwb97xd/def2svpp scrf=(smd,solvent=acetonitrile)");
     println!("charge = 1");
-    println!("mult1 = 3");
-    println!("mult2 = 1");
+    println!("mult_state_a = 3  # or mult_a = 3");
+    println!("mult_state_b = 1  # or mult_b = 1");
     println!("mode = normal");
     println!();
     println!("# Optional convergence thresholds");
@@ -1060,7 +1060,7 @@ pub fn print_examples() {
     println!("  - Use smaller max_step_size");
     println!();
     println!("• Wrong spin state:");
-    println!("  - Check mult1 and mult2 values");
+    println!("  - Check mult_state_a and mult_state_b values");
     println!("  - Use inter_read mode in Gaussian");
     println!();
     println!("• Large systems:");

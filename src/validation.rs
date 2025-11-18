@@ -390,11 +390,11 @@ fn validate_run_mode_requirements(config: &Config) -> ValidationResult<()> {
     match config.run_mode {
         RunMode::InterRead => {
             // Inter-read mode is specifically for open-shell singlets
-            if config.mult1 != 1 || config.mult2 != 1 {
-                println!("Warning: Inter-read mode is typically used for open-shell singlet calculations (mult1=1, mult2=1)");
+            if config.mult_state_a != 1 || config.mult_state_b != 1 {
+                println!("Warning: Inter-read mode is typically used for open-shell singlet calculations (mult_state_a=1, mult_state_b=1)");
                 println!(
-                    "Current multiplicities: mult1={}, mult2={}",
-                    config.mult1, config.mult2
+                    "Current multiplicities: mult_state_a={}, mult_state_b={}",
+                    config.mult_state_a, config.mult_state_b
                 );
             }
         }

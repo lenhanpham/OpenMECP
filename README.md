@@ -197,8 +197,8 @@ method = B3LYP/6-31G*
 nprocs = 4
 mem = 4GB
 charge = 0
-mult1 = 1
-mult2 = 3
+mult_a = 1
+mult_b = 3
 ```
 
 ### 3. Get Help
@@ -261,8 +261,6 @@ The configuration file uses INI format with the following sections:
 # Output file extensions for different QM programs
 gaussian = log
 orca = out
-xtb = out
-bagel = json
 custom = log
 
 [general]
@@ -387,14 +385,14 @@ H  1.2  0.0  0.5
 ### Required Keywords
 
 | Keyword   | Type    | Description                  | Example            |
-| --------- | ------- | ---------------------------- | ------------------ |
+|-----------|---------|------------------------------|--------------------|
 | `program` | string  | QM program to use            | `gaussian`, `orca` |
 | `method`  | string  | QM method and basis set      | `B3LYP/6-31G*`     |
 | `nprocs`  | integer | Number of processors         | `4`                |
 | `mem`     | string  | Memory allocation            | `4GB` `4000`       |
 | `charge`  | integer | Molecular charge             | `0`                |
-| `mult1`   | integer | Spin multiplicity of state 1 | `1`                |
-| `mult2`   | integer | Spin multiplicity of state 2 | `3`                |
+| `mult_a`  | integer | Spin multiplicity of state A | `1`                |
+| `mult_b`  | integer | Spin multiplicity of state B | `3`                |
 
 **Note**: method and mem should be specific for Gaussian and Orca. For example: 
 
@@ -414,16 +412,16 @@ H  1.2  0.0  0.5
 ### Optional Keywords
 
 | Keyword                 | Type    | Default    | Description                                               |
-| ----------------------- | ------- | ---------- | --------------------------------------------------------- |
-| `td1`                   | string  | `""`       | TD-DFT keywords for state 1                               |
-| `td2`                   | string  | `""`       | TD-DFT keywords for state 2                               |
+|-------------------------|---------|------------|-----------------------------------------------------------|
+| `td_a`                  | string  | `""`       | TD-DFT keywords for state 1                               |
+| `td_b`                  | string  | `""`       | TD-DFT keywords for state 2                               |
 | `mode`                  | string  | `normal`   | Run mode (see [Run Modes](#run-modes))                    |
 | `max_steps`             | integer | `100`      | Maximum optimization steps                                |
 | `max_step_size`         | float   | `0.1`      | Maximum step size (Bohr)                                  |
 | `fixedatoms`            | string  | `""`       | Fixed atom indices (e.g., `1,3-5,7`)                      |
 | `fix_de`                | float   | `0.0`      | Target energy difference (eV)                             |
-| `state1`                | integer | `0`        | Excited state index for state 1 (TD-DFT)                  |
-| `state2`                | integer | `0`        | Excited state index for state 2 (TD-DFT)                  |
+| `state_a`               | integer | `0`        | Excited state index for state 1 (TD-DFT)                  |
+| `state_b`               | integer | `0`        | Excited state index for state 2 (TD-DFT)                  |
 | `use_gediis`            | boolean | `false`    | Use GEDIIS optimizer instead of GDIIS                     |
 | `switch_step`           | integer | `3`        | Step to switch from BFGS to DIIS optimizers               |
 | `drive_type`            | string  | `""`       | Coordinate type for driving (`bond`, `angle`, `dihedral`) |
@@ -541,8 +539,8 @@ Example: `s d 1 2 3 4 0 36 10` (scan from 0° to 350°)
 ```
 program = gaussian
 method = B3LYP/6-31G*
-td1 = TD(nstates=5,root=1)
-td2 = TD(nstates=5,root=2)
+td_a = TD(nstates=5,root=1)
+td_b = TD(nstates=5,root=2)
 ```
 
 **Output Files**: `.log` files in `running_dir/` directory
@@ -638,8 +636,8 @@ mode = inter_read
 
 ```
 mode = inter_read
-mult1 = 1    # Open-shell singlet
-mult2 = 3    # Triplet reference
+mult_a = 1    # Open-shell singlet
+mult_b = 3    # Triplet reference
 ```
 
 ## Advanced Features
@@ -740,10 +738,10 @@ Automatically activated after 3 BFGS steps:
 Choose specific excited states for TD-DFT calculations:
 
 ```
-state1 = 1    # Use first excited state for state 1
-state2 = 2    # Use second excited state for state 2
-td1 = TD(nstates=5,root=1)
-td2 = TD(nstates=5,root=2)
+state_a = 1    # Use first excited state for state 1
+state_b = 2    # Use second excited state for state 2
+td_a = TD(nstates=5,root=1)
+td_b = TD(nstates=5,root=2)
 ```
 
 **Use Cases**:
@@ -955,8 +953,8 @@ method = B3LYP/6-31G*
 nprocs = 4
 mem = 4GB
 charge = 0
-mult1 = 1
-mult2 = 3
+mult_a = 1
+mult_b = 3
 ```
 
 ### Example 2: TD-DFT Excited States
@@ -983,13 +981,13 @@ H      1.907848    2.992783    1.956802
 
 program = gaussian
 method = B3LYP/6-31G*
-td1 = TD(nstates=5,root=1)
-td2 = TD(nstates=5,root=2)
+td_a = TD(nstates=5,root=1)
+td_b = TD(nstates=5,root=2)
 nprocs = 8
 mem = 8GB
 charge = 0
-mult1 = 1
-mult2 = 1
+mult_a = 1
+mult_b = 1
 ```
 
 ### Example 3: Open-Shell Singlet with ORCA
@@ -1036,8 +1034,8 @@ mode = inter_read
 nprocs = 8
 mem = 8GB
 charge = 0
-mult1 = 1
-mult2 = 3
+mult_a = 1
+mult_b = 3
 ```
 
 ### Example 4: PES Scan with Constraints
@@ -1065,8 +1063,8 @@ method = B3LYP/6-31G*
 nprocs = 4
 mem = 4GB
 charge = 0
-mult1 = 1
-mult2 = 3
+mult_a = 1
+mult_b = 3
 ```
 
 ### Example 5: LST Interpolation
@@ -1095,8 +1093,8 @@ method = B3LYP/6-31G*
 nprocs = 4
 mem = 4GB
 charge = 0
-mult1 = 1
-mult2 = 3
+mult_a = 1
+mult_b = 3
 ```
 
 ### Example 6: GEDIIS Optimizer
@@ -1121,8 +1119,8 @@ method = B3LYP/6-31G*
 nprocs = 4
 mem = 4GB
 charge = 0
-mult1 = 1
-mult2 = 3
+mult_a = 1
+mult_b = 3
 use_gediis = true
 switch_step = 5
 ```
@@ -1149,13 +1147,13 @@ program = gaussian
 method = B3LYP/6-31G*
 td1 = TD(nstates=5,root=1)
 td2 = TD(nstates=5,root=2)
-state1 = 1
-state2 = 2
+state_a = 1
+state_b = 2
 nprocs = 8
 mem = 8GB
 charge = 0
-mult1 = 1
-mult2 = 1
+mult_a = 1
+mult_b = 1
 ```
 
 ### Example 8: Optimizer Switching Control
@@ -1181,8 +1179,8 @@ method = B3LYP/6-31G*
 nprocs = 4
 mem = 4GB
 charge = 0
-mult1 = 1
-mult2 = 3
+mult_a = 1
+mult_b = 3
 switch_step = 0      # Pure DIIS mode (fastest)
 use_gediis = true    # Use enhanced GEDIIS optimizer
 ```
@@ -1210,8 +1208,8 @@ method = B3LYP/6-31G*
 nprocs = 4
 mem = 4GB
 charge = 0
-mult1 = 1
-mult2 = 3
+mult_a = 1
+mult_b = 3
 run_mode = coordinate_drive
 drive_type = bond
 drive_atoms = 1,2
@@ -1243,8 +1241,8 @@ method = B3LYP/6-31G*
 nprocs = 4
 mem = 4GB
 charge = 0
-mult1 = 1
-mult2 = 3
+mult_a = 1
+mult_b = 3
 run_mode = fix_de
 fix_de = 0.1
 ```
@@ -1267,8 +1265,8 @@ method = B3LYP/6-31G*
 nprocs = 4
 mem = 4GB
 charge = 0
-mult1 = 1
-mult2 = 3
+mult_a = 1
+mult_b = 3
 ```
 
 **my_molecule.xyz**:
@@ -1307,8 +1305,8 @@ method = ONIOM
 nprocs = 4
 mem = 4GB
 charge = 0
-mult1 = 1
-mult2 = 3
+mult_a = 1
+mult_b = 3
 oniom_layer_info = H,L
 charge_and_mult_oniom1 = 0 1 H 0 1 L
 charge_and_mult_oniom2 = 0 3 H 0 3 L
@@ -1350,8 +1348,8 @@ method = B3LYP/6-31G*
 nprocs = 4
 mem = 4GB
 charge = 0
-mult1 = 1
-mult2 = 3
+mult_a = 1
+mult_b = 3
 ```
 
 ## Troubleshooting

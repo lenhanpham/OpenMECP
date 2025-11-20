@@ -209,14 +209,15 @@ rms_g_thresh = 0.0005
 max_steps = 300
 max_step_size = 0.1
 max_history = 4
-use_gediis = false 
-use_hybrid_gediis = true  # only effective when use_gediis = true
+
+
 reduced_factor = 0.5 # the gdiis stepsize will be reduced by this factor when rms_gradient is close to converge
 
 # Optimization settings
 switch_step = 3
-use_gediis = false
-use_hybrid_gediis = true  # 50% GDIIS + 50% GEDIIS (matches Python)
+use_gediis = false 
+use_hybrid_gediis = true  # only effective when use_gediis = true
+smart_history = false # experimental and false by default; smart_history may speed up convergence in several cases
 
 # This subset controls which program you are using, and how to call them
 program = gaussian  #gaussian, orca, xtb, bagel

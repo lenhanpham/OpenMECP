@@ -674,9 +674,27 @@ impl QMInterface for OrcaInterface {
                 if parts.len() >= 4 {
                     let atomic_num: usize = parts[0].parse().unwrap_or(0);
                     elements.push(atomic_number_to_symbol(atomic_num));
-                    geom_coords.push(parts[1].parse::<f64>().unwrap_or(0.0));
-                    geom_coords.push(parts[2].parse::<f64>().unwrap_or(0.0));
-                    geom_coords.push(parts[3].parse::<f64>().unwrap_or(0.0));
+                    geom_coords.push(parts[1].parse::<f64>().map_err(|_| {
+                        QMError::Parse(format!(
+                            "Invalid coordinate x in {}: {}",
+                            engrad_path.display(),
+                            line
+                        ))
+                    })?);
+                    geom_coords.push(parts[2].parse::<f64>().map_err(|_| {
+                        QMError::Parse(format!(
+                            "Invalid coordinate y in {}: {}",
+                            engrad_path.display(),
+                            line
+                        ))
+                    })?);
+                    geom_coords.push(parts[3].parse::<f64>().map_err(|_| {
+                        QMError::Parse(format!(
+                            "Invalid coordinate z in {}: {}",
+                            engrad_path.display(),
+                            line
+                        ))
+                    })?);
                 }
             } else if in_forces
                 && line
@@ -685,7 +703,15 @@ impl QMInterface for OrcaInterface {
                     .next()
                     .is_some_and(|c| c.is_ascii_digit() || c == '-')
             {
-                forces.push(-line.trim().parse::<f64>().unwrap_or(0.0));
+                let val = line.trim().parse::<f64>().map_err(|e| {
+                    QMError::Parse(format!(
+                        "Failed to parse gradient value '{}' in {}: {}",
+                        line.trim(),
+                        engrad_path.display(),
+                        e
+                    ))
+                })?;
+                forces.push(-val);
             }
         }
 

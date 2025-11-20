@@ -617,8 +617,14 @@ fn print_configuration(
     println!("  Memory:                     {}", input_config.mem);
     println!("  Processors:                 {}", input_config.nprocs);
     println!("  Charge of system:           {}", input_config.charge);
-    println!("  Multiplicity (State A):     {}", input_config.mult_state_a);
-    println!("  Multiplicity (State B):     {}", input_config.mult_state_b);
+    println!(
+        "  Multiplicity (State A):     {}",
+        input_config.mult_state_a
+    );
+    println!(
+        "  Multiplicity (State B):     {}",
+        input_config.mult_state_b
+    );
     println!("  Run Mode:                   {:?}", input_config.run_mode);
 
     if !input_config.td_state_a.is_empty() {
@@ -633,15 +639,47 @@ fn print_configuration(
         "  Max Step Size (Bohr):       {}",
         input_config.max_step_size
     );
-    println!("  Max History:                {} {}", input_config.max_history, if input_config.max_history == 5 { "(default)" } else { "" });
+    println!(
+        "  Max History:                {} {}",
+        input_config.max_history,
+        if input_config.max_history == 5 {
+            "(default)"
+        } else {
+            ""
+        }
+    );
     println!();
     println!("  Optimizers:");
-    println!("    Use GEDIIS:               {}", if input_config.use_gediis { "true" } else { "false (default)" });
-    println!("    Use Hybrid GEDIIS:        {}", if input_config.use_hybrid_gediis { "true (default)" } else { "false" });
+    println!(
+        "    Use GEDIIS:               {}",
+        if input_config.use_gediis {
+            "true"
+        } else {
+            "false (default)"
+        }
+    );
+    println!(
+        "    Use Hybrid GEDIIS:        {}",
+        if input_config.use_hybrid_gediis {
+            "true (default)"
+        } else {
+            "false"
+        }
+    );
     println!("    Switch Step:              {}", input_config.switch_step);
     println!("    BFGS Rho:                 {}", input_config.bfgs_rho);
-    println!("    Reduced Factor:           {}", input_config.reduced_factor);
-    println!("    Print Checkpoint:         {}", if input_config.print_checkpoint { "true (default)" } else { "false" });
+    println!(
+        "    Reduced Factor:           {}",
+        input_config.reduced_factor
+    );
+    println!(
+        "    Print Checkpoint:         {}",
+        if input_config.print_checkpoint {
+            "true (default)"
+        } else {
+            "false"
+        }
+    );
 
     if !input_config.bagel_model.is_empty() {
         println!("  BAGEL Model:                {}", input_config.bagel_model);
@@ -665,7 +703,14 @@ fn print_configuration(
     if has_advanced_params {
         println!();
         println!("Advanced Parameters:");
-        println!("  MP2 Method:               {}", if input_config.mp2 { "true" } else { "false (default)" });
+        println!(
+            "  MP2 Method:               {}",
+            if input_config.mp2 {
+                "true"
+            } else {
+                "false (default)"
+            }
+        );
         if input_config.fix_de != 0.0 {
             println!("  Fix ΔE (eV):              {} eV", input_config.fix_de);
         } else {
@@ -681,7 +726,10 @@ fn print_configuration(
             println!("  Dispersion:               {}", input_config.dispersion);
         }
         if !input_config.program_commands.is_empty() {
-            println!("  Program Commands:         {} custom commands", input_config.program_commands.len());
+            println!(
+                "  Program Commands:         {} custom commands",
+                input_config.program_commands.len()
+            );
         }
     }
 
@@ -689,13 +737,23 @@ fn print_configuration(
     println!();
     println!("File Management:");
     println!("  Checkpoint File:          <job_name>.json (auto-generated from input filename)");
-    println!("  Restart Mode:             {}", if input_config.restart { "true" } else { "false (default)" });
+    println!(
+        "  Restart Mode:             {}",
+        if input_config.restart {
+            "true"
+        } else {
+            "false (default)"
+        }
+    );
 
     // Scanning section
     println!();
     println!("Scanning:");
     if input_config.scans.is_empty() {
-        println!("  Number of Scans:          {} (default)", input_config.scans.len());
+        println!(
+            "  Number of Scans:          {} (default)",
+            input_config.scans.len()
+        );
     } else {
         println!("  Number of Scans:          {}", input_config.scans.len());
         for (i, scan) in input_config.scans.iter().enumerate() {
@@ -1138,54 +1196,26 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
             config::QMProgram::Orca => {
                 if print_level >= 1 {
-                    println!("Renaming ORCA wavefunction files...");
+                    println!("Checking ORCA wavefunction files...");
                 }
                 let pre_a_gbw = naming.pre_a_gbw(job_dir);
                 let pre_b_gbw = naming.pre_b_gbw(job_dir);
-                let state_a_gbw = naming.state_a_gbw(job_dir);
-                let state_b_gbw = naming.state_b_gbw(job_dir);
 
-                // Rename ORCA files (more efficient than copying)
-                if Path::new(&pre_a_gbw).exists() && Path::new(&pre_b_gbw).exists() {
-                    // Remove existing destination files if they exist
-                    if Path::new(&state_a_gbw).exists() {
-                        validation::log_file_operation("Delete", &state_a_gbw, None, print_level);
-                        std::fs::remove_file(&state_a_gbw)?;
-                    }
-                    if Path::new(&state_b_gbw).exists() {
-                        validation::log_file_operation("Delete", &state_b_gbw, None, print_level);
-                        std::fs::remove_file(&state_b_gbw)?;
-                    }
-
-                    // Rename the files
-                    validation::log_file_operation(
-                        "Rename",
-                        &pre_a_gbw,
-                        Some(&state_a_gbw),
-                        print_level,
-                    );
-                    std::fs::rename(&pre_a_gbw, &state_a_gbw)?;
-                    validation::log_file_operation(
-                        "Rename",
-                        &pre_b_gbw,
-                        Some(&state_b_gbw),
-                        print_level,
-                    );
-                    std::fs::rename(&pre_b_gbw, &state_b_gbw)?;
-
-                    if print_level >= 1 {
-                        println!(
-                            "✓ ORCA wavefunction files renamed: {} -> {}, {} -> {}",
-                            pre_a_gbw, state_a_gbw, pre_b_gbw, state_b_gbw
-                        );
-                    }
-                } else {
+                // We DO NOT rename files here anymore. We use chain-linking logic.
+                if !Path::new(&pre_a_gbw).exists() || !Path::new(&pre_b_gbw).exists() {
                     return Err(format!(
                         "Error: ORCA wavefunction files not found after pre-point calculations.\n\
                          Expected: {} and {}\n\
                          Pre-point calculations may have failed. Please check the calculation setup.",
                         pre_a_gbw, pre_b_gbw
                     ).into());
+                }
+
+                if print_level >= 1 {
+                    println!(
+                        "✓ ORCA wavefunction files found: {} and {}",
+                        pre_a_gbw, pre_b_gbw
+                    );
                 }
             }
             config::QMProgram::Xtb => {
@@ -1213,26 +1243,52 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         config.run_mode = config::RunMode::Read;
 
         // Rebuild headers with read mode (includes force + guess=read)
-        header_a = io::build_program_header_with_chk(
-            &config,
-            config.charge,
-            config.mult_state_a,
-            &config.td_state_a,
-            config.state_a,
-            Some(&naming.state_a_chk()),
-            Some(job_dir),
-        );
+        // Rebuild headers with read mode (includes force + guess=read)
+        if config.program == config::QMProgram::Orca {
+            // For Orca, initial calculations must point to PRE-POINT GBW files
+            let pre_a_gbw = naming.pre_a_gbw(job_dir);
+            let pre_b_gbw = naming.pre_b_gbw(job_dir);
 
-        header_b = io::build_program_header_with_chk(
-            &config,
-            config.charge,
-            config.mult_state_b,
-            &config.td_state_b,
-            config.state_b,
-            Some(&naming.state_b_chk()),
-            Some(job_dir),
-        );
+            header_a = io::build_program_header_with_chk(
+                &config,
+                config.charge,
+                config.mult_state_a,
+                &config.td_state_a,
+                config.state_a,
+                Some(&pre_a_gbw),
+                Some(job_dir),
+            );
 
+            header_b = io::build_program_header_with_chk(
+                &config,
+                config.charge,
+                config.mult_state_b,
+                &config.td_state_b,
+                config.state_b,
+                Some(&pre_b_gbw),
+                Some(job_dir),
+            );
+        } else {
+            header_a = io::build_program_header_with_chk(
+                &config,
+                config.charge,
+                config.mult_state_a,
+                &config.td_state_a,
+                config.state_a,
+                Some(&naming.state_a_chk()),
+                Some(job_dir),
+            );
+
+            header_b = io::build_program_header_with_chk(
+                &config,
+                config.charge,
+                config.mult_state_b,
+                &config.td_state_b,
+                config.state_b,
+                Some(&naming.state_b_chk()),
+                Some(job_dir),
+            );
+        }
         println!("Headers rebuilt for read mode with force and guess=read");
     } else if original_run_mode == config::RunMode::Stable
         || original_run_mode == config::RunMode::InterRead
@@ -1256,24 +1312,51 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         config.run_mode = config::RunMode::Read;
 
         // Rebuild headers with new run mode (read mode)
-        header_a = io::build_program_header_with_basename(
-            &config,
-            config.charge,
-            config.mult_state_a,
-            &config.td_state_a,
-            config.state_a,
-            &naming.orca_basename(job_dir),
-        );
+        // Rebuild headers with new run mode (read mode)
+        if config.program == config::QMProgram::Orca {
+            // For Orca, initial calculations must point to PRE-POINT GBW files
+            let pre_a_gbw = naming.pre_a_gbw(job_dir);
+            let pre_b_gbw = naming.pre_b_gbw(job_dir);
 
-        header_b = io::build_program_header_with_basename(
-            &config,
-            config.charge,
-            config.mult_state_b,
-            &config.td_state_b,
-            config.state_b,
-            &naming.orca_basename(job_dir),
-        );
+            header_a = io::build_program_header_with_chk(
+                &config,
+                config.charge,
+                config.mult_state_a,
+                &config.td_state_a,
+                config.state_a,
+                Some(&pre_a_gbw),
+                Some(job_dir),
+            );
 
+            header_b = io::build_program_header_with_chk(
+                &config,
+                config.charge,
+                config.mult_state_b,
+                &config.td_state_b,
+                config.state_b,
+                Some(&pre_b_gbw),
+                Some(job_dir),
+            );
+        } else {
+            // Gaussian/others use standard checkpoint naming
+            header_a = io::build_program_header_with_basename(
+                &config,
+                config.charge,
+                config.mult_state_a,
+                &config.td_state_a,
+                config.state_a,
+                &naming.orca_basename(job_dir),
+            );
+
+            header_b = io::build_program_header_with_basename(
+                &config,
+                config.charge,
+                config.mult_state_b,
+                &config.td_state_b,
+                config.state_b,
+                &naming.orca_basename(job_dir),
+            );
+        }
         println!("****Headers rebuilt for read mode****");
 
         // Handle stability mode post-processing (following Python MECP.py logic)
@@ -1349,8 +1432,35 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len());
 
     // Main optimization loop
-    for step in 0..config.max_steps {
-        println!("\n****Step {}****", step + 1);
+    for step in 1..=config.max_steps {
+        println!("\n****Step {}****", step);
+
+        // Rebuild headers for Orca to point to previous step gbw file (chain-linking)
+        if config.program == config::QMProgram::Orca {
+            // Step 1 should point to step 0, step 2 to step 1, etc.
+            let prev_a_gbw = naming.step_state_a_gbw(job_dir, step - 1);
+            let prev_b_gbw = naming.step_state_b_gbw(job_dir, step - 1);
+
+            header_a = io::build_program_header_with_chk(
+                &config,
+                config.charge,
+                config.mult_state_a,
+                &config.td_state_a,
+                config.state_a,
+                Some(&prev_a_gbw),
+                Some(job_dir),
+            );
+
+            header_b = io::build_program_header_with_chk(
+                &config,
+                config.charge,
+                config.mult_state_b,
+                &config.td_state_b,
+                config.state_b,
+                Some(&prev_b_gbw),
+                Some(job_dir),
+            );
+        }
 
         // Compute MECP gradient
         let mut grad = optimizer::compute_mecp_gradient(&state_a, &state_b, fixed_atoms);
@@ -1376,7 +1486,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                         &geometry,
                         constraints,
                         &opt_state.lambdas,
-                        step + 1,
+                        step,
                     );
                 }
                 Err(e) => {
@@ -1403,8 +1513,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 println!(
                     "Using BFGS optimizer (step {} < switch point {})",
-                    step + 1,
-                    config.switch_step
+                    step, config.switch_step
                 );
             }
             // BFGS uses fixed rho in Python, no adaptive scaling
@@ -1414,23 +1523,21 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             if config.use_hybrid_gediis {
                 println!(
                     "Using Hybrid GEDIIS optimizer (50% GDIIS + 50% GEDIIS) (step {} >= switch point {})",
-                    step + 1,
+                    step,
                     config.switch_step
                 );
                 optimizer::hybrid_gediis_step(&opt_state, &config)
             } else {
                 println!(
                     "Using Pure GEDIIS optimizer (step {} >= switch point {})",
-                    step + 1,
-                    config.switch_step
+                    step, config.switch_step
                 );
                 optimizer::gediis_step(&opt_state, &config)
             }
         } else {
             println!(
                 "Using GDIIS optimizer (step {} >= switch point {})",
-                step + 1,
-                config.switch_step
+                step, config.switch_step
             );
             optimizer::gdiis_step(&opt_state, &config)
         };
@@ -1443,8 +1550,8 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             config::QMProgram::Gaussian | config::QMProgram::Orca | config::QMProgram::Custom => {
                 // Standard Gaussian/ORCA workflow
                 let ext = get_input_file_extension(config.program);
-                let step_name_a = naming.step_state_a(job_dir, step + 1, ext);
-                let step_name_b = naming.step_state_b(job_dir, step + 1, ext);
+                let step_name_a = naming.step_state_a(job_dir, step, ext);
+                let step_name_b = naming.step_state_b(job_dir, step, ext);
 
                 qm.write_input(
                     &geometry,
@@ -1467,7 +1574,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 // XTB-specific workflow
                 run_xtb_step(
                     &geometry,
-                    step + 1,
+                    step,
                     &header_a,
                     &header_b,
                     &input_data.tail1,
@@ -1477,25 +1584,19 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
             config::QMProgram::Bagel => {
                 // BAGEL-specific workflow
-                run_bagel_step(
-                    &geometry,
-                    step + 1,
-                    &config,
-                    &geometry.elements,
-                    qm.as_ref(),
-                )?;
+                run_bagel_step(&geometry, step, &config, &geometry.elements, qm.as_ref())?;
             }
         }
 
         // Read output files based on program type
         let output_ext = get_output_file_base(config.program);
         let state_a_new = qm.read_output(
-            Path::new(&naming.step_state_a(job_dir, step + 1, output_ext)),
+            Path::new(&naming.step_state_a(job_dir, step, output_ext)),
             &geometry,
             config.state_a,
         )?;
         let state_b_new = qm.read_output(
-            Path::new(&naming.step_state_b(job_dir, step + 1, output_ext)),
+            Path::new(&naming.step_state_b(job_dir, step, output_ext)),
             &geometry,
             config.state_b,
         )?;
@@ -1504,10 +1605,11 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         geometry.coords = state_a_new.geometry.coords.clone();
 
         // Manage ORCA wavefunction files (following Python MECP.py logic)
-        manage_orca_wavefunction_files(step + 1, &config, &geometry, job_dir, &naming)?;
+        manage_orca_wavefunction_files(step, &config, &geometry, job_dir, &naming)?;
 
         // Compute new gradient for Hessian update
-        let mut grad_new = optimizer::compute_mecp_gradient(&state_a_new, &state_b_new, fixed_atoms);
+        let mut grad_new =
+            optimizer::compute_mecp_gradient(&state_a_new, &state_b_new, fixed_atoms);
 
         // Apply constraint forces to new gradient as well
         if !constraints.is_empty() {
@@ -1557,7 +1659,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         print_convergence_status(&conv, de, rms_grad, max_grad, rms_disp, max_disp, &config);
 
         if conv.is_converged() {
-            println!("\nConverged at step {}", step + 1);
+            println!("\nConverged at step {}", step);
             let final_xyz = naming.final_mecp_xyz();
             io::write_xyz(&geometry, Path::new(&final_xyz))?;
             println!("Final geometry saved to {}", final_xyz);
@@ -1600,7 +1702,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         // Periodic cleanup during optimization to prevent file accumulation
         let cleanup_freq: u32 = cleanup_manager.config().cleanup_frequency();
-        if cleanup_freq > 0 && (step + 1) % cleanup_freq as usize == 0 {
+        if cleanup_freq > 0 && step % cleanup_freq as usize == 0 {
             println!(
                 "Performing periodic cleanup (every {} steps)...",
                 cleanup_freq
@@ -1621,22 +1723,6 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Err("Maximum steps exceeded".into())
 }
 
-/// Manages ORCA wavefunction files (.gbw) based on run mode.
-///
-/// This function implements the Python MECP.py logic for ORCA wavefunction file management:
-/// - NoRead mode: Deletes .gbw files to prevent reuse
-/// - Normal/Read modes: Renames .gbw files for reuse in subsequent calculations (more efficient than copying)
-/// - Writes XYZ files for ORCA (following Python logic)
-///
-/// # Arguments
-///
-/// * `step` - Current optimization step number
-/// * `config` - Configuration containing run mode and program settings
-/// * `geometry` - Current molecular geometry for XYZ file writing
-///
-/// # Returns
-///
-/// Returns `Ok(())` on success, or an error if file operations fail.
 fn manage_orca_wavefunction_files(
     step: usize,
     config: &config::Config,
@@ -1681,38 +1767,18 @@ fn manage_orca_wavefunction_files(
             }
         }
     } else {
-        // Rename .gbw files for reuse (more efficient than copying)
+        // WE DO NOT RENAME HERE ANYMORE.
+        // We keep the step-specific files for chain-linking.
+        // Just log that they exist.
         let gbw_a = naming.step_state_a_gbw(job_dir, step);
         let gbw_b = naming.step_state_b_gbw(job_dir, step);
 
-        if Path::new(&gbw_a).exists() {
-            let dest_a = naming.state_a_gbw(job_dir);
-
-            // Remove existing destination file if it exists
-            if Path::new(&dest_a).exists() {
-                validation::log_file_operation("Delete", &dest_a, None, print_level);
-                std::fs::remove_file(&dest_a)?;
+        if print_level >= 2 {
+            if Path::new(&gbw_a).exists() {
+                println!("Kept {} for chain-linking", gbw_a);
             }
-
-            validation::log_file_operation("Rename", &gbw_a, Some(&dest_a), print_level);
-            std::fs::rename(&gbw_a, &dest_a)?;
-            if print_level >= 1 {
-                println!("Renamed {} → {}", gbw_a, dest_a);
-            }
-        }
-        if Path::new(&gbw_b).exists() {
-            let dest_b = naming.state_b_gbw(job_dir);
-
-            // Remove existing destination file if it exists
-            if Path::new(&dest_b).exists() {
-                validation::log_file_operation("Delete", &dest_b, None, print_level);
-                std::fs::remove_file(&dest_b)?;
-            }
-
-            validation::log_file_operation("Rename", &gbw_b, Some(&dest_b), print_level);
-            std::fs::rename(&gbw_b, &dest_b)?;
-            if print_level >= 1 {
-                println!("Renamed {} → {}", gbw_b, dest_b);
+            if Path::new(&gbw_b).exists() {
+                println!("Kept {} for chain-linking", gbw_b);
             }
         }
     }
@@ -1973,7 +2039,7 @@ fn create_scan_constraint(scan_type: &config::ScanType, value: f64) -> constrain
 /// # Returns
 ///
 /// Returns a tuple of (converged_step, final_geometry) on successful convergence.
-#[allow(clippy::too_many_arguments)]
+
 fn execute_pes_scan_point(
     config: &config::Config,
     geometry: &mut geometry::Geometry,
@@ -2211,7 +2277,6 @@ fn build_raw_program_header(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_single_optimization(
     config: &config::Config,
     geometry: &mut geometry::Geometry,
@@ -2353,7 +2418,7 @@ fn run_single_optimization(
         config.state_b,
     );
 
-    // For Normal mode, we start from step 0 but with checkpoint reading enabled
+    // For Normal mode, we start from step 1 but with checkpoint reading enabled
     // For other modes, this is the initial calculation
     let ext = get_input_file_extension(config.program);
     let initial_a_path = format!("{}/0_A.{}", job_dir, ext);
@@ -2368,15 +2433,17 @@ fn run_single_optimization(
     let mut x_old = geometry.coords.clone();
     let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len());
 
-    for step in 0..config.max_steps {
+    for step in 1..=config.max_steps {
         let output_ext = get_output_file_base(config.program);
+        // Read from previous step (0 for first iteration, step-1 for subsequent iterations)
+        let prev_step = if step == 1 { 0 } else { step - 1 };
         let state_a = qm.read_output(
-            Path::new(&format!("job_dir/{}_A.{}", step, output_ext)),
+            Path::new(&format!("job_dir/{}_A.{}", prev_step, output_ext)),
             &geometry,
             config.state_a,
         )?;
         let state_b = qm.read_output(
-            Path::new(&format!("job_dir/{}_B.{}", step, output_ext)),
+            Path::new(&format!("job_dir/{}_B.{}", prev_step, output_ext)),
             &geometry,
             config.state_b,
         )?;
@@ -2426,7 +2493,7 @@ fn run_single_optimization(
             };
 
             if use_bfgs || !opt_state.has_enough_history() {
-                let adaptive_scale = if step == 0 {
+                let adaptive_scale = if step == 1 {
                     1.0
                 } else {
                     let energy_current = state_a.energy - state_b.energy;
@@ -2450,8 +2517,8 @@ fn run_single_optimization(
         geometry.coords = x_new.clone();
 
         let ext = get_input_file_extension(config.program);
-        let step_a_path = format!("job_dir/{}_A.{}", step + 1, ext);
-        let step_b_path = format!("job_dir/{}_B.{}", step + 1, ext);
+        let step_a_path = format!("job_dir/{}_A.{}", step, ext);
+        let step_b_path = format!("job_dir/{}_B.{}", step, ext);
 
         qm.write_input(geometry, &header_a, tail1, Path::new(&step_a_path))?;
         qm.write_input(geometry, &header_b, tail2, Path::new(&step_b_path))?;
@@ -2460,12 +2527,12 @@ fn run_single_optimization(
 
         let output_ext = get_output_file_base(config.program);
         let state_a_new = qm.read_output(
-            Path::new(&format!("job_dir/{}_A.{}", step + 1, output_ext)),
+            Path::new(&format!("job_dir/{}_A.{}", step, output_ext)),
             &geometry,
             config.state_a,
         )?;
         let state_b_new = qm.read_output(
-            Path::new(&format!("job_dir/{}_B.{}", step + 1, output_ext)),
+            Path::new(&format!("job_dir/{}_B.{}", step, output_ext)),
             &geometry,
             config.state_b,
         )?;
@@ -3429,8 +3496,8 @@ fn run_restart(
 
     // Continue optimization from the next step
     let start_step = step + 1;
-    for step in start_step..config.max_steps {
-        println!("\n****Step {}****", step + 1);
+    for step in start_step..=config.max_steps {
+        println!("\n****Step {}****", step);
 
         // Run calculations with current geometry
         let ext = get_input_file_extension(input_data.config.program);
@@ -3516,8 +3583,7 @@ fn run_restart(
                 } else {
                     println!(
                         "Using BFGS optimizer (step {} < switch point {})",
-                        step + 1,
-                        config.switch_step
+                        step, config.switch_step
                     );
                 }
                 // BFGS uses fixed rho in Python, no adaptive scaling
@@ -3526,23 +3592,21 @@ fn run_restart(
                 if config.use_hybrid_gediis {
                     println!(
                         "Using Hybrid GEDIIS optimizer (50% GDIIS + 50% GEDIIS) (step {} >= switch point {})",
-                        step + 1,
+                        step,
                         config.switch_step
                     );
                     optimizer::hybrid_gediis_step(&opt_state, &config)
                 } else {
                     println!(
                         "Using Pure GEDIIS optimizer (step {} >= switch point {})",
-                        step + 1,
-                        config.switch_step
+                        step, config.switch_step
                     );
                     optimizer::gediis_step(&opt_state, &config)
                 }
             } else {
                 println!(
                     "Using GDIIS optimizer (step {} >= switch point {})",
-                    step + 1,
-                    config.switch_step
+                    step, config.switch_step
                 );
                 optimizer::gdiis_step(&opt_state, &config)
             }

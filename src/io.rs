@@ -278,8 +278,9 @@ fn build_gaussian_header_internal_with_chk(
 
 /// Builds an ORCA input file header string with basename.
 ///
-/// This function requires a basename parameter for ORCA .gbw file paths.
-/// Use `build_program_header_with_basename()` for the recommended interface.
+/// This function constructs the header for an ORCA input file based on the
+/// provided configuration and state-specific parameters. It requires a
+/// basename for proper .gbw file path construction.
 ///
 /// # Arguments
 ///
@@ -287,11 +288,12 @@ fn build_gaussian_header_internal_with_chk(
 /// * `charge` - Molecular charge for the current state
 /// * `mult` - Spin multiplicity for the current state
 /// * `tail` - Additional ORCA keywords (tail section content)
-/// * `input_basename` - Full path prefix for .gbw files (e.g., "job_dir/compound_xyz_123")
+/// * `input_basename` - Full path prefix for .gbw files
 ///
 /// # Returns
 ///
 /// Returns a `String` containing the formatted ORCA input header.
+
 pub fn build_orca_header(
     config: &crate::config::Config,
     charge: i32,
@@ -306,32 +308,17 @@ pub fn build_orca_header(
     let mut temp_config = config.clone();
     temp_config.method = modified_method;
 
-    build_orca_header_internal(&temp_config, charge, mult, tail, input_basename)
+    build_orca_header_internal(&temp_config, charge, mult, tail, input_basename, None)
 }
 
-/// Internal ORCA header builder that doesn't modify the method string.
-///
-/// This function constructs the header for an ORCA input file based on the
-/// provided configuration and state-specific parameters. It assumes the method
-/// string has already been modified by `modify_method_for_run_mode()`.
-///
-/// # Arguments
-///
-/// * `config` - The global configuration with pre-modified method string
-/// * `charge` - Molecular charge for the current state
-/// * `mult` - Spin multiplicity for the current state
-/// * `tail` - Additional ORCA keywords (tail section content)
-/// * `input_basename` - Full path prefix for .gbw files (e.g., "job_dir/compound_xyz_123")
-///
-/// # Returns
-///
-/// Returns a `String` containing the formatted ORCA input header.
+
 fn build_orca_header_internal(
     config: &crate::config::Config,
     charge: i32,
     mult: usize,
     tail: &str,
     input_basename: &str,
+    chk_file: Option<&str>,
 ) -> String {
     // Use the method string as-is (already modified by modify_method_for_run_mode)
     let method_str = &config.method;
@@ -347,9 +334,12 @@ fn build_orca_header_internal(
     };
 
     // Replace *** with proper .gbw file paths (following Python logic)
-    // input_basename should be the full path prefix (e.g., "job_dir/compound_xyz_123")
+    // If chk_file is provided (e.g. for chain-linking steps), use it directly.
+    // Otherwise, fall back to constructing it from input_basename.
     let method_line = if method_line.contains("***") {
-        let gbw_file = if mult == config.mult_state_a {
+        let gbw_file = if let Some(chk) = chk_file {
+            chk.to_string()
+        } else if mult == config.mult_state_a {
             format!("{}_state_A.gbw", input_basename)
         } else {
             format!("{}_state_B.gbw", input_basename)
@@ -459,16 +449,20 @@ pub fn build_bagel_header(
 ///
 /// # Method Modification Logic
 ///
-/// 1. **Program-specific keywords** (always added):
+/// 1. **Syntax Correction** (added for ORCA):
+///    - Replaces Gaussian-style basis set separators (`/`) with spaces.
+///    - E.g., "B3LYP/6-31G*" -> "B3LYP 6-31G*"
+///
+/// 2. **Program-specific keywords** (always added):
 ///    - Gaussian: `force` (for gradient calculations)
 ///    - ORCA: `engrad` (for energy and gradient calculations)
 ///    - XTB/BAGEL: No modification needed
 ///
-/// 2. **Stability keywords** (added for `Stable` mode):
+/// 3. **Stability keywords** (added for `Stable` mode):
 ///    - Gaussian: `stable=opt` (perform stability analysis and reoptimize if unstable)
 ///    - ORCA: `%scf stabperform true StabRestartUHFifUnstable true end` (stability analysis)
 ///
-/// 3. **Guess keywords** (added for all modes except `NoRead`):
+/// 4. **Guess keywords** (added for all modes except `NoRead`):
 ///    - Gaussian: `guess=read` (read initial guess from checkpoint)
 ///    - ORCA: `!moread` with `%moinp "***"` (read molecular orbitals)
 ///
@@ -492,14 +486,10 @@ pub fn build_bagel_header(
 /// let modified = io::modify_method_for_run_mode("B3LYP/6-31G*", QMProgram::Gaussian, RunMode::Normal);
 /// assert_eq!(modified, "B3LYP/6-31G* force guess=read");
 ///
-/// // Stable mode with ORCA
-/// let modified = io::modify_method_for_run_mode("B3LYP def2-SVP", QMProgram::Orca, RunMode::Stable);
+/// // Normal mode with ORCA (handling Gaussian syntax)
+/// let modified = io::modify_method_for_run_mode("B3LYP/6-31G*", QMProgram::Orca, RunMode::Normal);
+/// assert!(modified.contains("B3LYP 6-31G*"));
 /// assert!(modified.contains("engrad"));
-/// assert!(modified.contains("stabperform"));
-///
-/// // NoRead mode (no guess keywords)
-/// let modified = io::modify_method_for_run_mode("B3LYP/6-31G*", QMProgram::Gaussian, RunMode::NoRead);
-/// assert_eq!(modified, "B3LYP/6-31G* force");
 /// ```
 pub fn modify_method_for_run_mode(
     method: &str,
@@ -507,6 +497,11 @@ pub fn modify_method_for_run_mode(
     run_mode: crate::config::RunMode,
 ) -> String {
     let mut modified_method = method.to_string();
+
+    // Fix Gaussian-style method/basis syntax (e.g., "B3LYP/6-31G*") for ORCA
+    if program == crate::config::QMProgram::Orca && modified_method.contains('/') {
+        modified_method = modified_method.replace('/', " ");
+    }
 
     // Add program-specific keywords (following Python MECP.py modifyMETHOD logic)
     match program {
@@ -658,25 +653,32 @@ pub fn build_program_header_with_basename(
     )
 }
 
-/// Builds a program-specific input file header string with custom checkpoint file name.
+/// Builds a program-specific input file header with custom checkpoint/GBW file support.
 ///
-/// This function creates headers for quantum chemistry programs with the ability to specify
-/// a custom checkpoint file name. It automatically applies method modifications based on the
-/// run mode (e.g., adding "force" and "guess=read" for read mode).
+/// This function generates headers for any supported QM program, allowing precise control
+/// over the checkpoint or wavefunction file usage. This is critical for:
+/// - Gaussian: Specifying the `%chk` file path.
+/// - ORCA: Specifying the `%moinp` file path for chain-linked restarts.
+///
+/// It automatically applies run-mode specific modifications (like `force`, `guess=read`,
+/// or `!moread`) to the method string.
 ///
 /// # Arguments
 ///
-/// * `config` - The global configuration for the MECP calculation
-/// * `charge` - Molecular charge for the current state
-/// * `mult` - Spin multiplicity for the current state
-/// * `td_or_tail` - TD-DFT keywords (Gaussian) or tail section content (ORCA)
-/// * `state` - State index for multi-reference calculations (BAGEL)
-/// * `chk_file` - Optional custom checkpoint file name. If None, uses default naming
-/// * `input_basename` - Optional full path prefix for ORCA .gbw files (e.g., "job_dir/compound_xyz_123")
+/// * `config` - The global configuration.
+/// * `charge` - Molecular charge.
+/// * `mult` - Spin multiplicity.
+/// * `td_or_tail` - TD-DFT keywords (Gaussian) or tail content (ORCA).
+/// * `state` - Electronic state index (for BAGEL).
+/// * `chk_file` - Optional custom checkpoint/GBW file path.
+///   - For Gaussian: Sets `%chk={chk_file}`.
+///   - For ORCA: Sets `%moinp "{chk_file}"` if `!moread` is active.
+/// * `input_basename` - Optional basename for default naming fallback (required for ORCA if chk_file is None).
 ///
 /// # Returns
 ///
-/// Returns a `String` containing the formatted input header for the specified program.
+/// Returns the formatted input header string.
+
 pub fn build_program_header_with_chk(
     config: &crate::config::Config,
     charge: i32,
@@ -715,7 +717,12 @@ pub fn build_program_header_with_chk(
         crate::config::QMProgram::Orca => {
             let basename =
                 input_basename.expect("ORCA requires input_basename parameter for .gbw file paths");
-            build_orca_header_internal(&temp_config, charge, mult, td_or_tail, basename)
+            // Pass chk_file explicitly to build_orca_header_internal.
+            // In Gaussian this parameter is 'checkpoint_file' (unwrapped), but for Orca
+            // we want the Option to allow fallback to basename logic if not provided.
+            // However, the 'checkpoint_file' variable above unwrap_or's it with "state_A.chk".
+            // We should pass the ORIGINAL chk_file option to Orca builder to preserve None.
+            build_orca_header_internal(&temp_config, charge, mult, td_or_tail, basename, chk_file)
         }
         crate::config::QMProgram::Xtb => build_xtb_header(&temp_config, charge, mult, td_or_tail),
         crate::config::QMProgram::Bagel => build_bagel_header(&temp_config, charge, mult, state),
@@ -1034,6 +1041,25 @@ mod tests {
         assert!(result.contains("B3LYP def2-SVP engrad"));
         assert!(result.contains("stabperform true"));
         assert!(result.contains("StabRestartUHFifUnstable true"));
+        assert!(result.contains("!moread"));
+    }
+
+    #[test]
+    fn test_modify_method_for_run_mode_orca_gaussian_syntax() {
+        // Test that ORCA method modification handles Gaussian syntax (e.g., "B3LYP/6-31G*")
+        
+        let result = modify_method_for_run_mode(
+            "B3LYP/6-31G*",
+            crate::config::QMProgram::Orca,
+            crate::config::RunMode::Normal,
+        );
+        
+        // Should replace / with space
+        assert!(result.contains("B3LYP 6-31G*"));
+        assert!(!result.contains("B3LYP/6-31G*"));
+        
+        // Should still add standard keywords
+        assert!(result.contains("engrad"));
         assert!(result.contains("!moread"));
     }
 

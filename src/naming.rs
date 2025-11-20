@@ -262,14 +262,20 @@ impl FileNaming {
     ///
     /// Format: `{job_dir}/{basename}_drive_{step}_{state}.{ext}`
     pub fn drive_file(&self, job_dir: &str, step: usize, state: &str, ext: &str) -> String {
-        format!("{}/{}_drive_{}_{}.{}", job_dir, self.basename, step, state, ext)
+        format!(
+            "{}/{}_drive_{}_{}.{}",
+            job_dir, self.basename, step, state, ext
+        )
     }
 
     /// Returns a NEB calculation file path
     ///
     /// Format: `{job_dir}/{basename}_neb_{step}_{state}.{ext}`
     pub fn neb_file(&self, job_dir: &str, step: usize, state: &str, ext: &str) -> String {
-        format!("{}/{}_neb_{}_{}.{}", job_dir, self.basename, step, state, ext)
+        format!(
+            "{}/{}_neb_{}_{}.{}",
+            job_dir, self.basename, step, state, ext
+        )
     }
 
     /// Returns the basename for ORCA gbw file references in input headers
@@ -299,7 +305,6 @@ impl FileNaming {
         format!("{}_mecp.xyz", self.basename)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

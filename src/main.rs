@@ -649,7 +649,7 @@ fn print_configuration(
         }
     );
     println!(
-    "  Smart History:            {}",
+        "  Smart History:              {}",
     if input_config.smart_history {
         "true (experimental)"
     } else {

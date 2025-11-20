@@ -1021,6 +1021,7 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "dispersion" => config.dispersion = value.to_string(),
         "restart" => config.restart = parse_bool(value),
         "print_checkpoint" => config.print_checkpoint = parse_bool(value),
+        "smart_history" => config.smart_history = parse_bool(value),
         "reduced_factor" => config.reduced_factor = value.parse().unwrap_or(0.5),
         "bfgs_rho" => config.bfgs_rho = value.parse().unwrap_or(15.0),
         _ => {}

@@ -648,6 +648,14 @@ fn print_configuration(
             ""
         }
     );
+    println!(
+    "  Smart History:            {}",
+    if input_config.smart_history {
+        "true (experimental)"
+    } else {
+        "false (default)"
+    }
+);
     println!();
     println!("  Optimizers:");
     println!(
@@ -1423,8 +1431,8 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let state_a = qm.read_output(Path::new(&initial_a_output), &geometry, config.state_a)?;
     let state_b = qm.read_output(Path::new(&initial_b_output), &geometry, config.state_b)?;
 
-    // FIX: Synchronize geometry from pre-point calculation
-    geometry.coords = state_a.geometry.coords.clone();
+    // NOTE: geometry already contains the correct initial geometry from input_data.geometry
+    // QM output geometry should match input geometry for single-point calculations
 
     // Initialize optimization
     let mut opt_state = optimizer::OptimizationState::new(config.max_history);
@@ -1522,11 +1530,11 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         } else if config.use_gediis {
             if config.use_hybrid_gediis {
                 println!(
-                    "Using Hybrid GEDIIS optimizer (50% GDIIS + 50% GEDIIS) (step {} >= switch point {})",
+                    "Using Smart Hybrid GEDIIS optimizer (adaptive) (step {} >= switch point {})",
                     step,
                     config.switch_step
                 );
-                optimizer::hybrid_gediis_step(&opt_state, &config)
+                optimizer::smart_hybrid_gediis_step(&opt_state, &config)
             } else {
                 println!(
                     "Using Pure GEDIIS optimizer (step {} >= switch point {})",
@@ -1601,8 +1609,10 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             config.state_b,
         )?;
 
-        // CRITICAL FIX: Update main geometry with the actual geometry from QM output
-        geometry.coords = state_a_new.geometry.coords.clone();
+        // NOTE: geometry.coords already contains x_new from the optimizer (line 1546)
+        // QM programs (ORCA, Gaussian) perform single-point calculations without
+        // changing geometry, so the geometry in their output should match the input.
+        // We do NOT overwrite geometry.coords here to avoid redundant operations.
 
         // Manage ORCA wavefunction files (following Python MECP.py logic)
         manage_orca_wavefunction_files(step, &config, &geometry, job_dir, &naming)?;
@@ -1680,10 +1690,11 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Add to history for GDIIS/GEDIIS
         let energy_diff = state_a_new.energy - state_b_new.energy;
         opt_state.add_to_history(
-            state_a_new.geometry.coords.clone(),
+            x_new.clone(),
             grad_new.clone(),
             hessian.clone(),
             energy_diff,
+            config.smart_history,
         );
 
         // Save checkpoint with dynamic filename based on input file (if enabled)
@@ -1692,7 +1703,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             let checkpoint: checkpoint::Checkpoint = checkpoint::Checkpoint::new(
                 step,
                 &geometry,
-                &state_a_new.geometry.coords,
+                &x_new,
                 &hessian,
                 &opt_state,
                 &config,
@@ -1712,7 +1723,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        x_old = state_a_new.geometry.coords.clone();
+        x_old = x_new.clone();
     }
 
     // Clean up temporary files even if optimization didn't converge
@@ -2587,6 +2598,7 @@ fn run_single_optimization(
             grad_new.clone(),
             hessian.clone(),
             energy_diff,
+            config.smart_history,
         );
         x_old = state_a_new.geometry.coords.clone();
     }
@@ -3591,11 +3603,11 @@ fn run_restart(
             } else if config.use_gediis {
                 if config.use_hybrid_gediis {
                     println!(
-                        "Using Hybrid GEDIIS optimizer (50% GDIIS + 50% GEDIIS) (step {} >= switch point {})",
+                        "Using Smart Hybrid GEDIIS optimizer (adaptive) (step {} >= switch point {})",
                         step,
                         config.switch_step
                     );
-                    optimizer::hybrid_gediis_step(&opt_state, &config)
+                    optimizer::smart_hybrid_gediis_step(&opt_state, &config)
                 } else {
                     println!(
                         "Using Pure GEDIIS optimizer (step {} >= switch point {})",

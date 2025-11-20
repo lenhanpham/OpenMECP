@@ -438,9 +438,10 @@ H  1.2  0.0  0.5
 | Keyword             | Type    | Default | Description                                    |
 | ------------------- | ------- | ------- | ---------------------------------------------- |
 | `use_gediis`        | boolean | `false` | Use GEDIIS optimizer instead of GDIIS          |
-| `use_hybrid_gediis` | boolean | `true`  | Use hybrid GDIIS/GEDIIS optimizer              |
+| `use_hybrid_gediis` | boolean | `false` | Use dynamic hybrid GDIIS/GEDIIS optimizer      |
 | `switch_step`       | integer | `3`     | Step to switch from BFGS to DIIS optimizers    |
 | `max_history`       | integer | `5`     | Max iterations used for DIIS extrapolation     |
+| `smart_history`     | boolean | `false` | Smart history instead of first in first out    |
 | `reduced_factor`    | float   | `0.5`   | Step size reduction factor for GDIIS           |
 | `bfgs_rho`          | float   | `15.0`  | Scaling factor for BFGS step size              |
 | `print_checkpoint`  | boolean | `false` | Enable/disable checkpoint JSON file generation |

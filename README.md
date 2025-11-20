@@ -540,6 +540,8 @@ The `switch_step` parameter provides full control over the optimizer switching s
    - Most stable but slower convergence
    - Recommended for very difficult optimizations
 
+4. **`smart_history`** can speed up MECP calculations for most of the cases 
+
 **Examples:**
 
 ```

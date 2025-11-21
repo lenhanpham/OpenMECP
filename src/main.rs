@@ -650,12 +650,12 @@ fn print_configuration(
     );
     println!(
         "  Smart History:              {}",
-    if input_config.smart_history {
-        "true (experimental)"
-    } else {
-        "false (default)"
-    }
-);
+        if input_config.smart_history {
+            "true (experimental)"
+        } else {
+            "false (default)"
+        }
+    );
     println!();
     println!("  Optimizers:");
     println!(
@@ -1174,11 +1174,12 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         // Check if both calculations succeeded
         let pre_calculations_successful = pre_a_result.is_ok() && pre_b_result.is_ok();
-        if pre_calculations_successful {
-            println!("✓ Pre-point calculations completed successfully");
-        } else {
+        if !pre_calculations_successful {
             println!("  Pre-point calculations failed - continuing without checkpoint files");
+            return Err("Pre-point calculations failed. Please check your QM program setup and input parameters.".into());
         }
+
+        println!("✓ Pre-point calculations completed successfully");
 
         // Check checkpoint files exactly like Python MECP.py
         match input_data.config.program {
@@ -1214,9 +1215,11 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                     return Err(format!(
                         "Error: ORCA wavefunction files not found after pre-point calculations.\n\
                          Expected: {} and {}\n\
-                         Pre-point calculations may have failed. Please check the calculation setup.",
+                         The pre-point calculations ran but did not produce .gbw files.\n\
+                         Please check the ORCA output files for errors.",
                         pre_a_gbw, pre_b_gbw
-                    ).into());
+                    )
+                    .into());
                 }
 
                 if print_level >= 1 {
@@ -1531,23 +1534,22 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             if config.use_hybrid_gediis {
                 println!(
                     "Using Smart Hybrid GEDIIS optimizer (adaptive) (step {} >= switch point {})",
-                    step,
-                    config.switch_step
+                    step, config.switch_step
                 );
-                optimizer::smart_hybrid_gediis_step(&opt_state, &config)
+                optimizer::smart_hybrid_gediis_step(&mut opt_state, &config)
             } else {
                 println!(
                     "Using Pure GEDIIS optimizer (step {} >= switch point {})",
                     step, config.switch_step
                 );
-                optimizer::gediis_step(&opt_state, &config)
+                optimizer::gediis_step(&mut opt_state, &config)
             }
         } else {
             println!(
                 "Using GDIIS optimizer (step {} >= switch point {})",
                 step, config.switch_step
             );
-            optimizer::gdiis_step(&opt_state, &config)
+            optimizer::gdiis_step(&mut opt_state, &config)
         };
 
         // Update geometry
@@ -1656,10 +1658,14 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Compute current values for display
         let de = (state_a_new.energy - state_b_new.energy).abs();
         let disp_vec = &x_new - &x_old;
-        let rms_disp = disp_vec.norm() / (disp_vec.len() as f64).sqrt();
+        let disp_norm = disp_vec.norm();
+        let rms_disp = disp_norm / (disp_vec.len() as f64).sqrt();
         let max_disp = disp_vec.iter().map(|x| x.abs()).fold(0.0, f64::max);
         let rms_grad = grad_new.norm() / (grad_new.len() as f64).sqrt();
         let max_grad = grad_new.iter().map(|x| x.abs()).fold(0.0, f64::max);
+
+        // Update stuck detection (adaptive step size)
+        opt_state.update_stuck_detection(disp_norm);
 
         // Print energy and convergence status
         println!(
@@ -1688,12 +1694,17 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         hessian = optimizer::update_hessian_psb(&hessian, &sk, &yk);
 
         // Add to history for GDIIS/GEDIIS
+        // CRITICAL FIX: Use QM-verified geometry, not optimizer prediction
+        // Even though single-point calcs don't optimize geometry, using state_a_new.geometry.coords
+        // ensures consistency and avoids any potential numerical drift
         let energy_diff = state_a_new.energy - state_b_new.energy;
         opt_state.add_to_history(
-            x_new.clone(),
+            state_a_new.geometry.coords.clone(),
             grad_new.clone(),
             hessian.clone(),
             energy_diff,
+            opt_state.lambdas.clone(),
+            opt_state.lambda_de,
             config.smart_history,
         );
 
@@ -1703,7 +1714,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             let checkpoint: checkpoint::Checkpoint = checkpoint::Checkpoint::new(
                 step,
                 &geometry,
-                &x_new,
+                &state_a_new.geometry.coords,
                 &hessian,
                 &opt_state,
                 &config,
@@ -1723,7 +1734,9 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        x_old = x_new.clone();
+        // CRITICAL FIX: Use QM-verified geometry for next iteration
+        // This ensures x_old matches what's in history and avoids drift
+        x_old = state_a_new.geometry.coords.clone();
     }
 
     // Clean up temporary files even if optimization didn't converge
@@ -2519,9 +2532,28 @@ fn run_single_optimization(
                 };
                 optimizer::bfgs_step(&x_old, &grad, &hessian, config, adaptive_scale)
             } else if config.use_gediis {
-                optimizer::gediis_step(&opt_state, config)
+                if config.use_hybrid_gediis {
+                    println!(
+                        "Using Smart Hybrid GEDIIS optimizer (adaptive) (step {} >= switch point {})",
+                        step, config.switch_step
+                    );
+                    optimizer::smart_hybrid_gediis_step(
+                        &mut opt_state,
+                        config,
+                    )
+                } else {
+                    println!(
+                        "Using Pure GEDIIS optimizer (step {} >= switch point {})",
+                        step, config.switch_step
+                    );
+                    optimizer::gediis_step(&mut opt_state, config)
+                }
             } else {
-                optimizer::gdiis_step(&opt_state, config)
+                println!(
+                    "Using GDIIS optimizer (step {} >= switch point {})",
+                    step, config.switch_step
+                );
+                optimizer::gdiis_step(&mut opt_state, config)
             }
         };
 
@@ -2598,6 +2630,8 @@ fn run_single_optimization(
             grad_new.clone(),
             hessian.clone(),
             energy_diff,
+            opt_state.lambdas.clone(),
+            opt_state.lambda_de,
             config.smart_history,
         );
         x_old = state_a_new.geometry.coords.clone();
@@ -3607,20 +3641,23 @@ fn run_restart(
                         step,
                         config.switch_step
                     );
-                    optimizer::smart_hybrid_gediis_step(&opt_state, &config)
+                    optimizer::smart_hybrid_gediis_step(
+                        &mut opt_state,
+                        &config,
+                    )
                 } else {
                     println!(
                         "Using Pure GEDIIS optimizer (step {} >= switch point {})",
                         step, config.switch_step
                     );
-                    optimizer::gediis_step(&opt_state, &config)
+                    optimizer::gediis_step(&mut opt_state, &config)
                 }
             } else {
                 println!(
                     "Using GDIIS optimizer (step {} >= switch point {})",
                     step, config.switch_step
                 );
-                optimizer::gdiis_step(&opt_state, &config)
+                optimizer::gdiis_step(&mut opt_state, &config)
             }
         };
 

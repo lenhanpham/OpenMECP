@@ -78,8 +78,18 @@ pub struct OptimizationState {
     pub hess_history: VecDeque<DMatrix<f64>>,
     /// History of energies or energy differences (for GEDIIS)
     pub energy_history: VecDeque<f64>,
+    /// History of displacement norms (for stuck detection)
+    pub displacement_history: VecDeque<f64>,
+    /// History of Lagrange multipliers (for GDIIS extrapolation)
+    pub lambda_history: VecDeque<Vec<f64>>,
+    /// History of energy difference Lagrange multiplier (for GDIIS extrapolation)
+    pub lambda_de_history: VecDeque<Option<f64>>,
     /// Maximum number of history entries to store
     pub max_history: usize,
+    /// Counter for consecutive stuck iterations (zero displacement)
+    pub stuck_count: usize,
+    /// Adaptive step size multiplier (starts at 1.0, reduces when stuck)
+    pub step_size_multiplier: f64,
 }
 
 impl Default for OptimizationState {
@@ -116,7 +126,35 @@ impl OptimizationState {
             grad_history: VecDeque::with_capacity(max_history),
             hess_history: VecDeque::with_capacity(max_history),
             energy_history: VecDeque::with_capacity(max_history),
+            displacement_history: VecDeque::with_capacity(max_history),
+            lambda_history: VecDeque::with_capacity(max_history),
+            lambda_de_history: VecDeque::with_capacity(max_history),
             max_history,
+            stuck_count: 0,
+            step_size_multiplier: 1.0,
+        }
+    }
+
+    /// Updates stuck counter and step size multiplier based on displacement
+    pub fn update_stuck_detection(&mut self, displacement_norm: f64) {
+        if displacement_norm < 1e-8 {
+            self.stuck_count += 1;
+            // Aggressively reduce step size when stuck
+            if self.stuck_count >= 3 {
+                self.step_size_multiplier *= 0.5;
+                self.step_size_multiplier = self.step_size_multiplier.max(0.01); // Min 1% of original
+                println!(
+                    "WARNING: Stuck for {} iterations, reducing step size multiplier to {:.3}",
+                    self.stuck_count, self.step_size_multiplier
+                );
+            }
+        } else {
+            // Reset when we start moving again
+            if self.stuck_count > 0 {
+                println!("Optimizer unstuck! Resetting step size multiplier to 1.0");
+                self.stuck_count = 0;
+                self.step_size_multiplier = 1.0;
+            }
         }
     }
 
@@ -174,14 +212,16 @@ impl OptimizationState {
         grad: DVector<f64>,
         hess: DMatrix<f64>,
         energy: f64,
-        smart_history: bool,
+        lambdas: Vec<f64>,
+        lambda_de: Option<f64>,
+        use_smart_history: bool,
     ) {
-        if smart_history {
+        if use_smart_history {
             // Smart history management: remove worst point
-            self.add_to_history_smart(geom, grad, hess, energy);
+            self.add_to_history_smart(geom, grad, hess, energy, lambdas, lambda_de);
         } else {
             // Traditional FIFO: remove oldest point
-            self.add_to_history_fifo(geom, grad, hess, energy);
+            self.add_to_history_fifo(geom, grad, hess, energy, lambdas, lambda_de);
         }
     }
 
@@ -194,17 +234,32 @@ impl OptimizationState {
         grad: DVector<f64>,
         hess: DMatrix<f64>,
         energy: f64,
+        lambdas: Vec<f64>,
+        lambda_de: Option<f64>,
     ) {
+        // Calculate displacement from previous geometry
+        let displacement = if let Some(last_geom) = self.geom_history.back() {
+            (&geom - last_geom).norm()
+        } else {
+            0.0 // First step has no previous geometry
+        };
+
         if self.geom_history.len() >= self.max_history {
             self.geom_history.pop_front();
             self.grad_history.pop_front();
             self.hess_history.pop_front();
             self.energy_history.pop_front();
+            self.displacement_history.pop_front();
+            self.lambda_history.pop_front();
+            self.lambda_de_history.pop_front();
         }
         self.geom_history.push_back(geom);
         self.grad_history.push_back(grad);
         self.hess_history.push_back(hess);
         self.energy_history.push_back(energy);
+        self.displacement_history.push_back(displacement);
+        self.lambda_history.push_back(lambdas);
+        self.lambda_de_history.push_back(lambda_de);
     }
 
     /// Smart history management (removes worst point based on scoring).
@@ -220,12 +275,24 @@ impl OptimizationState {
         grad: DVector<f64>,
         hess: DMatrix<f64>,
         energy: f64,
+        lambdas: Vec<f64>,
+        lambda_de: Option<f64>,
     ) {
+        // Calculate displacement from previous geometry
+        let displacement = if let Some(last_geom) = self.geom_history.back() {
+            (&geom - last_geom).norm()
+        } else {
+            0.0 // First step has no previous geometry
+        };
+
         // Always add the new point first
         self.geom_history.push_back(geom);
         self.grad_history.push_back(grad);
         self.hess_history.push_back(hess);
         self.energy_history.push_back(energy);
+        self.displacement_history.push_back(displacement);
+        self.lambda_history.push_back(lambdas);
+        self.lambda_de_history.push_back(lambda_de);
 
         // If not full yet, we're done
         if self.geom_history.len() <= self.max_history {
@@ -237,6 +304,9 @@ impl OptimizationState {
         let mut worst_idx = 0;
         let mut worst_score = f64::NEG_INFINITY;
 
+        // Get the most recent geometry (head) for locality check
+        let head_geom = &self.geom_history[n - 1];
+
         // Score each point: higher score = more deserving of removal
         for i in 0..n {
             let mut score = 0.0;
@@ -247,14 +317,15 @@ impl OptimizationState {
             let gap = self.energy_history[i].abs();
 
             // 1. MECP Gap Scoring (INVERTED LOGIC - smaller gap = lower score = keep)
+            // Tuned down from 1e6/1000 to allow removal if points are too old/distant
             if gap < 1e-4 {
-                // Extremely close to crossing - NEVER remove
-                score -= 1e6;
+                // Extremely close to crossing - strongly protect
+                score -= 500.0;
             } else if gap < 0.001 {
-                // Very close to crossing - strongly protect
-                score -= 1000.0;
+                // Very close to crossing - protect
+                score -= 200.0;
             } else if gap < 0.01 {
-                // Close to crossing - protect
+                // Close to crossing - mild protect
                 score -= 50.0;
             } else {
                 // Far from crossing - aggressively remove
@@ -274,15 +345,33 @@ impl OptimizationState {
                 let dist = (&self.geom_history[i] - other_geom).norm();
                 min_dist = min_dist.min(dist);
             }
-            // If distance < 0.03 Bohr (~0.016 Å), points are redundant
-            if min_dist < 0.03 {
-                score += 30.0; // Penalty for redundancy
+            // If distance < 0.01 Bohr (~0.005 Å), points are redundant
+            // Tighter threshold (was 0.03) to allow fine convergence
+            if min_dist < 0.01 {
+                score += 1e7; // MASSIVE Penalty for redundancy (overrides gap protection)
+            } else if min_dist < 0.05 {
+                score += 500.0; // Moderate penalty for crowding
             }
 
-            // 4. Age penalty: slight preference for newer points
-            // Newer points have higher index, so older points get small penalty
+            // 4. Locality Penalty: penalize points far from current geometry
+            // DIIS assumes a local quadratic region. Distant points hurt convergence.
+            let dist_to_head = (&self.geom_history[i] - head_geom).norm();
+            if dist_to_head > 0.1 {
+                score += 100.0 * dist_to_head; // e.g. 0.5 Bohr -> +50 score
+            }
+
+            // 5. Age penalty: preference for newer points
+            // Newer points have higher index, so older points get larger penalty
+            // Increased weight to ensure we don't get stuck with ancient history
             let age = n - 1 - i;
-            score += 0.02 * age as f64;
+            score += 2.0 * age as f64;
+
+            // CRITICAL FIX: Protect the most recent point (index n-1)
+            // If we remove the most recent point, we lose the "current" geometry
+            // which breaks stuck detection (since we can't compare current vs history)
+            if i == n - 1 {
+                score -= 1e9; // Never remove the newest point
+            }
 
             // Track worst point
             if score > worst_score {
@@ -296,6 +385,9 @@ impl OptimizationState {
         self.grad_history.remove(worst_idx);
         self.hess_history.remove(worst_idx);
         self.energy_history.remove(worst_idx);
+        self.displacement_history.remove(worst_idx);
+        self.lambda_history.remove(worst_idx);
+        self.lambda_de_history.remove(worst_idx);
     }
 
     /// Checks if there is sufficient history for GDIIS/GEDIIS optimization.
@@ -437,8 +529,8 @@ pub fn compute_mecp_gradient(
     // CRITICAL: Match Python MECP.py force sign convention
     // Python extracts forces as positive values from Gaussian output, then NEGATES them
     // before MECP gradient computation (see getG() function in MECP.py)
-    let f1 = -state_a.forces.clone();  // NEGATE to match Python algorithm
-    let f2 = -state_b.forces.clone();  // NEGATE to match Python algorithm
+    let f1 = -state_a.forces.clone(); // NEGATE to match Python algorithm
+    let f2 = -state_b.forces.clone(); // NEGATE to match Python algorithm
 
     // Gradient difference
     let x_vec = &f1 - &f2;
@@ -957,7 +1049,7 @@ fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
 ///
 /// // let x_new = gdiis_step(&opt_state, &config);
 /// ```
-pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64> {
+pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector<f64> {
     let n = opt_state.geom_history.len();
 
     // Error vectors are now correctly computed with the mean Hessian inside this function
@@ -991,7 +1083,37 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
         g_new_prime += grad * coeffs[i];
     }
 
-    // 3. Get the mean Hessian (already computed once in compute_error_vectors, but needed here)
+    // 3. Interpolate Lagrange multipliers (CRITICAL FIX)
+    // Extrapolate lambdas alongside geometry to predict constraint forces
+    if !opt_state.lambda_history.is_empty() && !opt_state.lambda_history[0].is_empty() {
+        let n_lambdas = opt_state.lambda_history[0].len();
+        let mut new_lambdas = vec![0.0; n_lambdas];
+
+        for (i, lambdas) in opt_state.lambda_history.iter().enumerate() {
+            for (j, &val) in lambdas.iter().enumerate() {
+                new_lambdas[j] += val * coeffs[i];
+            }
+        }
+
+        // Update current lambdas with extrapolated values
+        opt_state.lambdas = new_lambdas;
+    }
+
+    // 4. Interpolate Lambda DE (CRITICAL FIX)
+    if !opt_state.lambda_de_history.is_empty() && opt_state.lambda_de_history[0].is_some() {
+        let mut new_lambda_de = 0.0;
+
+        for (i, lambda_de) in opt_state.lambda_de_history.iter().enumerate() {
+            if let Some(val) = lambda_de {
+                new_lambda_de += val * coeffs[i];
+            }
+        }
+
+        // Update current lambda_de with extrapolated value
+        opt_state.lambda_de = Some(new_lambda_de);
+    }
+
+    // 5. Get the mean Hessian (already computed once in compute_error_vectors, but needed here)
     let mut h_mean = DMatrix::zeros(
         opt_state.hess_history[0].nrows(),
         opt_state.hess_history[0].ncols(),
@@ -1001,13 +1123,13 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
     }
     h_mean /= n as f64;
 
-    // 4. Compute correction using the interpolated gradient
+    // 6. Compute correction using the interpolated gradient
     let correction = h_mean
         .lu()
         .solve(&g_new_prime)
         .unwrap_or_else(|| g_new_prime.clone());
 
-    // 5. Apply correction to the interpolated geometry
+    // 7. Apply correction to the interpolated geometry
     let mut x_new = x_new_prime - &correction;
 
     // --- End of Bug Fix ---
@@ -1024,11 +1146,31 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
     let step_norm = step.norm();
     let gdiis_trial_norm = step_norm;
 
-    if step_norm > config.max_step_size {
-        let scale = config.max_step_size / step_norm;
+    // Apply adaptive step size multiplier (reduces when stuck)
+    let effective_max_step = config.max_step_size * opt_state.step_size_multiplier;
+
+    // CRITICAL: Check for stuck optimizer (step too small)
+    if step_norm < 1e-10 {
         println!(
-            "GDIIS trial stepsize: {:.10} is reduced to max_size {:.3}",
-            gdiis_trial_norm, config.max_step_size
+            "WARNING: GDIIS step size too small ({:.2e}), falling back to steepest descent",
+            step_norm
+        );
+        // Fallback to steepest descent with small step
+        let last_grad = opt_state.grad_history.back().unwrap();
+        let grad_norm = last_grad.norm();
+        if grad_norm > 1e-10 {
+            let descent_step = -last_grad / grad_norm * 0.01; // Small steepest descent step
+            x_new = last_geom + descent_step;
+        } else {
+            // Gradient is also zero - we're truly stuck
+            println!("ERROR: Both step and gradient are zero - optimizer is stuck!");
+            x_new = last_geom.clone();
+        }
+    } else if step_norm > effective_max_step {
+        let scale = effective_max_step / step_norm;
+        println!(
+            "GDIIS trial stepsize: {:.10} is reduced to max_size {:.3} (multiplier: {:.3})",
+            gdiis_trial_norm, effective_max_step, opt_state.step_size_multiplier
         );
         x_new = last_geom + &step * scale;
     } else {
@@ -1079,89 +1221,37 @@ pub fn gdiis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64
 /// Reference: Truhlar et al., J. Chem. Theory Comput. 2006, 2, 835-839
 /// explicitly warns against adaptive scaling.
 ///
-/// # Energy Weighting
+/// Builds the B matrix for standard GEDIIS optimization.
 ///
-/// The energy weighting helps the optimizer focus on geometries with energy
-/// differences closer to zero (the MECP condition). Points with large energy
-/// differences receive less weight in the interpolation.
-fn compute_gediis_error_vectors(
-    grads: &VecDeque<DVector<f64>>,
-    energies: &VecDeque<f64>,
-) -> Vec<DVector<f64>> {
-    let n = grads.len();
-    let mut errors = Vec::with_capacity(n);
-
-    // Compute average energy for normalization
-    let avg_energy = energies.iter().sum::<f64>() / n as f64;
-
-    // Fixed lambda as recommended by Truhlar (2006)
-    // Typical range: 0.01-0.1, we use 0.05 as a balanced choice
-    const LAMBDA: f64 = 0.05;
-
-    for (i, grad) in grads.iter().enumerate() {
-        let energy_error = energies[i] - avg_energy;
-        // GEDIIS error vector: e_i = g_i + λ * ΔE_i * g_i
-        // CRITICAL: λ must be FIXED, not adaptive!
-        let mut error = grad.clone();
-        // Add energy-weighted gradient contribution
-        error += &(grad * energy_error * LAMBDA);
-        errors.push(error);
-    }
-
-    errors
-}
-
-/// Builds the enhanced B matrix for GEDIIS optimization.
+/// Uses the formula from Li, Frisch, and Truhlar (J. Chem. Theory Comput. 2006, 2, 835-839):
 ///
-/// The GEDIIS B matrix extends the standard DIIS B matrix by including
-/// energy-energy correlation terms. This provides additional information
-/// about the energy landscape to improve convergence.
+/// ```text
+/// B[i,j] = -(g_i - g_j) · (x_i - x_j)
+/// ```
+///
+/// This metric captures the curvature of the energy surface without explicit Hessian.
 ///
 /// # Arguments
 ///
-/// * `errors` - Vector of enhanced error vectors from `compute_gediis_error_vectors`
-/// * `energies` - History of energy differences (E1 - E2) from previous iterations
+/// * `grads` - History of gradient vectors
+/// * `geoms` - History of geometry vectors
 ///
 /// # Returns
 ///
-/// Returns the (n+1) × (n+1) enhanced B matrix where n is the number of iterations.
-/// The matrix includes both gradient-gradient and energy-energy correlation terms.
-///
-/// # Algorithm
-///
-/// The matrix elements are computed as:
-/// ```text
-/// B[i,j] = error[i] · error[j] + β * (E[i] - E_avg) * (E[j] - E_avg)
-/// ```
-///
-/// where:
-/// - error[i] · error[j] is the standard DIIS error dot product
-/// - E[i], E[j] are energy differences at iterations i and j
-/// - E_avg is the average energy difference
-/// - β = 0.01 is a small weighting factor for energy terms
-///
-/// # Energy Correlation Terms
-///
-/// The energy-energy terms help the optimizer recognize patterns in the
-/// energy landscape and preferentially weight geometries with similar
-/// energy characteristics. This is particularly useful for MECP optimization
-/// where minimizing the energy difference is crucial.
-fn build_gediis_b_matrix(errors: &[DVector<f64>], energies: &[f64]) -> DMatrix<f64> {
-    let n = errors.len();
+/// Returns the (n+1) × (n+1) B matrix.
+fn build_gediis_b_matrix(
+    grads: &VecDeque<DVector<f64>>,
+    geoms: &VecDeque<DVector<f64>>,
+) -> DMatrix<f64> {
+    let n = grads.len();
     let mut b = DMatrix::zeros(n + 1, n + 1);
-
-    // Compute average energy
-    let avg_energy = energies.iter().sum::<f64>() / n as f64;
 
     for i in 0..n {
         for j in 0..n {
-            // Standard DIIS error dot product
-            let error_dot = errors[i].dot(&errors[j]);
-            // Add energy-energy term
-            let energy_i = energies[i] - avg_energy;
-            let energy_j = energies[j] - avg_energy;
-            let energy_term = energy_i * energy_j * 0.01; // Small weighting for energy terms
-            b[(i, j)] = error_dot + energy_term;
+            let g_diff = &grads[i] - &grads[j];
+            let x_diff = &geoms[i] - &geoms[j];
+            // Formula: -(g_i - g_j) · (x_i - x_j)
+            b[(i, j)] = -g_diff.dot(&x_diff);
         }
     }
 
@@ -1237,18 +1327,19 @@ fn build_gediis_b_matrix(errors: &[DVector<f64>], energies: &[f64]) -> DMatrix<f
 ///
 /// // let x_new = gediis_step(&opt_state, &config);
 /// ```
-pub fn gediis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f64> {
+pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector<f64> {
     let n = opt_state.geom_history.len();
 
-    // Compute GEDIIS error vectors
-    let errors = compute_gediis_error_vectors(&opt_state.grad_history, &opt_state.energy_history);
+    // Standard GEDIIS B-matrix: B[i,j] = -(g_i - g_j) · (x_i - x_j)
+    let b_matrix = build_gediis_b_matrix(&opt_state.grad_history, &opt_state.geom_history);
 
-    // Build GEDIIS B-matrix
-    let energies: Vec<f64> = opt_state.energy_history.iter().cloned().collect();
-    let b_matrix = build_gediis_b_matrix(&errors, &energies);
-
-    // Solve DIIS equations
+    // RHS vector: [-E_1, -E_2, ..., -E_n, 1]
+    // Note: We use energy_history which stores energy differences (Delta E)
+    // This drives the optimizer to minimize the energy difference (MECP condition)
     let mut rhs = DVector::zeros(n + 1);
+    for i in 0..n {
+        rhs[i] = -opt_state.energy_history[i];
+    }
     rhs[n] = 1.0;
 
     let solution = b_matrix.lu().solve(&rhs).unwrap_or_else(|| {
@@ -1261,56 +1352,83 @@ pub fn gediis_step(opt_state: &OptimizationState, config: &Config) -> DVector<f6
 
     let coeffs = solution.rows(0, n);
 
-    // Interpolate geometry using DIIS coefficients
-    let mut x_interp = DVector::zeros(opt_state.geom_history[0].len());
+    // 1. Interpolate geometry
+    let mut x_new_prime = DVector::zeros(opt_state.geom_history[0].len());
     for (i, geom) in opt_state.geom_history.iter().enumerate() {
-        x_interp += geom * coeffs[i];
+        x_new_prime += geom * coeffs[i];
     }
 
-    // CRITICAL: Interpolate gradient using SAME DIIS coefficients
-    // This maintains variational consistency of the DIIS extrapolation
-    // Using simple average (g_mean) breaks the method!
-    let mut g_interp = DVector::zeros(opt_state.grad_history[0].len());
+    // 2. Interpolate gradient
+    let mut g_new_prime = DVector::zeros(opt_state.grad_history[0].len());
     for (i, grad) in opt_state.grad_history.iter().enumerate() {
-        g_interp += grad * coeffs[i];
+        g_new_prime += grad * coeffs[i];
     }
 
-    // Compute mean Hessian for Newton step
-    let mut h_mean = DMatrix::zeros(
-        opt_state.hess_history[0].nrows(),
-        opt_state.hess_history[0].ncols(),
-    );
-    for hess in &opt_state.hess_history {
-        h_mean += hess;
-    }
-    h_mean /= n as f64;
+    // 3. Interpolate Lagrange multipliers (CRITICAL for MECP)
+    if !opt_state.lambda_history.is_empty() && !opt_state.lambda_history[0].is_empty() {
+        let n_lambdas = opt_state.lambda_history[0].len();
+        let mut new_lambdas = vec![0.0; n_lambdas];
 
-    // Apply Newton correction using interpolated gradient
-    let correction = h_mean.lu().solve(&g_interp).unwrap_or_else(|| g_interp.clone());
-    let mut x_new = x_interp - &correction;
-
-    // Python-inspired step reduction (matches GDIIS behavior)
-    let last_grad_norm: f64 = opt_state.grad_history.back().unwrap().norm();
-    if last_grad_norm < config.thresholds.rms_g * 10.0 {
-        let last_geom = opt_state.geom_history.back().unwrap();
-        let mut step = &x_new - last_geom;
-        step *= config.reduced_factor;
-        x_new = last_geom + step;
+        for (i, lambdas) in opt_state.lambda_history.iter().enumerate() {
+            for (j, &val) in lambdas.iter().enumerate() {
+                new_lambdas[j] += val * coeffs[i];
+            }
+        }
+        opt_state.lambdas = new_lambdas;
     }
 
-    // Apply step size limit
+    // 4. Interpolate Lambda DE
+    if !opt_state.lambda_de_history.is_empty() && opt_state.lambda_de_history[0].is_some() {
+        let mut new_lambda_de = 0.0;
+        for (i, lambda_de) in opt_state.lambda_de_history.iter().enumerate() {
+            if let Some(val) = lambda_de {
+                new_lambda_de += val * coeffs[i];
+            }
+        }
+        opt_state.lambda_de = Some(new_lambda_de);
+    }
+
+    // 5. Calculate step: X_new = X_interp - G_interp
+    // This effectively performs a steepest descent step from the interpolated point
+    // using the interpolated gradient.
+    let mut x_new = x_new_prime - &g_new_prime;
+
     let last_geom = opt_state.geom_history.back().unwrap();
-    let step = &x_new - last_geom;
-    let step_norm = step.norm();
-    let gediis_trial_norm = step_norm;
+    let mut step = &x_new - last_geom;
 
-    if step_norm > config.max_step_size {
-        let scale = config.max_step_size / step_norm;
+    // Python-inspired step reduction
+    let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
+    if last_grad_norm < config.thresholds.rms_g * 10.0 {
+        step *= config.reduced_factor;
+    }
+
+    let step_norm = step.norm();
+    let effective_max_step = config.max_step_size * opt_state.step_size_multiplier;
+
+    // Check for stuck optimizer
+    if step_norm < 1e-10 {
         println!(
-            "GEDIIS trial stepsize: {:.10} is reduced to max_size {:.3}",
-            gediis_trial_norm, config.max_step_size
+            "WARNING: GEDIIS step size too small ({:.2e}), falling back to steepest descent",
+            step_norm
+        );
+        let last_grad = opt_state.grad_history.back().unwrap();
+        let grad_norm = last_grad.norm();
+        if grad_norm > 1e-10 {
+            let descent_step = -last_grad / grad_norm * 0.01;
+            x_new = last_geom + descent_step;
+        } else {
+            println!("ERROR: Both step and gradient are zero - optimizer is stuck!");
+            x_new = last_geom.clone();
+        }
+    } else if step_norm > effective_max_step {
+        let scale = effective_max_step / step_norm;
+        println!(
+            "GEDIIS trial stepsize: {:.10} is reduced to max_size {:.3} (multiplier: {:.3})",
+            step_norm, effective_max_step, opt_state.step_size_multiplier
         );
         x_new = last_geom + &step * scale;
+    } else {
+        x_new = last_geom + step;
     }
 
     x_new
@@ -1346,6 +1464,42 @@ fn dynamic_gediis_weight(opt_state: &OptimizationState) -> f64 {
     if n < 5 {
         return 0.0;
     }
+
+    // ============================================================
+    // STUCK OPTIMIZER DETECTION
+    // ============================================================
+    // Check if optimizer is stuck (tiny displacements for multiple steps)
+    // This prevents misinterpreting a stuck optimizer as "perfect convergence"
+    if opt_state.displacement_history.len() >= 3 {
+        let recent_displacements: Vec<f64> = opt_state
+            .displacement_history
+            .iter()
+            .rev()
+            .take(3)
+            .cloned()
+            .collect();
+
+        // CRITICAL FIX: Use RMS displacement instead of absolute norm
+        // Absolute norm depends on system size (more atoms = larger norm)
+        // RMS displacement is size-independent
+        let n_atoms = opt_state.geom_history[0].len() as f64 / 3.0;
+        let sqrt_n = (3.0 * n_atoms).sqrt();
+
+        // If last 3 RMS displacements are all < 1e-5 Bohr
+        // the optimizer is stuck and needs pure GDIIS to escape
+        let stuck_threshold_rms = 1e-5; // Bohr (RMS)
+
+        let all_tiny = recent_displacements
+            .iter()
+            .all(|&d| (d / sqrt_n) < stuck_threshold_rms);
+
+        if all_tiny {
+            // Optimizer is stuck - force pure GDIIS to break the cycle
+            println!("DEBUG: Stuck optimizer detected (last 3 RMS displacements < 1e-5 Bohr), forcing pure GDIIS");
+            return 0.0;
+        }
+    }
+    // ============================================================
 
     // Take last 6 energies (6 is optimal: enough for trend, not too noisy)
     let e: Vec<f64> = opt_state
@@ -1442,10 +1596,11 @@ fn dynamic_gediis_weight(opt_state: &OptimizationState) -> f64 {
 ///
 /// # Algorithm
 ///
-/// 1. Compute both GDIIS and GEDIIS predictions
-/// 2. Analyze energy history to determine optimal weight
-/// 3. Blend predictions: x_new = (1-w)*GDIIS + w*GEDIIS
-/// 4. Apply step size limits and reductions
+/// 1. Check if optimizer is stuck (using last 3 displacements in history)
+/// 2. Compute both GDIIS and GEDIIS predictions
+/// 3. Analyze energy history to determine optimal weight
+/// 4. Blend predictions: x_new = (1-w)*GDIIS + w*GEDIIS
+/// 5. Apply step size limits and reductions
 ///
 /// # Arguments
 ///
@@ -1463,12 +1618,12 @@ fn dynamic_gediis_weight(opt_state: &OptimizationState) -> f64 {
 /// use omecp::config::Config;
 ///
 /// let config = Config::default();
-/// let opt_state = OptimizationState::new();
+/// let mut opt_state = OptimizationState::new(5);
 ///
-/// // let x_new = smart_hybrid_gediis_step(&opt_state, &config);
+/// // let x_new = smart_hybrid_gediis_step(&mut opt_state, &config);
 /// ```
 pub fn smart_hybrid_gediis_step(
-    opt_state: &OptimizationState,
+    opt_state: &mut OptimizationState,
     config: &Config,
 ) -> DVector<f64> {
     // Always use pure GDIIS for first few steps (insufficient history)
@@ -1476,15 +1631,81 @@ pub fn smart_hybrid_gediis_step(
         return gdiis_step(opt_state, config);
     }
 
+    // ============================================================
+    // STUCK DETECTION (using last 3 displacements in history)
+    // ============================================================
+    // Check if optimizer is stuck by examining the last 3 displacements
+    // that are ALREADY recorded in history
+    if opt_state.displacement_history.len() >= 3 {
+        let recent_displacements: Vec<f64> = opt_state
+            .displacement_history
+            .iter()
+            .rev()
+            .take(3)
+            .cloned()
+            .collect();
+
+        // If last 3 displacements are all < 1e-4 Bohr, optimizer is stuck
+        // Increased from 1e-6 to 1e-4 to catch stagnation earlier
+        let stuck_threshold = 1e-4; // Bohr (absolute norm)
+        let all_tiny = recent_displacements.iter().all(|&d| d < stuck_threshold);
+
+        if all_tiny {
+            println!("DEBUG: Stuck optimizer detected (last 3 displacements < 1e-4 Bohr), forcing pure GDIIS");
+            println!(
+                "       Recent displacements: [{:.2e}, {:.2e}, {:.2e}] Bohr",
+                recent_displacements[2], recent_displacements[1], recent_displacements[0]
+            );
+            return gdiis_step(opt_state, config);
+        }
+    }
+    // ============================================================
+
     // Compute both predictions
+    // Note: Each call updates opt_state.lambdas. We need to capture and blend them.
+
     let gdiis_geom = gdiis_step(opt_state, config);
-    let gediis_geom = gediis_step(opt_state, config); // Uses fixed λ and interpolated gradient
+    let lambdas_gdiis = opt_state.lambdas.clone();
+    let lambda_de_gdiis = opt_state.lambda_de;
+
+    let gediis_geom = gediis_step(opt_state, config);
+    let lambdas_gediis = opt_state.lambdas.clone();
+    let lambda_de_gediis = opt_state.lambda_de;
 
     // Determine optimal weight based on energy history
     let w_gediis = dynamic_gediis_weight(opt_state);
+    let w_gdiis = 1.0 - w_gediis;
 
-    // Blend predictions: x_new = (1-w)*GDIIS + w*GEDIIS
-    let mut x_new = (1.0 - w_gediis) * &gdiis_geom + w_gediis * &gediis_geom;
+    if w_gediis < 0.01 {
+        println!(
+            "Smart Hybrid: Dynamic weighting disabled GEDIIS (w_gediis < 0.01) -> Using Pure GDIIS"
+        );
+    } else {
+        println!(
+            "Smart Hybrid GEDIIS: w_gdiis={:.2}, w_gediis={:.2}",
+            w_gdiis, w_gediis
+        );
+    }
+
+    // Blend geometries
+    let mut x_new = &gdiis_geom * w_gdiis + &gediis_geom * w_gediis;
+
+    // Blend Lagrange multipliers
+    if !lambdas_gdiis.is_empty() {
+        let mut blended_lambdas = vec![0.0; lambdas_gdiis.len()];
+        for i in 0..lambdas_gdiis.len() {
+            blended_lambdas[i] = lambdas_gdiis[i] * w_gdiis + lambdas_gediis[i] * w_gediis;
+        }
+        opt_state.lambdas = blended_lambdas;
+    }
+
+    // Blend Lambda DE
+    if let (Some(l_gdiis), Some(l_gediis)) = (lambda_de_gdiis, lambda_de_gediis) {
+        opt_state.lambda_de = Some(l_gdiis * w_gdiis + l_gediis * w_gediis);
+    } else {
+        // Fallback if one is missing (shouldn't happen if history is consistent)
+        opt_state.lambda_de = lambda_de_gediis.or(lambda_de_gdiis);
+    }
 
     // Apply step reduction if gradient is small (same as other methods)
     let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
@@ -1500,15 +1721,35 @@ pub fn smart_hybrid_gediis_step(
     let step = &x_new - last_geom;
     let step_norm = step.norm();
 
-    if step_norm > config.max_step_size {
-        let scale = config.max_step_size / step_norm;
+    // Apply adaptive step size multiplier (reduces when stuck)
+    let effective_max_step = config.max_step_size * opt_state.step_size_multiplier;
+
+    // CRITICAL: Check for stuck optimizer (step too small)
+    // Lowered threshold from 1e-10 to 1e-6 Bohr to catch stuck optimizer earlier
+    // 1e-6 Bohr ≈ 5e-7 Å, which is effectively zero progress
+    if step_norm < 1e-6 {
+        println!("WARNING: Smart Hybrid step size too small ({:.2e} Bohr), falling back to steepest descent", step_norm);
+        // Fallback to steepest descent with small step
+        let last_grad = opt_state.grad_history.back().unwrap();
+        let grad_norm = last_grad.norm();
+        if grad_norm > 1e-10 {
+            let descent_step = -last_grad / grad_norm * 0.01; // Small steepest descent step
+            x_new = last_geom + descent_step;
+        } else {
+            // Gradient is also zero - we're truly stuck
+            println!("ERROR: Both step and gradient are zero - optimizer is stuck!");
+            x_new = last_geom.clone();
+        }
+    } else if step_norm > effective_max_step {
+        let scale = effective_max_step / step_norm;
         println!(
-            "Smart Hybrid: w_GEDIIS={:.2} (GDIIS={:.0}%, GEDIIS={:.0}%), step {:.6} → {:.3}",
+            "Smart Hybrid: w_GEDIIS={:.2} (GDIIS={:.0}%, GEDIIS={:.0}%), step {:.6} → {:.3} (mult: {:.3})",
             w_gediis,
             (1.0 - w_gediis) * 100.0,
             w_gediis * 100.0,
             step_norm,
-            config.max_step_size
+            effective_max_step,
+            opt_state.step_size_multiplier
         );
         x_new = last_geom + &step * scale;
     } else {
@@ -1591,8 +1832,8 @@ mod tests {
         // Create test geometry (2 atoms)
         let elements = vec!["H".to_string(), "H".to_string()];
         let coords = vec![
-            0.0, 0.0, 0.0,  // Atom 1 at origin
-            1.0, 0.0, 0.0,  // Atom 2 at (1,0,0)
+            0.0, 0.0, 0.0, // Atom 1 at origin
+            1.0, 0.0, 0.0, // Atom 2 at (1,0,0)
         ];
         let geometry = Geometry::new(elements, coords);
 
@@ -1628,8 +1869,8 @@ mod tests {
         assert!(gradient.norm() > 1e-10);
 
         // Manual verification: compute expected gradient with negated forces
-        let expected_f1 = -state_a.forces;  // Python negates forces
-        let expected_f2 = -state_b.forces;  // Python negates forces
+        let expected_f1 = -state_a.forces; // Python negates forces
+        let expected_f2 = -state_b.forces; // Python negates forces
 
         let x_vec = &expected_f1 - &expected_f2;
         let x_norm = if x_vec.norm().abs() < 1e-10 {
@@ -1647,9 +1888,13 @@ mod tests {
 
         // Compare computed gradient with expected (allowing for numerical precision)
         for i in 0..gradient.len() {
-            assert!((gradient[i] - expected_gradient[i]).abs() < 1e-10,
-                   "Gradient component {} mismatch: {} vs {}",
-                   i, gradient[i], expected_gradient[i]);
+            assert!(
+                (gradient[i] - expected_gradient[i]).abs() < 1e-10,
+                "Gradient component {} mismatch: {} vs {}",
+                i,
+                gradient[i],
+                expected_gradient[i]
+            );
         }
     }
 
@@ -1671,15 +1916,17 @@ mod tests {
 
         let state_b = State {
             geometry,
-            energy: -100.0,  // Same energy
+            energy: -100.0, // Same energy
             forces: forces.clone(),
         };
 
         let gradient = compute_mecp_gradient(&state_a, &state_b, &[]);
 
         // With zero forces and same energies, gradient should be zero
-        assert!(gradient.norm() < 1e-10,
-               "Expected zero gradient with zero forces, got {}",
-               gradient.norm());
+        assert!(
+            gradient.norm() < 1e-10,
+            "Expected zero gradient with zero forces, got {}",
+            gradient.norm()
+        );
     }
 }

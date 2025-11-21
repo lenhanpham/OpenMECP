@@ -222,7 +222,7 @@ smart_history = false # experimental and false by default; smart_history may spe
 # This subset controls which program you are using, and how to call them
 program = gaussian  #gaussian, orca, xtb, bagel
 gau_comm = g16
-orca_comm = /opt/orca5/orca
+orca_comm = /apps/orca/6.0.1/orca
 xtb_comm = xtb
 bagel_comm = mpirun -np 36 /opt/bagel/bin/BAGEL
 bagel_model = model.inp

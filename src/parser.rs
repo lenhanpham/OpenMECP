@@ -72,7 +72,7 @@
 //! let constraints = input_data.constraints;
 //! ```
 
-use crate::config::{Config, QMProgram, RunMode, ScanSpec, ScanType};
+use crate::config::{Config, QMProgram, RunMode, ScanSpec, ScanType, ANGSTROM_TO_BOHR};
 use crate::constraints::Constraint;
 use crate::geometry::{angstrom_to_bohr, Geometry};
 use nalgebra::DVector;
@@ -857,6 +857,9 @@ fn parse_bool(value: &str) -> bool {
     }
 }
 
+/// Parses configuration from a string content.
+/// Users specify displacement thresholds in Angstrom (familiar units),
+/// but internal coordinates are in Bohr, so we convert here.
 fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>) -> Result<()> {
     let parts: Vec<&str> = line.splitn(2, '=').collect();
     if parts.len() != 2 {
@@ -882,11 +885,15 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "mult_state_b" | "mult_b" => config.mult_state_b = value.parse().unwrap_or(1),
         // Old keywords (deprecated, backward compatibility)
         "mult1" => {
-            eprintln!("Warning: 'mult1' is deprecated. Please use 'mult_state_a' or 'mult_a' instead.");
+            eprintln!(
+                "Warning: 'mult1' is deprecated. Please use 'mult_state_a' or 'mult_a' instead."
+            );
             config.mult_state_a = value.parse().unwrap_or(1);
         }
         "mult2" => {
-            eprintln!("Warning: 'mult2' is deprecated. Please use 'mult_state_b' or 'mult_b' instead.");
+            eprintln!(
+                "Warning: 'mult2' is deprecated. Please use 'mult_state_b' or 'mult_b' instead."
+            );
             config.mult_state_b = value.parse().unwrap_or(1);
         }
         "method" => config.method = value.to_string(),
@@ -934,7 +941,11 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         }
         "mp2" => config.mp2 = parse_bool(value),
         "max_steps" => config.max_steps = value.parse().unwrap_or(100),
-        "max_step_size" => config.max_step_size = value.parse().unwrap_or(0.1),
+        // Max step size: users specify in Angstrom, convert to Bohr for internal use
+        "max_step_size" => {
+            let angstrom_value: f64 = value.parse().unwrap_or(0.1);
+            config.max_step_size = angstrom_value * ANGSTROM_TO_BOHR; // 0.1 Å → 0.189 Bohr
+        }
         "max_history" => {
             config.max_history = value.parse().unwrap_or_else(|_| {
                 eprintln!(
@@ -946,8 +957,16 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         }
         "fix_de" => config.fix_de = value.parse().unwrap_or(0.0),
         "de_thresh" => config.thresholds.de = value.parse().unwrap_or(0.000050),
-        "rms_thresh" => config.thresholds.rms = value.parse().unwrap_or(0.0025),
-        "max_dis_thresh" => config.thresholds.max_dis = value.parse().unwrap_or(0.004),
+        // Displacement thresholds: users specify in Angstrom, convert to Bohr for internal use
+        "rms_thresh" => {
+            let angstrom_value: f64 = value.parse().unwrap_or(0.0025);
+            config.thresholds.rms = angstrom_value * ANGSTROM_TO_BOHR;
+        }
+        "max_dis_thresh" => {
+            let angstrom_value: f64 = value.parse().unwrap_or(0.004);
+            config.thresholds.max_dis = angstrom_value * ANGSTROM_TO_BOHR;
+        }
+        // Gradient thresholds: already in Hartree/Bohr, no conversion needed
         "max_g_thresh" => config.thresholds.max_g = value.parse().unwrap_or(0.0007),
         "rms_g_thresh" => config.thresholds.rms_g = value.parse().unwrap_or(0.0005),
         "bagel_model" => config.bagel_model = value.to_string(),
@@ -1931,7 +1950,11 @@ mod tests {
         assert_eq!(config.charge, 1);
 
         // Test mult_state_a with inline comment
-        let result = parse_parameter("mult_state_a = 3 # triplet state", &mut config, &mut fixed_atoms);
+        let result = parse_parameter(
+            "mult_state_a = 3 # triplet state",
+            &mut config,
+            &mut fixed_atoms,
+        );
         assert!(result.is_ok());
         assert_eq!(config.mult_state_a, 3);
     }

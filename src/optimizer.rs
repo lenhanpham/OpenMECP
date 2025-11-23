@@ -46,7 +46,7 @@
 //! The first term drives the energy difference to zero (f-vector).
 //! The second term minimizes energy perpendicular to the gradient difference (g-vector).
 
-use crate::config::Config;
+use crate::config::{Config, BOHR_TO_ANGSTROM, ANGSTROM_TO_BOHR};
 use crate::geometry::State;
 use nalgebra::{DMatrix, DVector};
 use std::collections::VecDeque;
@@ -137,7 +137,11 @@ impl OptimizationState {
 
     /// Updates stuck counter and step size multiplier based on displacement
     pub fn update_stuck_detection(&mut self, displacement_norm: f64) {
-        if displacement_norm < 1e-8 {
+        // CRITICAL: Use 1e-6 threshold instead of 1e-8 to avoid false positives
+        // RMS displacement threshold is 0.0025, so displacement norm threshold should be
+        // roughly sqrt(N) * 0.0025 / 100 ≈ 1e-5 to 1e-6 for typical systems
+        // Using 1e-6 provides safety margin while catching truly stuck cases
+        if displacement_norm < 1e-6 {
             self.stuck_count += 1;
             // Aggressively reduce step size when stuck
             if self.stuck_count >= 3 {
@@ -548,7 +552,7 @@ pub fn compute_mecp_gradient(
 
     // Energy difference component
     let de = state_a.energy - state_b.energy;
-    let f_vec = x_norm.clone() * de;
+    let f_vec = x_norm.clone() * (de / ANGSTROM_TO_BOHR);
 
     // Perpendicular component
     let dot = f1.dot(&x_norm);
@@ -615,6 +619,7 @@ pub fn bfgs_step(
     let neg_g = -g0;
     let mut dk = hessian.clone().lu().solve(&neg_g).unwrap_or_else(|| {
         // Fallback to steepest descent when Hessian is singular
+        println!("BFGS Step: Hessian is singular, falling back to steepest descent");
         let step_dir = -g0 / (g0.norm() + 1e-14);
         step_dir
     });
@@ -624,25 +629,28 @@ pub fn bfgs_step(
     // 2. Cap dk to 0.1 if ||dk|| > 0.1
     // 3. Apply rho=15 multiplier: XNew = X0 + rho * dk
 
-    // Step 2: Cap direction vector dk to 0.1 (Python's hardcoded limit)
+    // Step 2: Cap direction vector dk to 0.1 Angstrom (Python's hardcoded limit)
+    // Convert to Bohr for internal consistency
     let dk_norm = dk.norm();
-    const DIRECTION_LIMIT: f64 = 0.1; // Python's hardcoded cap on direction
-    if dk_norm > DIRECTION_LIMIT {
+    let direction_limit = 0.1 * ANGSTROM_TO_BOHR;
+    if dk_norm > direction_limit {
         let original_norm = dk_norm;
-        dk *= DIRECTION_LIMIT / dk_norm;
+        dk *= direction_limit / dk_norm;
         println!(
             "current stepsize: {} is reduced to max_size {}",
-            original_norm, DIRECTION_LIMIT
+            original_norm, direction_limit
         );
     }
 
     // Step 3: Apply rho multiplier (from config.bfgs_rho, default 15.0)
     // Python uses FIXED rho for BFGS, no adaptive scaling
-    let rho = config.bfgs_rho; // Fixed rho, matching Python behavior
-    let final_step_size = DIRECTION_LIMIT * rho;
+    // CRITICAL: rho=15 is tuned for Angstrom steps. For Bohr steps (which are ~1.89x larger),
+    // we must scale rho DOWN to maintain the same physical step aggressiveness.
+    let rho = config.bfgs_rho / ANGSTROM_TO_BOHR;
+    let final_step_size = direction_limit * rho;
     println!(
         "BFGS step: direction_capped={}, rho={}, final_step_size={}",
-        DIRECTION_LIMIT, rho, final_step_size
+        direction_limit, rho, final_step_size
     );
 
     let x_new = x0 + &dk * rho;
@@ -654,8 +662,9 @@ pub fn bfgs_step(
     if step_norm > config.max_step_size {
         let scale = config.max_step_size / step_norm;
         println!(
-            "BFGS step size limited: {:.6} -> {:.6} Bohr",
-            step_norm, config.max_step_size
+            "BFGS step size limited: {:.6} -> {:.6} Å",
+            step_norm * BOHR_TO_ANGSTROM,
+            config.max_step_size * BOHR_TO_ANGSTROM
         );
         x0 + &step * scale
     } else {
@@ -732,31 +741,82 @@ pub fn compute_adaptive_scale(
 ///
 /// // let h_new = update_hessian_psb(&h_old, &sk, &yk);
 /// ```
-pub fn update_hessian_psb(
+///pub fn update_hessian_psb(
+///    hessian: &DMatrix<f64>,
+///    sk: &DVector<f64>,
+///    yk: &DVector<f64>,
+///) -> DMatrix<f64> {
+///    let mut h_new = hessian.clone();
+///
+///    // Check curvature condition: s^T y > 0 for meaningful update
+///    // Reference: Nocedal & Wright "Numerical Optimization" Theorem 6.2
+///    let sk_dot_yk = sk.dot(yk);
+///    let sk_dot_sk = sk.dot(sk);
+///
+///    // Only update if curvature condition is satisfied and s is not zero
+///    if sk_dot_yk > 1e-12 * sk_dot_sk * yk.norm() && sk_dot_sk.abs() > 1e-10 {
+///        let hsk = hessian * sk;
+///        let diff = yk - &hsk;
+///        let sk_diff = sk.dot(&diff);
+///        let term1 = &diff * sk.transpose() + sk * diff.transpose();
+///        let term2 = (sk * sk.transpose()) * (sk_diff / sk_dot_sk);
+///
+///        h_new += (term1 - term2) / sk_dot_sk;
+///    }
+///    // If curvature condition not satisfied, return current Hessian
+///    // This prevents degradation in convergence properties
+///
+///    h_new
+///}
+
+/// Updates the Hessian matrix using the BFGS formula.
+///
+/// The BFGS update guarantees that the Hessian remains positive definite if the
+/// initial Hessian is positive definite and the curvature condition (s^T y > 0) holds.
+///
+/// Formula:
+/// ```text
+/// H_new = H + (y * y^T) / (y^T * s) - (H * s * s^T * H) / (s^T * H * s)
+/// ```
+///
+/// # Arguments
+///
+/// * `hessian` - Current Hessian approximation
+/// * `sk` - Step vector (x_new - x_old)
+/// * `yk` - Gradient difference (g_new - g_old)
+///
+/// # Returns
+///
+/// Returns the updated Hessian matrix. If the update would be unstable (e.g., division by zero),
+/// returns the original Hessian.
+
+pub fn update_hessian_bfgs(
     hessian: &DMatrix<f64>,
     sk: &DVector<f64>,
     yk: &DVector<f64>,
 ) -> DMatrix<f64> {
     let mut h_new = hessian.clone();
 
-    // Check curvature condition: s^T y > 0 for meaningful update
-    // Reference: Nocedal & Wright "Numerical Optimization" Theorem 6.2
     let sk_dot_yk = sk.dot(yk);
-    let sk_dot_sk = sk.dot(sk);
-
-    // Only update if curvature condition is satisfied and s is not zero
-    if sk_dot_yk > 1e-12 * sk_dot_sk * yk.norm() && sk_dot_sk.abs() > 1e-10 {
+    
+    // Check curvature condition: s^T y > 0
+    // Also check for numerical stability (avoid division by very small numbers)
+    if sk_dot_yk > 1e-10 {
         let hsk = hessian * sk;
-        let diff = yk - &hsk;
-        let sk_diff = sk.dot(&diff);
-        let term1 = &diff * sk.transpose() + sk * diff.transpose();
-        let term2 = (sk * sk.transpose()) * (sk_diff / sk_dot_sk);
+        let sk_h_sk = sk.dot(&hsk);
 
-        h_new += (term1 - term2) / sk_dot_sk;
+        if sk_h_sk > 1e-10 {
+            let term1 = (yk * yk.transpose()) / sk_dot_yk;
+            let term2 = (&hsk * hsk.transpose()) / sk_h_sk;
+            
+            h_new += term1 - term2;
+            
+            // Enforce symmetry to prevent accumulation of numerical errors
+            // Although BFGS is theoretically symmetric, floating point errors can drift
+            h_new = (&h_new + h_new.transpose()) / 2.0;
+        }
     }
-    // If curvature condition not satisfied, return current Hessian
-    // This prevents degradation in convergence properties
-
+    
     h_new
 }
 
@@ -773,7 +833,7 @@ pub fn update_hessian_psb(
 /// 3. **Maximum Gradient**: max(|g_i|) < threshold
 /// 4. **RMS Displacement**: ||Δx||_rms < threshold
 /// 5. **Maximum Displacement**: max(|Δx_i|) < threshold
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ConvergenceStatus {
     /// Energy difference convergence status
     pub de_converged: bool,
@@ -1138,10 +1198,58 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     let mut step = &x_new - last_geom;
 
     // Python-inspired step reduction
-    let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
-    if last_grad_norm < config.thresholds.rms_g * 10.0 {
-        step *= config.reduced_factor; // Use configurable reduced_factor
+    // CRITICAL FIX: Use norm of ENTIRE gradient history, not just the last one
+    // Python: if numpy.linalg.norm(Gs) < THRESH_RMS_G * 10:
+    let history_grad_norm_sq: f64 = opt_state
+        .grad_history
+        .iter()
+        .map(|g| g.norm_squared())
+        .sum();
+    let history_grad_norm = history_grad_norm_sq.sqrt();
+
+    // DEBUG: Print gradient history details
+    println!(
+        "[DEBUG] Gradient history size: {}",
+        opt_state.grad_history.len()
+    );
+    for (i, g) in opt_state.grad_history.iter().enumerate() {
+        println!("[DEBUG]   Gradient {}: norm = {:.8}", i, g.norm());
     }
+    println!(
+        "[DEBUG] Gradient history norm (total): {:.8}",
+        history_grad_norm
+    );
+    
+    // CRITICAL: Gradients in Rust are in Ha/bohr, but Python uses Ha/Å
+    // Since 1 Ha/Å = 1.889726 Ha/bohr, we need to scale the threshold
+    // Python: ||g|| < 0.0005 × 10 (in Ha/Å)
+    // Rust: ||g|| < 0.0005 × 10 × 1.889726 (in Ha/bohr)
+    let threshold = config.thresholds.rms_g * 10.0 * ANGSTROM_TO_BOHR;
+    println!(
+        "[DEBUG] Step reduction threshold: {:.8} (scaled for Ha/bohr units)",
+        threshold
+    );
+
+    let step_reduction_factor = if history_grad_norm < threshold {
+        println!(
+            "[DEBUG] Applying step reduction (factor = {})",
+            config.reduced_factor
+        );
+        config.reduced_factor
+    } else {
+        println!("[DEBUG] No step reduction applied (factor = 1.0)");
+        1.0
+    };
+
+    let step_norm_before = step.norm();
+    step *= step_reduction_factor;
+    let step_norm_after = step.norm();
+
+    println!(
+        "[DEBUG] Step norm before reduction: {:.8}",
+        step_norm_before
+    );
+    println!("[DEBUG] Step norm after reduction: {:.8}", step_norm_after);
 
     let step_norm = step.norm();
     let gdiis_trial_norm = step_norm;
@@ -1397,8 +1505,17 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
     let mut step = &x_new - last_geom;
 
     // Python-inspired step reduction
-    let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
-    if last_grad_norm < config.thresholds.rms_g * 10.0 {
+    // CRITICAL FIX: Use norm of ENTIRE gradient history, not just the last one
+    let history_grad_norm_sq: f64 = opt_state
+        .grad_history
+        .iter()
+        .map(|g| g.norm_squared())
+        .sum();
+    let history_grad_norm = history_grad_norm_sq.sqrt();
+
+    // CRITICAL: Scale threshold for Ha/bohr units (Rust) vs Ha/Å (Python)
+    let threshold = config.thresholds.rms_g * 10.0 * ANGSTROM_TO_BOHR;
+    if history_grad_norm < threshold {
         step *= config.reduced_factor;
     }
 
@@ -1708,8 +1825,10 @@ pub fn smart_hybrid_gediis_step(
     }
 
     // Apply step reduction if gradient is small (same as other methods)
+    // CRITICAL: Scale threshold for Ha/bohr units (Rust) vs Ha/Å (Python)
     let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
-    if last_grad_norm < config.thresholds.rms_g * 10.0 {
+    let threshold = config.thresholds.rms_g * 10.0 * ANGSTROM_TO_BOHR;
+    if last_grad_norm < threshold {
         let last_geom = opt_state.geom_history.back().unwrap();
         let mut step = &x_new - last_geom;
         step *= config.reduced_factor;

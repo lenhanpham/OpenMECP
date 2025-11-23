@@ -17,6 +17,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Unit conversion constant: Angstrom to Bohr
+pub const ANGSTROM_TO_BOHR: f64 = 1.889726;
+/// Unit conversion constant: Bohr to Angstrom
+pub const BOHR_TO_ANGSTROM: f64 = 0.529177;
+
 /// Specifies the type of coordinate for PES scanning.
 ///
 /// PES (Potential Energy Surface) scans systematically vary a geometric parameter
@@ -69,18 +74,25 @@ pub struct ScanSpec {
 ///
 /// # Default Values
 ///
+/// Users specify displacement thresholds in Angstrom (familiar units):
+/// - RMS displacement: 0.0025 Å
+/// - Max displacement: 0.0040 Å
+///
+/// These are automatically converted to Bohr for internal use:
+/// - RMS displacement: 0.0025 * 1.889726 ≈ 0.00472 bohr
+/// - Max displacement: 0.0040 * 1.889726 ≈ 0.00756 bohr
+///
+/// Other thresholds:
 /// - Energy difference (ΔE): 0.000050 hartree (~0.00136 eV)
-/// - RMS displacement: 0.0025 bohr (~0.00132 Å)
-/// - Max displacement: 0.0040 bohr (~0.00212 Å)
 /// - Max gradient: 0.0007 hartree/bohr
 /// - RMS gradient: 0.0005 hartree/bohr
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Thresholds {
     /// Energy difference threshold (ΔE < de) in hartree
     pub de: f64,
-    /// RMS displacement threshold in bohr
+    /// RMS displacement threshold in bohr (converted from Angstrom in config)
     pub rms: f64,
-    /// Maximum displacement threshold in bohr
+    /// Maximum displacement threshold in bohr (converted from Angstrom in config)
     pub max_dis: f64,
     /// Maximum gradient threshold in hartree/bohr
     pub max_g: f64,
@@ -90,10 +102,15 @@ pub struct Thresholds {
 
 impl Default for Thresholds {
     fn default() -> Self {
+        // Users specify displacement thresholds in Angstrom (familiar units)
+        // but internal coordinates are in Bohr, so we convert here
+        const RMS_ANGSTROM: f64 = 0.0025;
+        const MAX_DIS_ANGSTROM: f64 = 0.004;
+
         Self {
             de: 0.000050,
-            rms: 0.0025,
-            max_dis: 0.004,
+            rms: RMS_ANGSTROM * ANGSTROM_TO_BOHR, // 0.0025 Å → 0.00472 bohr
+            max_dis: MAX_DIS_ANGSTROM * ANGSTROM_TO_BOHR, // 0.004 Å → 0.00756 bohr
             max_g: 0.0007,
             rms_g: 0.0005,
         }
@@ -146,7 +163,7 @@ pub struct Config {
     pub thresholds: Thresholds,
     /// Maximum number of optimization steps
     pub max_steps: usize,
-    /// Maximum step size in bohr
+    /// Maximum step size in bohr (converted from Angstrom in config)
     pub max_step_size: f64,
     /// Step size reduction factor for line search
     pub reduced_factor: f64,
@@ -269,7 +286,7 @@ impl Default for Config {
         Self {
             thresholds: Thresholds::default(),
             max_steps: 100,
-            max_step_size: 0.1,
+            max_step_size: 0.1 * 1.889726, // 0.1 Å → 0.189 Bohr (users specify in Angstrom)
             reduced_factor: 0.5,
             nprocs: 1,
             mem: "1GB".to_string(),
@@ -307,8 +324,8 @@ impl Default for Config {
             use_hybrid_gediis: true, // Match Python's hybrid behavior
             switch_step: 3,          // Default to current behavior (BFGS for first 3 steps)
             bfgs_rho: 15.0,
-            max_history: 5,          // Default history size for DIIS methods
-            print_checkpoint: false,   // Default to saving checkpoints for backward compatibility
+            max_history: 4,          // Match Python's history size (keeps max 4 gradients)
+            print_checkpoint: false, // Default to saving checkpoints for backward compatibility
             smart_history: false,    // Default to traditional FIFO history management
         }
     }

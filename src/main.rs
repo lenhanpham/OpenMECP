@@ -44,6 +44,7 @@
 //! - `.gjf` - Gaussian input files
 
 use nalgebra::DMatrix;
+use omecp::config::BOHR_TO_ANGSTROM;
 use omecp::qm_interface::get_output_file_base;
 use omecp::*;
 use omecp::{checkpoint, lst, validation};
@@ -77,8 +78,6 @@ fn print_convergence_status(
     max_disp: f64,
     config: &config::Config,
 ) {
-    const BOHR_TO_ANGSTROM: f64 = 0.529177;
-
     println!(" Criteria                            Current           Threshold        Pass");
     println!("----------------------------------------------------------------------------");
 
@@ -114,7 +113,7 @@ fn print_convergence_status(
     println!(
         "  4. RMS displacement              {:>12.8}      {:>12.8}       {}   ",
         rms_disp * BOHR_TO_ANGSTROM,
-        config.thresholds.rms,
+        config.thresholds.rms * BOHR_TO_ANGSTROM, // Convert threshold to Angstrom for display
         if conv.rms_disp_converged {
             "YES"
         } else {
@@ -125,7 +124,7 @@ fn print_convergence_status(
     println!(
         "  5. Max displacement              {:>12.8}      {:>12.8}       {}   ",
         max_disp * BOHR_TO_ANGSTROM,
-        config.thresholds.max_dis,
+        config.thresholds.max_dis * BOHR_TO_ANGSTROM, // Convert threshold to Angstrom for display
         if conv.max_disp_converged {
             "YES"
         } else {
@@ -636,8 +635,8 @@ fn print_configuration(
 
     println!("  Max Steps:                  {}", input_config.max_steps);
     println!(
-        "  Max Step Size (Bohr):       {}",
-        input_config.max_step_size
+        "  Max Step Size (Angstrom):   {:.6}",
+        input_config.max_step_size * BOHR_TO_ANGSTROM // Convert from Bohr to Angstrom
     );
     println!(
         "  Max History:                {} {}",
@@ -814,13 +813,14 @@ fn print_configuration(
         "  Max Gradient:               {:>12.8} hartree/bohr ",
         input_config.thresholds.max_g
     );
+    // Displacement thresholds: stored in Bohr internally, display in Angstrom for users
     println!(
-        "  RMS Displacement:           {:>12.8} bohr ",
-        input_config.thresholds.rms
+        "  RMS Displacement:           {:>12.8} angstrom ",
+        input_config.thresholds.rms * BOHR_TO_ANGSTROM
     );
     println!(
-        "  Max Displacement:           {:>12.8} bohr ",
-        input_config.thresholds.max_dis
+        "  Max Displacement:           {:>12.8} angstrom ",
+        input_config.thresholds.max_dis * BOHR_TO_ANGSTROM
     );
 
     // Print settings from omecp_config.cfg if loaded
@@ -1440,7 +1440,26 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Initialize optimization
     let mut opt_state = optimizer::OptimizationState::new(config.max_history);
     let mut x_old = geometry.coords.clone();
-    let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len());
+    // CRITICAL: Scale initial Hessian to match Python's Angstrom-based units
+    // Python uses identity matrix in Angstrom space (1 Ha/Å²)
+    // Rust uses Bohr space: 1 Ha/Å² = 1 Ha/(1.889726 bohr)² = 0.28 Ha/bohr²
+    // So we DIVIDE by (ANGSTROM_TO_BOHR)² to convert from Å² to bohr²
+    let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len())
+        / (config::ANGSTROM_TO_BOHR * config::ANGSTROM_TO_BOHR);
+
+    // Track last convergence status for non-convergence reporting
+    let mut last_conv = optimizer::ConvergenceStatus {
+        de_converged: false,
+        rms_grad_converged: false,
+        max_grad_converged: false,
+        rms_disp_converged: false,
+        max_disp_converged: false,
+    };
+    let mut last_de = 0.0;
+    let mut last_rms_grad = 0.0;
+    let mut last_max_grad = 0.0;
+    let mut last_rms_disp = 0.0;
+    let mut last_max_disp = 0.0;
 
     // Main optimization loop
     for step in 1..=config.max_steps {
@@ -1667,6 +1686,18 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Update stuck detection (adaptive step size)
         opt_state.update_stuck_detection(disp_norm);
 
+        // Store for non-convergence reporting
+        last_conv = conv.clone();
+        last_de = de;
+        last_rms_grad = rms_grad;
+        last_max_grad = max_grad;
+        last_rms_disp = rms_disp;
+        last_max_disp = max_disp;
+
+        // Print total displacement norm (matches Python output)
+        // Print total displacement norm (matches Python output)
+        println!("{:.15}", disp_norm * BOHR_TO_ANGSTROM); // Convert to Angstrom for display
+
         // Print energy and convergence status
         println!(
             "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
@@ -1691,7 +1722,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Update Hessian
         let sk = &x_new - &x_old;
         let yk = &grad_new - &grad;
-        hessian = optimizer::update_hessian_psb(&hessian, &sk, &yk);
+        hessian = optimizer::update_hessian_bfgs(&hessian, &sk, &yk);
 
         // Add to history for GDIIS/GEDIIS
         // CRITICAL FIX: Use QM-verified geometry, not optimizer prediction
@@ -1738,6 +1769,39 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // This ensures x_old matches what's in history and avoids drift
         x_old = state_a_new.geometry.coords.clone();
     }
+
+    // Report non-convergence status
+    println!(
+        "\n****WARNING: MECP optimization did not converge after {} steps****",
+        config.max_steps
+    );
+    println!("\nFinal convergence status:");
+    print_convergence_status(
+        &last_conv,
+        last_de,
+        last_rms_grad,
+        last_max_grad,
+        last_rms_disp,
+        last_max_disp,
+        &config,
+    );
+
+    println!("\nSuggestions:");
+    if !last_conv.de_converged {
+        println!("  - Energy difference ({:.6}) is still large. The states may not be close to crossing.", last_de);
+    }
+    if !last_conv.rms_grad_converged || !last_conv.max_grad_converged {
+        println!("  - Gradients are still large. Consider increasing max_steps or checking if the system is stuck.");
+    }
+    if !last_conv.rms_disp_converged || !last_conv.max_disp_converged {
+        println!(
+            "  - Displacements are still large. The optimization may need more steps to settle."
+        );
+    }
+    println!("  - Try increasing 'max_steps' in your input file");
+    println!("  - Check if the initial geometry is reasonable");
+    println!("  - Consider using a different optimizer (use_gediis = true)");
+    println!();
 
     // Clean up temporary files even if optimization didn't converge
     if let Err(e) = cleanup_manager.cleanup_directory(Path::new(job_dir)) {
@@ -2455,7 +2519,12 @@ fn run_single_optimization(
 
     let mut opt_state = optimizer::OptimizationState::new(config.max_history);
     let mut x_old = geometry.coords.clone();
-    let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len());
+    // CRITICAL: Scale initial Hessian to match Python's Angstrom-based units
+    // Python uses identity matrix in Angstrom space (1 Ha/Å²)
+    // Rust uses Bohr space: 1 Ha/Å² = 1 Ha/(1.889726 bohr)² = 0.28 Ha/bohr²
+    // So we DIVIDE by (ANGSTROM_TO_BOHR)² to convert from Å² to bohr²
+    let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len())
+        / (config::ANGSTROM_TO_BOHR * config::ANGSTROM_TO_BOHR);
 
     for step in 1..=config.max_steps {
         let output_ext = get_output_file_base(config.program);
@@ -2537,10 +2606,7 @@ fn run_single_optimization(
                         "Using Smart Hybrid GEDIIS optimizer (adaptive) (step {} >= switch point {})",
                         step, config.switch_step
                     );
-                    optimizer::smart_hybrid_gediis_step(
-                        &mut opt_state,
-                        config,
-                    )
+                    optimizer::smart_hybrid_gediis_step(&mut opt_state, config)
                 } else {
                     println!(
                         "Using Pure GEDIIS optimizer (step {} >= switch point {})",
@@ -2623,7 +2689,7 @@ fn run_single_optimization(
 
         let sk = &x_new - &x_old;
         let yk = &grad_new - &grad;
-        hessian = optimizer::update_hessian_psb(&hessian, &sk, &yk);
+        hessian = optimizer::update_hessian_bfgs(&hessian, &sk, &yk);
         let energy_diff = state_a_new.energy - state_b_new.energy;
         opt_state.add_to_history(
             state_a_new.geometry.coords.clone(),
@@ -3641,10 +3707,7 @@ fn run_restart(
                         step,
                         config.switch_step
                     );
-                    optimizer::smart_hybrid_gediis_step(
-                        &mut opt_state,
-                        &config,
-                    )
+                    optimizer::smart_hybrid_gediis_step(&mut opt_state, &config)
                 } else {
                     println!(
                         "Using Pure GEDIIS optimizer (step {} >= switch point {})",
@@ -3847,7 +3910,7 @@ fn run_coordinate_driving(
     // Analyze path
     let stats = reaction_path::analyze_reaction_path(&path);
     println!("\n****Path Statistics****");
-    println!("Total path length: {:.3} Å", stats.path_length);
+    println!("Total path length: {:.3} Angstrom", stats.path_length);
     println!("Number of points: {}", stats.num_points);
 
     Ok(())
@@ -3980,7 +4043,7 @@ fn run_path_optimization(
     // Analyze optimized path
     let stats = reaction_path::analyze_reaction_path(&optimized_path);
     println!("\n****Optimized Path Statistics****");
-    println!("Total path length: {:.3} Å", stats.path_length);
+    println!("Total path length: {:.3} Angstrom", stats.path_length);
     println!("Number of points: {}", stats.num_points);
 
     Ok(())

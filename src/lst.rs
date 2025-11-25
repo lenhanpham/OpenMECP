@@ -476,7 +476,7 @@ fn geometry_to_coords(geom: &Geometry) -> Vec<f64> {
 /// 2. **Consistent atom count**: All geometries have the same number of atoms
 /// 3. **Consistent elements**: All geometries have the same element types
 /// 4. **Finite coordinates**: No NaN or infinite coordinate values
-/// 5. **Reasonable coordinates**: No coordinates with absolute value > 1000 Å
+/// 5. **Reasonable coordinates**: No coordinates with absolute value > 1000 Angstrom
 ///
 /// # Examples
 ///
@@ -502,11 +502,11 @@ fn geometry_to_coords(geom: &Geometry) -> Vec<f64> {
 /// - Inconsistent number of atoms between geometries
 /// - Different element types between geometries
 /// - Non-finite coordinates (NaN or infinite values)
-/// - Coordinates with absolute values exceeding 1000 Å
+/// - Coordinates with absolute values exceeding 1000 Angstrom
 ///
 /// # Notes
 ///
-/// - The 1000 Å limit is a safety check for obviously incorrect structures
+/// - The 1000 Angstrom limit is a safety check for obviously incorrect structures
 /// - This validation should be called after any interpolation operation
 /// - Failed validation often indicates issues with input geometries or
 ///   numerical problems during interpolation
@@ -546,7 +546,7 @@ pub fn validate_geometries(geometries: &[Geometry]) -> Result<(), String> {
             }
         }
 
-        // Check for unreasonably large coordinates (> 1000 Å)
+        // Check for unreasonably large coordinates (> 1000 Angstrom)
         for j in 0..geom.num_atoms {
             let coords = geom.get_atom_coords(j);
             for &coord in &coords {
@@ -672,7 +672,7 @@ pub fn calculate_path_length(geometries: &[Geometry]) -> f64 {
 /// ```text
 /// ****Geometry Preview****
 /// Total geometries: 5
-/// Path length: 1.000 Å
+/// Path length: 1.000 Angstrom
 ///
 /// --- Geometry 1 ---
 ///  H    0.000    0.000    0.000
@@ -696,7 +696,10 @@ pub fn calculate_path_length(geometries: &[Geometry]) -> f64 {
 pub fn print_geometry_preview(geometries: &[Geometry]) {
     println!("\n****Geometry Preview****");
     println!("Total geometries: {}", geometries.len());
-    println!("Path length: {:.3} Å", calculate_path_length(geometries));
+    println!(
+        "Path length: {:.3} Angstrom",
+        calculate_path_length(geometries)
+    );
 
     // Show first, middle, and last geometries
     let indices = vec![0, geometries.len() / 2, geometries.len() - 1];

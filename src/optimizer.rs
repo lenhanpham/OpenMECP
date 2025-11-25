@@ -46,7 +46,7 @@
 //! The first term drives the energy difference to zero (f-vector).
 //! The second term minimizes energy perpendicular to the gradient difference (g-vector).
 
-use crate::config::{Config, BOHR_TO_ANGSTROM, ANGSTROM_TO_BOHR};
+use crate::config::Config;
 use crate::geometry::State;
 use nalgebra::{DMatrix, DVector};
 use std::collections::VecDeque;
@@ -349,7 +349,7 @@ impl OptimizationState {
                 let dist = (&self.geom_history[i] - other_geom).norm();
                 min_dist = min_dist.min(dist);
             }
-            // If distance < 0.01 Bohr (~0.005 Å), points are redundant
+            // If distance < 0.01 Bohr (~0.005 Angstrom), points are redundant
             // Tighter threshold (was 0.03) to allow fine convergence
             if min_dist < 0.01 {
                 score += 1e7; // MASSIVE Penalty for redundancy (overrides gap protection)
@@ -551,8 +551,18 @@ pub fn compute_mecp_gradient(
     };
 
     // Energy difference component
+    // CRITICAL UNIT ANALYSIS:
+    // Python: coordinates in Angstrom, forces in Ha/bohr, but treats gradient as Ha/Angstrom
+    // Rust: coordinates in bohr, forces in Ha/bohr
+    //
+    // Python's f_vec = (E1-E2) * x_norm has magnitude in Ha
+    // But Python uses it with Angstrom coordinates, so it's implicitly Ha/Angstrom
+    //
+    // Rust needs f_vec in Ha/bohr to match g_vec (which is in Ha/bohr)
+    // So we need: f_vec = (E1-E2) / bohr_per_angstrom * x_norm
+    // This converts Ha to Ha/bohr when working in Bohr space
     let de = state_a.energy - state_b.energy;
-    let f_vec = x_norm.clone() * (de / ANGSTROM_TO_BOHR);
+    let f_vec = x_norm.clone() * de;
 
     // Perpendicular component
     let dot = f1.dot(&x_norm);
@@ -632,7 +642,7 @@ pub fn bfgs_step(
     // Step 2: Cap direction vector dk to 0.1 Angstrom (Python's hardcoded limit)
     // Convert to Bohr for internal consistency
     let dk_norm = dk.norm();
-    let direction_limit = 0.1 * ANGSTROM_TO_BOHR;
+    let direction_limit = 0.1;
     if dk_norm > direction_limit {
         let original_norm = dk_norm;
         dk *= direction_limit / dk_norm;
@@ -646,11 +656,13 @@ pub fn bfgs_step(
     // Python uses FIXED rho for BFGS, no adaptive scaling
     // CRITICAL: rho=15 is tuned for Angstrom steps. For Bohr steps (which are ~1.89x larger),
     // we must scale rho DOWN to maintain the same physical step aggressiveness.
-    let rho = config.bfgs_rho / ANGSTROM_TO_BOHR;
+    let rho = config.bfgs_rho;
     let final_step_size = direction_limit * rho;
     println!(
         "BFGS step: direction_capped={}, rho={}, final_step_size={}",
-        direction_limit, rho, final_step_size
+        direction_limit,
+        rho,
+        final_step_size
     );
 
     let x_new = x0 + &dk * rho;
@@ -662,9 +674,9 @@ pub fn bfgs_step(
     if step_norm > config.max_step_size {
         let scale = config.max_step_size / step_norm;
         println!(
-            "BFGS step size limited: {:.6} -> {:.6} Å",
-            step_norm * BOHR_TO_ANGSTROM,
-            config.max_step_size * BOHR_TO_ANGSTROM
+            "BFGS step size limited: {:.6} -> {:.6} bohr",
+            step_norm,
+            config.max_step_size
         );
         x0 + &step * scale
     } else {
@@ -798,7 +810,7 @@ pub fn update_hessian_bfgs(
     let mut h_new = hessian.clone();
 
     let sk_dot_yk = sk.dot(yk);
-    
+
     // Check curvature condition: s^T y > 0
     // Also check for numerical stability (avoid division by very small numbers)
     if sk_dot_yk > 1e-10 {
@@ -808,15 +820,15 @@ pub fn update_hessian_bfgs(
         if sk_h_sk > 1e-10 {
             let term1 = (yk * yk.transpose()) / sk_dot_yk;
             let term2 = (&hsk * hsk.transpose()) / sk_h_sk;
-            
+
             h_new += term1 - term2;
-            
+
             // Enforce symmetry to prevent accumulation of numerical errors
             // Although BFGS is theoretically symmetric, floating point errors can drift
             h_new = (&h_new + h_new.transpose()) / 2.0;
         }
     }
-    
+
     h_new
 }
 
@@ -904,15 +916,15 @@ impl ConvergenceStatus {
 /// - Energy difference: 0.000050 hartree (~0.00136 eV)
 /// - RMS gradient: 0.0005 hartree/bohr
 /// - Max gradient: 0.0007 hartree/bohr
-/// - RMS displacement: 0.0025 bohr (~0.00132 Å)
-/// - Max displacement: 0.0040 bohr (~0.00212 Å)
+/// - RMS displacement: 0.0025 bohr (~0.00132 Angstrom)
+/// - Max displacement: 0.0040 bohr (~0.00212 Angstrom)
 ///
 /// ## Recommended for High-Precision MECP
 /// - Energy difference: 0.000010 hartree (~0.00027 eV)
 /// - RMS gradient: 0.0001 hartree/bohr
 /// - Max gradient: 0.0005 hartree/bohr
-/// - RMS displacement: 0.0010 bohr (~0.00053 Å)
-/// - Max displacement: 0.0020 bohr (~0.00106 Å)
+/// - RMS displacement: 0.0010 bohr (~0.00053 Angstrom)
+/// - Max displacement: 0.0020 bohr (~0.00106 Angstrom)
 ///
 /// # Implementation Notes
 ///
@@ -1219,12 +1231,12 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         "[DEBUG] Gradient history norm (total): {:.8}",
         history_grad_norm
     );
-    
-    // CRITICAL: Gradients in Rust are in Ha/bohr, but Python uses Ha/Å
-    // Since 1 Ha/Å = 1.889726 Ha/bohr, we need to scale the threshold
-    // Python: ||g|| < 0.0005 × 10 (in Ha/Å)
+
+    // CRITICAL: Gradients in Rust are in Ha/bohr, but Python uses Ha/Angstrom
+    // Since 1 Ha/Angstrom = 1.889726 Ha/bohr, we need to scale the threshold
+    // Python: ||g|| < 0.0005 × 10 (in Ha/Angstrom)
     // Rust: ||g|| < 0.0005 × 10 × 1.889726 (in Ha/bohr)
-    let threshold = config.thresholds.rms_g * 10.0 * ANGSTROM_TO_BOHR;
+    let threshold = config.thresholds.rms_g * 10.0;
     println!(
         "[DEBUG] Step reduction threshold: {:.8} (scaled for Ha/bohr units)",
         threshold
@@ -1513,8 +1525,8 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
         .sum();
     let history_grad_norm = history_grad_norm_sq.sqrt();
 
-    // CRITICAL: Scale threshold for Ha/bohr units (Rust) vs Ha/Å (Python)
-    let threshold = config.thresholds.rms_g * 10.0 * ANGSTROM_TO_BOHR;
+    // CRITICAL: Scale threshold for Ha/bohr units (Rust) vs Ha/Angstrom (Python)
+    let threshold = config.thresholds.rms_g * 10.0;
     if history_grad_norm < threshold {
         step *= config.reduced_factor;
     }
@@ -1825,9 +1837,9 @@ pub fn smart_hybrid_gediis_step(
     }
 
     // Apply step reduction if gradient is small (same as other methods)
-    // CRITICAL: Scale threshold for Ha/bohr units (Rust) vs Ha/Å (Python)
+    // CRITICAL: Scale threshold for Ha/bohr units (Rust) vs Ha/Angstrom (Python)
     let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
-    let threshold = config.thresholds.rms_g * 10.0 * ANGSTROM_TO_BOHR;
+    let threshold = config.thresholds.rms_g * 10.0;
     if last_grad_norm < threshold {
         let last_geom = opt_state.geom_history.back().unwrap();
         let mut step = &x_new - last_geom;
@@ -1845,7 +1857,7 @@ pub fn smart_hybrid_gediis_step(
 
     // CRITICAL: Check for stuck optimizer (step too small)
     // Lowered threshold from 1e-10 to 1e-6 Bohr to catch stuck optimizer earlier
-    // 1e-6 Bohr ≈ 5e-7 Å, which is effectively zero progress
+    // 1e-6 Bohr ≈ 5e-7 Angstrom, which is effectively zero progress
     if step_norm < 1e-6 {
         println!("WARNING: Smart Hybrid step size too small ({:.2e} Bohr), falling back to steepest descent", step_norm);
         // Fallback to steepest descent with small step

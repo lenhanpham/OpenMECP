@@ -44,7 +44,7 @@
 //! - `.gjf` - Gaussian input files
 
 use nalgebra::DMatrix;
-use omecp::config::BOHR_TO_ANGSTROM;
+use omecp::config;
 use omecp::qm_interface::get_output_file_base;
 use omecp::*;
 use omecp::{checkpoint, lst, validation};
@@ -112,8 +112,8 @@ fn print_convergence_status(
 
     println!(
         "  4. RMS displacement              {:>12.8}      {:>12.8}       {}   ",
-        rms_disp * BOHR_TO_ANGSTROM,
-        config.thresholds.rms * BOHR_TO_ANGSTROM, // Convert threshold to Angstrom for display
+        rms_disp,
+        config.thresholds.rms, 
         if conv.rms_disp_converged {
             "YES"
         } else {
@@ -123,8 +123,8 @@ fn print_convergence_status(
 
     println!(
         "  5. Max displacement              {:>12.8}      {:>12.8}       {}   ",
-        max_disp * BOHR_TO_ANGSTROM,
-        config.thresholds.max_dis * BOHR_TO_ANGSTROM, // Convert threshold to Angstrom for display
+        max_disp,
+        config.thresholds.max_dis,
         if conv.max_disp_converged {
             "YES"
         } else {
@@ -241,7 +241,7 @@ fn main() {
             if file_arg == "omecp_config.cfg" {
                 match run_create_settings_template() {
                     Ok(()) => {
-                        println!("✓ Settings template created successfully!");
+                        println!(" Settings template created successfully!");
                         println!("  Output file: omecp_config.cfg");
                         println!("\nNext steps:");
                         println!("  1. Review and edit the omecp_config.cfg file");
@@ -635,8 +635,8 @@ fn print_configuration(
 
     println!("  Max Steps:                  {}", input_config.max_steps);
     println!(
-        "  Max Step Size (Angstrom):   {:.6}",
-        input_config.max_step_size * BOHR_TO_ANGSTROM // Convert from Bohr to Angstrom
+        "  Max Step Size (bohr):       {:.6}",
+        input_config.max_step_size
     );
     println!(
         "  Max History:                {} {}",
@@ -719,9 +719,9 @@ fn print_configuration(
             }
         );
         if input_config.fix_de != 0.0 {
-            println!("  Fix ΔE (eV):              {} eV", input_config.fix_de);
+            println!("  Fix dE (eV):              {} eV", input_config.fix_de);
         } else {
-            println!("  Fix ΔE (eV):              0.0 (default)");
+            println!("  Fix dE (eV):              0.0 (default)");
         }
         if !input_config.basis_set.is_empty() {
             println!("  Basis Set:                {}", input_config.basis_set);
@@ -802,7 +802,7 @@ fn print_configuration(
     // Print thresholds
     println!("Convergence Thresholds:");
     println!(
-        "  Energy Difference (ΔE):     {:>12.8} hartree ",
+        "  Energy Difference (dE):     {:>12.8} hartree ",
         input_config.thresholds.de
     );
     println!(
@@ -813,14 +813,14 @@ fn print_configuration(
         "  Max Gradient:               {:>12.8} hartree/bohr ",
         input_config.thresholds.max_g
     );
-    // Displacement thresholds: stored in Bohr internally, display in Angstrom for users
+    // Displacement thresholds: stored in Bohr internally
     println!(
-        "  RMS Displacement:           {:>12.8} angstrom ",
-        input_config.thresholds.rms * BOHR_TO_ANGSTROM
+        "  RMS Displacement:           {:>12.8} bohr ",
+        input_config.thresholds.rms
     );
     println!(
-        "  Max Displacement:           {:>12.8} angstrom ",
-        input_config.thresholds.max_dis * BOHR_TO_ANGSTROM
+        "  Max Displacement:           {:>12.8} bohr ",
+        input_config.thresholds.max_dis
     );
 
     // Print settings from omecp_config.cfg if loaded
@@ -1440,12 +1440,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Initialize optimization
     let mut opt_state = optimizer::OptimizationState::new(config.max_history);
     let mut x_old = geometry.coords.clone();
-    // CRITICAL: Scale initial Hessian to match Python's Angstrom-based units
-    // Python uses identity matrix in Angstrom space (1 Ha/Å²)
-    // Rust uses Bohr space: 1 Ha/Å² = 1 Ha/(1.889726 bohr)² = 0.28 Ha/bohr²
-    // So we DIVIDE by (ANGSTROM_TO_BOHR)² to convert from Å² to bohr²
-    let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len())
-        / (config::ANGSTROM_TO_BOHR * config::ANGSTROM_TO_BOHR);
+    let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len());
 
     // Track last convergence status for non-convergence reporting
     let mut last_conv = optimizer::ConvergenceStatus {
@@ -1695,12 +1690,11 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         last_max_disp = max_disp;
 
         // Print total displacement norm (matches Python output)
-        // Print total displacement norm (matches Python output)
-        println!("{:.15}", disp_norm * BOHR_TO_ANGSTROM); // Convert to Angstrom for display
+        println!("{:.15}", disp_norm);
 
         // Print energy and convergence status
         println!(
-            "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
+            "E1 = {:.8}, E2 = {:.8}, dE = {:.8}",
             state_a_new.energy, state_b_new.energy, de
         );
         print_convergence_status(&conv, de, rms_grad, max_grad, rms_disp, max_disp, &config);
@@ -2519,12 +2513,7 @@ fn run_single_optimization(
 
     let mut opt_state = optimizer::OptimizationState::new(config.max_history);
     let mut x_old = geometry.coords.clone();
-    // CRITICAL: Scale initial Hessian to match Python's Angstrom-based units
-    // Python uses identity matrix in Angstrom space (1 Ha/Å²)
-    // Rust uses Bohr space: 1 Ha/Å² = 1 Ha/(1.889726 bohr)² = 0.28 Ha/bohr²
-    // So we DIVIDE by (ANGSTROM_TO_BOHR)² to convert from Å² to bohr²
-    let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len())
-        / (config::ANGSTROM_TO_BOHR * config::ANGSTROM_TO_BOHR);
+    let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len());
 
     for step in 1..=config.max_steps {
         let output_ext = get_output_file_base(config.program);
@@ -2897,7 +2886,7 @@ fn run_lst_interpolation(
         if ea.is_finite() && eb.is_finite() {
             let de = ea - eb;
             println!(
-                "Point {:2}: EA = {:.8}, EB = {:.8}, ΔE = {:.8}",
+                "Point {:2}: EA = {:.8}, EB = {:.8}, dE = {:.8}",
                 i + 1,
                 ea,
                 eb,
@@ -2916,7 +2905,7 @@ fn run_lst_interpolation(
     if successful_points > 0 {
         println!("\n****Summary****");
         println!(
-            "Minimum |ΔE| found at point {}: {:.8} hartree ({:.3} eV)",
+            "Minimum |dE| found at point {}: {:.8} hartree ({:.3} eV)",
             min_de_idx + 1,
             min_de,
             min_de * 27.211386
@@ -3747,7 +3736,7 @@ fn run_restart(
 
         // Print energy and convergence status
         println!(
-            "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
+            "E1 = {:.8}, E2 = {:.8}, dE = {:.8}",
             state_a.energy, state_b.energy, de
         );
         print_convergence_status(&conv, de, rms_grad, max_grad, rms_disp, max_disp, &config);
@@ -3881,7 +3870,7 @@ fn run_coordinate_driving(
         energies_b.push(state_b.energy);
 
         println!(
-            "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
+            "E1 = {:.8}, E2 = {:.8}, dE = {:.8}",
             state_a.energy,
             state_b.energy,
             state_a.energy - state_b.energy
@@ -3890,7 +3879,7 @@ fn run_coordinate_driving(
 
     // Print energy profile
     println!("\n****Energy Profile Along Reaction Coordinate****");
-    println!("Step | Coordinate |    E1    |    E2    |   ΔE   ");
+    println!("Step | Coordinate |    E1    |    E2    |   dE   ");
     println!("-----|------------|----------|----------|--------");
 
     for (i, (&ea, &eb)) in energies_a.iter().zip(energies_b.iter()).enumerate() {
@@ -4024,7 +4013,7 @@ fn run_path_optimization(
         energies_b.push(state_b.energy);
 
         println!(
-            "E1 = {:.8}, E2 = {:.8}, ΔE = {:.8}",
+            "E1 = {:.8}, E2 = {:.8}, dE = {:.8}",
             state_a.energy,
             state_b.energy,
             state_a.energy - state_b.energy
@@ -4033,7 +4022,7 @@ fn run_path_optimization(
 
     // Print optimized energy profile
     println!("\n****Optimized Path Energy Profile****");
-    println!("Step |    E1    |    E2    |   ΔE   ");
+    println!("Step |    E1    |    E2    |   dE   ");
     println!("-----|----------|----------|--------");
 
     for (i, (&ea, &eb)) in energies_a.iter().zip(energies_b.iter()).enumerate() {

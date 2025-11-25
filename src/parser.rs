@@ -72,7 +72,7 @@
 //! let constraints = input_data.constraints;
 //! ```
 
-use crate::config::{Config, QMProgram, RunMode, ScanSpec, ScanType, ANGSTROM_TO_BOHR};
+use crate::config::{Config, QMProgram, RunMode, ScanSpec, ScanType};
 use crate::constraints::Constraint;
 use crate::geometry::{angstrom_to_bohr, Geometry};
 use nalgebra::DVector;
@@ -449,7 +449,7 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
 /// # Examples
 ///
 /// ```
-/// // Bond constraint: keep atoms 1-2 at 1.5 Å
+/// // Bond constraint: keep atoms 1-2 at 1.5 Angstrom
 /// r 1 2 1.5
 ///
 /// // Angle constraint: keep angle 1-2-3 at 120 degrees
@@ -605,7 +605,7 @@ fn parse_distance_target(s: &str, full_line: &str) -> Result<f64> {
 
     if distance > 20.0 {
         return Err(ParseError::Parse(format!(
-            "Distance target {} Å seems unreasonably large in line '{}'. Maximum allowed: 20.0 Å",
+            "Distance target {} Angstrom seems unreasonably large in line '{}'. Maximum allowed: 20.0 Angstrom",
             distance, full_line
         )));
     }
@@ -682,7 +682,7 @@ fn validate_constraints_against_geometry(
                 // Check target reasonableness
                 if *target > 10.0 {
                     return Err(ParseError::Parse(format!(
-                        "Bond constraint {}: target distance {:.3} Å is unreasonably large",
+                        "Bond constraint {}: target distance {:.3} Angstrom is unreasonably large",
                         i + 1,
                         target
                     )));
@@ -858,7 +858,7 @@ fn parse_bool(value: &str) -> bool {
 }
 
 /// Parses configuration from a string content.
-/// Users specify displacement thresholds in Angstrom (familiar units),
+/// Users specify displacement thresholds in bohr,
 /// but internal coordinates are in Bohr, so we convert here.
 fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>) -> Result<()> {
     let parts: Vec<&str> = line.splitn(2, '=').collect();
@@ -941,11 +941,7 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         }
         "mp2" => config.mp2 = parse_bool(value),
         "max_steps" => config.max_steps = value.parse().unwrap_or(100),
-        // Max step size: users specify in Angstrom, convert to Bohr for internal use
-        "max_step_size" => {
-            let angstrom_value: f64 = value.parse().unwrap_or(0.1);
-            config.max_step_size = angstrom_value * ANGSTROM_TO_BOHR; // 0.1 Å → 0.189 Bohr
-        }
+        "max_step_size" => config.max_step_size = value.parse().unwrap_or(0.1),
         "max_history" => {
             config.max_history = value.parse().unwrap_or_else(|_| {
                 eprintln!(
@@ -957,18 +953,20 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         }
         "fix_de" => config.fix_de = value.parse().unwrap_or(0.0),
         "de_thresh" => config.thresholds.de = value.parse().unwrap_or(0.000050),
-        // Displacement thresholds: users specify in Angstrom, convert to Bohr for internal use
+        // Displacement thresholds: users specify in bohr
         "rms_thresh" => {
-            let angstrom_value: f64 = value.parse().unwrap_or(0.0025);
-            config.thresholds.rms = angstrom_value * ANGSTROM_TO_BOHR;
+            config.thresholds.rms = value.parse().unwrap_or(0.0025);
         }
         "max_dis_thresh" => {
-            let angstrom_value: f64 = value.parse().unwrap_or(0.004);
-            config.thresholds.max_dis = angstrom_value * ANGSTROM_TO_BOHR;
+            config.thresholds.max_dis = value.parse().unwrap_or(0.004);
         }
-        // Gradient thresholds: already in Hartree/Bohr, no conversion needed
-        "max_g_thresh" => config.thresholds.max_g = value.parse().unwrap_or(0.0007),
-        "rms_g_thresh" => config.thresholds.rms_g = value.parse().unwrap_or(0.0005),
+        // Gradient thresholds: input in Ha/bohr
+        "max_g_thresh" => {
+            config.thresholds.max_g = value.parse().unwrap_or(0.0007);
+        }
+        "rms_g_thresh" => {
+            config.thresholds.rms_g = value.parse().unwrap_or(0.0005);
+        }
         "bagel_model" => config.bagel_model = value.to_string(),
         "custom_interface_file" => config.custom_interface_file = value.to_string(),
         "drive_coordinate" => config.drive_coordinate = value.to_string(),

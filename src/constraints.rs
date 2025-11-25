@@ -464,14 +464,14 @@ pub fn add_constraint_lagrange(
     let first_step = lambdas.iter().all(|&l| l == 0.0);
     if first_step {
         let g = -forces.clone(); // raw gradient
-        let total_constraints = n_constraints as f64;  // Constraint count multiplier (Python compatibility)
+        let total_constraints = n_constraints as f64; // Constraint count multiplier (Python compatibility)
         for i in 0..n_constraints {
             let c_i = jacobian.row(i);
             let c_vec = DVector::from_vec(c_i.iter().cloned().collect());
             let c_dot_g = c_vec.dot(&g);
             let c_dot_c = c_vec.dot(&c_vec);
             if c_dot_c > 1e-12 {
-                lambdas[i] = (-c_dot_g / c_dot_c) * total_constraints;  // Apply multiplier
+                lambdas[i] = (-c_dot_g / c_dot_c) * total_constraints; // Apply multiplier
             } else {
                 lambdas[i] = 0.0;
             }
@@ -527,7 +527,7 @@ pub fn validate_constraints(
                 }
                 if *target <= 0.0 || *target > 10.0 {
                     return Err(ConstraintError::InvalidConstraint(format!(
-                        "Bond constraint {}: unreasonable target distance {:.3} Å",
+                        "Bond constraint {}: unreasonable target distance {:.3} Angstrom",
                         i, target
                     )));
                 }
@@ -642,7 +642,7 @@ pub fn report_constraint_status(
             } => {
                 let current = calculate_bond_distance(geometry, *a, *b);
                 println!(
-                    "  Bond {}-{}: current={:.4} Å, target={:.4} Å, violation={:.6}, λ={:.6}",
+                    "  Bond {}-{}: current={:.4} Angstrom, target={:.4} Angstrom, violation={:.6}, λ={:.6}",
                     a + 1,
                     b + 1,
                     current,
@@ -703,36 +703,43 @@ mod tests {
     fn test_python_compatible_constraint_initialization() {
         // Test diagonal λ initialization like Python MECP.py
         let elements = vec!["H".to_string(), "H".to_string()];
-        let coords = vec![0.0, 0.0, 0.0, 1.6, 0.0, 0.0]; // 1.6 Å bond
+        let coords = vec![0.0, 0.0, 0.0, 1.6, 0.0, 0.0]; // 1.6 Angstrom bond
         let geometry = Geometry::new(elements, coords);
 
         let constraints = vec![
-            Constraint::Bond { atoms: (0, 1), target: 1.5 } // Target 1.5 Å
+            Constraint::Bond {
+                atoms: (0, 1),
+                target: 1.5,
+            }, // Target 1.5 Angstrom
         ];
 
         let forces = DVector::from_vec(vec![0.1, 0.0, 0.0, -0.1, 0.0, 0.0]);
         let mut lambdas = vec![0.0];
 
         // First call should initialize λ using diagonal approximation
-        let (_constrained_forces, violations) = add_constraint_lagrange(
-            &geometry, forces.clone(), &constraints, &mut lambdas
-        ).unwrap();
+        let (_constrained_forces, violations) =
+            add_constraint_lagrange(&geometry, forces.clone(), &constraints, &mut lambdas).unwrap();
 
         // λ should be non-zero (initialized)
         assert!(lambdas[0] != 0.0, "λ should be initialized on first step");
-        
+
         // Second call should reuse λ (not recompute)
         let old_lambda = lambdas[0];
-        let (_constrained_forces2, _violations2) = add_constraint_lagrange(
-            &geometry, forces, &constraints, &mut lambdas
-        ).unwrap();
+        let (_constrained_forces2, _violations2) =
+            add_constraint_lagrange(&geometry, forces, &constraints, &mut lambdas).unwrap();
 
         // λ should be unchanged (reused)
-        assert_eq!(old_lambda, lambdas[0], "λ should be reused on subsequent steps");
-        
+        assert_eq!(
+            old_lambda, lambdas[0],
+            "λ should be reused on subsequent steps"
+        );
+
         // Violations should be detected
         assert!(violations.len() == 1, "Should have one violation");
-        assert!(violations[0].abs() > 1e-10, "Should detect bond length violation");
+        assert!(
+            violations[0].abs() > 1e-10,
+            "Should detect bond length violation"
+        );
     }
 
     #[test]
@@ -743,18 +750,23 @@ mod tests {
         let geometry = Geometry::new(elements, coords);
 
         let constraints = vec![
-            Constraint::Bond { atoms: (0, 1), target: 1.5 } // Perfect match
+            Constraint::Bond {
+                atoms: (0, 1),
+                target: 1.5,
+            }, // Perfect match
         ];
 
         let forces = DVector::from_vec(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         let mut lambdas = vec![0.0];
 
-        let (_, violations) = add_constraint_lagrange(
-            &geometry, forces, &constraints, &mut lambdas
-        ).unwrap();
+        let (_, violations) =
+            add_constraint_lagrange(&geometry, forces, &constraints, &mut lambdas).unwrap();
 
         // Perfect bond should have minimal violation
-        assert!(violations[0].abs() < 1e-10, "Perfect bond should have minimal violation");
+        assert!(
+            violations[0].abs() < 1e-10,
+            "Perfect bond should have minimal violation"
+        );
     }
 }
 

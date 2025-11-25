@@ -11,8 +11,8 @@
 use nalgebra::DVector;
 
 /// Unit conversion constants for coordinate systems
-const BOHR_TO_ANGSTROM: f64 = 0.529177210903;
-const ANGSTROM_TO_BOHR: f64 = 1.0 / BOHR_TO_ANGSTROM;
+const BOHR_TO_ANGSTROM: f64 = 0.5291772489;
+const ANGSTROM_TO_BOHR: f64 = 1.8897259886;
 
 /// Convert coordinates from Angstroms to Bohrs
 pub fn angstrom_to_bohr(coords: &DVector<f64>) -> DVector<f64> {

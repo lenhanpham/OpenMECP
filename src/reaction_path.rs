@@ -119,7 +119,7 @@ pub enum CoordinateType {
     /// Bond length coordinate between two atoms.
     ///
     /// Measures the distance between atoms i and j. Units are typically
-    /// in Angstroms (Å) or Bohr radii. This is the most common reaction
+    /// in Angstroms (Angstrom) or Bohr radii. This is the most common reaction
     /// coordinate for bond formation and dissociation processes.
     Bond,
 
@@ -162,7 +162,7 @@ pub enum CoordinateType {
 ///
 /// # Units and Conventions
 ///
-/// - **Bond lengths**: Angstroms (Å) - typical range 0.5-5.0 Å
+/// - **Bond lengths**: Angstroms (Angstrom) - typical range 0.5-5.0 Angstrom
 /// - **Angles**: Radians internally - typical range 0 to π (0° to 180°)
 /// - **Dihedrals**: Radians internally - range -π to π (-180° to 180°)
 ///
@@ -171,7 +171,7 @@ pub enum CoordinateType {
 /// ```rust
 /// use omecp::reaction_path::{DriveCoordinate, CoordinateType};
 ///
-/// // C-H bond dissociation: drive from 1.1 Å to 3.0 Å
+/// // C-H bond dissociation: drive from 1.1 Angstrom to 3.0 Angstrom
 /// let bond_breaking = DriveCoordinate::new(
 ///     CoordinateType::Bond,
 ///     vec![0, 1],  // Carbon (0) to Hydrogen (1)
@@ -212,7 +212,7 @@ pub struct DriveCoordinate {
     /// The target value for the coordinate.
     ///
     /// Units depend on coordinate type:
-    /// - **Bond**: Angstroms (Å)
+    /// - **Bond**: Angstroms (Angstrom)
     /// - **Angle**: Radians (use `.to_radians()` to convert from degrees)
     /// - **Dihedral**: Radians (range -π to π)
     pub target_value: f64,
@@ -273,7 +273,7 @@ impl DriveCoordinate {
     /// );
     ///
     /// // let current_distance = bond_coord.current_value(&geometry);
-    /// // println!("Current C-H distance: {:.3} Å", current_distance);
+    /// // println!("Current C-H distance: {:.3} Angstrom", current_distance);
     /// ```
     pub fn current_value(&self, geometry: &Geometry) -> f64 {
         let constraint = self.to_constraint();
@@ -449,7 +449,7 @@ impl DriveCoordinate {
 /// ```rust
 /// use omecp::reaction_path::{drive_coordinate, DriveCoordinate, CoordinateType};
 ///
-/// // Drive a C-H bond from 1.1 Å to 3.0 Å in 20 steps
+/// // Drive a C-H bond from 1.1 Angstrom to 3.0 Angstrom in 20 steps
 /// let bond_coord = DriveCoordinate::new(
 ///     CoordinateType::Bond,
 ///     vec![0, 1],  // Carbon-Hydrogen bond
@@ -674,10 +674,10 @@ fn constrained_coordinate_driving(
 ///
 /// # Examples
 ///
-/// For a bond constraint with target 1.5 Å:
-/// - Current bond = 1.8 Å → violation = +0.3 Å (too long)
-/// - Current bond = 1.2 Å → violation = -0.3 Å (too short)
-/// - Current bond = 1.5 Å → violation = 0.0 Å (satisfied)
+/// For a bond constraint with target 1.5 Angstrom:
+/// - Current bond = 1.8 Angstrom → violation = +0.3 Angstrom (too long)
+/// - Current bond = 1.2 Angstrom → violation = -0.3 Angstrom (too short)
+/// - Current bond = 1.5 Angstrom → violation = 0.0 Angstrom (satisfied)
 fn calculate_constraint_violation(geometry: &Geometry, constraint: &Constraint) -> f64 {
     let violations = evaluate_constraints(geometry, std::slice::from_ref(constraint));
     violations[0]
@@ -745,7 +745,7 @@ fn calculate_constraint_violation(geometry: &Geometry, constraint: &Constraint) 
 /// 4. Equal and opposite forces on the two atoms
 ///
 /// ## Finite Difference Parameters
-/// - **Step size (δ)**: 0.001 Å (compromise between accuracy and numerical stability)
+/// - **Step size (δ)**: 0.001 Angstrom (compromise between accuracy and numerical stability)
 /// - **One-sided difference**: Uses forward difference for simplicity
 /// - **Coordinate perturbation**: Each Cartesian coordinate perturbed independently
 ///
@@ -847,7 +847,7 @@ fn calculate_constraint_force(
 /// ```
 ///
 /// where:
-/// - k is the spring constant (typically 0.1-1.0 eV/Å²)
+/// - k is the spring constant (typically 0.1-1.0 eV/Angstrom²)
 /// - R_i represents the coordinates of image i
 /// - τ̂_i is the normalized tangent vector at image i
 ///
@@ -1066,7 +1066,7 @@ pub fn optimize_reaction_path(
 ///
 /// - **High k (stiff springs)**: Images stay evenly spaced but may resist optimization
 /// - **Low k (soft springs)**: Images can cluster but may lose path resolution
-/// - **Typical values**: k = 0.1-0.5 eV/Å² for most chemical systems
+/// - **Typical values**: k = 0.1-0.5 eV/Angstrom² for most chemical systems
 ///
 /// # Implementation Notes
 ///
@@ -1291,9 +1291,9 @@ fn calculate_tangent(
 /// # Interpretation
 ///
 /// - **RMSD ≈ 0**: Geometries are nearly identical
-/// - **RMSD < 0.1 Å**: Very similar structures (small conformational changes)
-/// - **RMSD 0.1-0.5 Å**: Moderate structural differences
-/// - **RMSD > 0.5 Å**: Significant structural changes
+/// - **RMSD < 0.1 Angstrom**: Very similar structures (small conformational changes)
+/// - **RMSD 0.1-0.5 Angstrom**: Moderate structural differences
+/// - **RMSD > 0.5 Angstrom**: Significant structural changes
 ///
 /// # Applications in Path Methods
 ///
@@ -1452,18 +1452,18 @@ fn get_average_spacing(path: &[Geometry]) -> f64 {
 ///
 /// # Typical Bond Lengths (for reference)
 ///
-/// - **C-H**: ~1.1 Å
-/// - **C-C**: ~1.5 Å (single), ~1.3 Å (double), ~1.2 Å (triple)
-/// - **C-O**: ~1.4 Å (single), ~1.2 Å (double)
-/// - **O-H**: ~1.0 Å
-/// - **N-H**: ~1.0 Å
+/// - **C-H**: ~1.1 Angstrom
+/// - **C-C**: ~1.5 Angstrom (single), ~1.3 Angstrom (double), ~1.2 Angstrom (triple)
+/// - **C-O**: ~1.4 Angstrom (single), ~1.2 Angstrom (double)
+/// - **O-H**: ~1.0 Angstrom
+/// - **N-H**: ~1.0 Angstrom
 ///
 /// # Examples
 ///
 /// ```rust
 /// // Calculate C-H bond length
 /// let ch_distance = calculate_distance(&geometry, 0, 1);
-/// println!("C-H bond length: {:.3} Å", ch_distance);
+/// println!("C-H bond length: {:.3} Angstrom", ch_distance);
 ///
 /// // Check if bond is within reasonable range
 /// if ch_distance > 2.0 {
@@ -1628,9 +1628,9 @@ fn adjust_bond_length(geometry: &mut Geometry, atom1: usize, atom2: usize, targe
 /// - **Very long paths**: Potentially unphysical or poorly optimized
 ///
 /// ## Typical Values
-/// - **Simple reactions**: 1-5 Å total path length
-/// - **Complex rearrangements**: 5-20 Å total path length
-/// - **Conformational changes**: 2-10 Å total path length
+/// - **Simple reactions**: 1-5 Angstrom total path length
+/// - **Complex rearrangements**: 5-20 Angstrom total path length
+/// - **Conformational changes**: 2-10 Angstrom total path length
 ///
 /// # Applications
 ///
@@ -1658,9 +1658,9 @@ fn adjust_bond_length(geometry: &mut Geometry, atom1: usize, atom2: usize, targe
 /// let stats = analyze_reaction_path(&optimized_path);
 ///
 /// println!("Path analysis:");
-/// println!("  Total length: {:.3} Å", stats.path_length);
+/// println!("  Total length: {:.3} Angstrom", stats.path_length);
 /// println!("  Number of images: {}", stats.num_points);
-/// println!("  Average spacing: {:.3} Å",
+/// println!("  Average spacing: {:.3} Angstrom",
 ///          stats.path_length / (stats.num_points - 1) as f64);
 /// ```
 ///

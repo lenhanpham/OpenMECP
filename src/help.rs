@@ -658,7 +658,7 @@ pub const FEATURES: &[FeatureInfo] = &[
         name: "Bond Constraints",
         description: "Fix bond distances during optimization",
         usage: "R i j value (in Angstrom)",
-        example: Some("R 1 2 1.5  # Fix distance between atoms 1-2 to 1.5 Å"),
+        example: Some("R 1 2 1.5  # Fix distance between atoms 1-2 to 1.5 Angstrom"),
     },
     FeatureInfo {
         name: "Angle Constraints",
@@ -670,7 +670,7 @@ pub const FEATURES: &[FeatureInfo] = &[
         name: "PES Scanning",
         description: "Scan potential energy surface along 1D or 2D coordinate",
         usage: "S R i j start points step  OR  S A i j k start points step",
-        example: Some("S R 1 2 1.0 10 0.1  # Scan R(1,2) from 1.0 Å, 10 steps"),
+        example: Some("S R 1 2 1.0 10 0.1  # Scan R(1,2) from 1.0 Angstrom, 10 steps"),
     },
     FeatureInfo {
         name: "Coordinate Driving",

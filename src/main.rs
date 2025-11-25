@@ -1716,7 +1716,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Update Hessian
         let sk = &x_new - &x_old;
         let yk = &grad_new - &grad;
-        hessian = optimizer::update_hessian_bfgs(&hessian, &sk, &yk);
+        hessian = optimizer::update_hessian(&hessian, &sk, &yk);
 
         // Add to history for GDIIS/GEDIIS
         // CRITICAL FIX: Use QM-verified geometry, not optimizer prediction
@@ -2678,7 +2678,7 @@ fn run_single_optimization(
 
         let sk = &x_new - &x_old;
         let yk = &grad_new - &grad;
-        hessian = optimizer::update_hessian_bfgs(&hessian, &sk, &yk);
+        hessian = optimizer::update_hessian(&hessian, &sk, &yk);
         let energy_diff = state_a_new.energy - state_b_new.energy;
         opt_state.add_to_history(
             state_a_new.geometry.coords.clone(),

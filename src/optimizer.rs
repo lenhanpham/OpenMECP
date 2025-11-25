@@ -46,7 +46,7 @@
 //! The first term drives the energy difference to zero (f-vector).
 //! The second term minimizes energy perpendicular to the gradient difference (g-vector).
 
-use crate::config::Config;
+use crate::config::{Config, ANGSTROM_TO_BOHR}; // BOHR_TO_ANGSTROM
 use crate::geometry::State;
 use nalgebra::{DMatrix, DVector};
 use std::collections::VecDeque;
@@ -642,7 +642,7 @@ pub fn bfgs_step(
     // Step 2: Cap direction vector dk to 0.1 Angstrom (Python's hardcoded limit)
     // Convert to Bohr for internal consistency
     let dk_norm = dk.norm();
-    let direction_limit = 0.1;
+    let direction_limit = 0.1 * ANGSTROM_TO_BOHR;
     if dk_norm > direction_limit {
         let original_norm = dk_norm;
         dk *= direction_limit / dk_norm;
@@ -753,33 +753,33 @@ pub fn compute_adaptive_scale(
 ///
 /// // let h_new = update_hessian_psb(&h_old, &sk, &yk);
 /// ```
-///pub fn update_hessian_psb(
-///    hessian: &DMatrix<f64>,
-///    sk: &DVector<f64>,
-///    yk: &DVector<f64>,
-///) -> DMatrix<f64> {
-///    let mut h_new = hessian.clone();
-///
-///    // Check curvature condition: s^T y > 0 for meaningful update
-///    // Reference: Nocedal & Wright "Numerical Optimization" Theorem 6.2
-///    let sk_dot_yk = sk.dot(yk);
-///    let sk_dot_sk = sk.dot(sk);
-///
-///    // Only update if curvature condition is satisfied and s is not zero
-///    if sk_dot_yk > 1e-12 * sk_dot_sk * yk.norm() && sk_dot_sk.abs() > 1e-10 {
-///        let hsk = hessian * sk;
-///        let diff = yk - &hsk;
-///        let sk_diff = sk.dot(&diff);
-///        let term1 = &diff * sk.transpose() + sk * diff.transpose();
-///        let term2 = (sk * sk.transpose()) * (sk_diff / sk_dot_sk);
-///
-///        h_new += (term1 - term2) / sk_dot_sk;
-///    }
-///    // If curvature condition not satisfied, return current Hessian
-///    // This prevents degradation in convergence properties
-///
-///    h_new
-///}
+pub fn update_hessian(
+    hessian: &DMatrix<f64>,
+    sk: &DVector<f64>,
+    yk: &DVector<f64>,
+) -> DMatrix<f64> {
+    let mut h_new = hessian.clone();
+
+    // Check curvature condition: s^T y > 0 for meaningful update
+    // Reference: Nocedal & Wright "Numerical Optimization" Theorem 6.2
+    let sk_dot_yk = sk.dot(yk);
+    let sk_dot_sk = sk.dot(sk);
+
+    // Only update if curvature condition is satisfied and s is not zero
+    if sk_dot_yk > 1e-12 * sk_dot_sk * yk.norm() && sk_dot_sk.abs() > 1e-10 {
+        let hsk = hessian * sk;
+        let diff = yk - &hsk;
+        let sk_diff = sk.dot(&diff);
+        let term1 = &diff * sk.transpose() + sk * diff.transpose();
+        let term2 = (sk * sk.transpose()) * (sk_diff / sk_dot_sk);
+
+        h_new += (term1 - term2) / sk_dot_sk;
+    }
+    // If curvature condition not satisfied, return current Hessian
+    // This prevents degradation in convergence properties
+
+    h_new
+}
 
 /// Updates the Hessian matrix using the BFGS formula.
 ///
@@ -802,35 +802,35 @@ pub fn compute_adaptive_scale(
 /// Returns the updated Hessian matrix. If the update would be unstable (e.g., division by zero),
 /// returns the original Hessian.
 
-pub fn update_hessian_bfgs(
-    hessian: &DMatrix<f64>,
-    sk: &DVector<f64>,
-    yk: &DVector<f64>,
-) -> DMatrix<f64> {
-    let mut h_new = hessian.clone();
-
-    let sk_dot_yk = sk.dot(yk);
-
-    // Check curvature condition: s^T y > 0
-    // Also check for numerical stability (avoid division by very small numbers)
-    if sk_dot_yk > 1e-10 {
-        let hsk = hessian * sk;
-        let sk_h_sk = sk.dot(&hsk);
-
-        if sk_h_sk > 1e-10 {
-            let term1 = (yk * yk.transpose()) / sk_dot_yk;
-            let term2 = (&hsk * hsk.transpose()) / sk_h_sk;
-
-            h_new += term1 - term2;
-
-            // Enforce symmetry to prevent accumulation of numerical errors
-            // Although BFGS is theoretically symmetric, floating point errors can drift
-            h_new = (&h_new + h_new.transpose()) / 2.0;
-        }
-    }
-
-    h_new
-}
+///pub fn update_hessian(
+///    hessian: &DMatrix<f64>,
+///    sk: &DVector<f64>,
+///    yk: &DVector<f64>,
+///) -> DMatrix<f64> {
+///    let mut h_new = hessian.clone();
+///
+///    let sk_dot_yk = sk.dot(yk);
+///
+///    // Check curvature condition: s^T y > 0
+///    // Also check for numerical stability (avoid division by very small numbers)
+///    if sk_dot_yk > 1e-10 {
+///        let hsk = hessian * sk;
+///        let sk_h_sk = sk.dot(&hsk);
+///
+///        if sk_h_sk > 1e-10 {
+///            let term1 = (yk * yk.transpose()) / sk_dot_yk;
+///            let term2 = (&hsk * hsk.transpose()) / sk_h_sk;
+///
+///            h_new += term1 - term2;
+///
+///            // Enforce symmetry to prevent accumulation of numerical errors
+///            // Although BFGS is theoretically symmetric, floating point errors can drift
+///            h_new = (&h_new + h_new.transpose()) / 2.0;
+///        }
+///    }
+///
+///    h_new
+///}
 
 /// Tracks convergence status for each optimization criterion.
 ///
@@ -1232,10 +1232,7 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         history_grad_norm
     );
 
-    // CRITICAL: Gradients in Rust are in Ha/bohr, but Python uses Ha/Angstrom
-    // Since 1 Ha/Angstrom = 1.889726 Ha/bohr, we need to scale the threshold
-    // Python: ||g|| < 0.0005 × 10 (in Ha/Angstrom)
-    // Rust: ||g|| < 0.0005 × 10 × 1.889726 (in Ha/bohr)
+    // CRITICAL: Gradients in Rust are in Ha/bohr
     let threshold = config.thresholds.rms_g * 10.0;
     println!(
         "[DEBUG] Step reduction threshold: {:.8} (scaled for Ha/bohr units)",
@@ -1525,7 +1522,7 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
         .sum();
     let history_grad_norm = history_grad_norm_sq.sqrt();
 
-    // CRITICAL: Scale threshold for Ha/bohr units (Rust) vs Ha/Angstrom (Python)
+    // CRITICAL: Scale threshold for Ha/bohr units (Rust) vs Ha/bohr (Python)
     let threshold = config.thresholds.rms_g * 10.0;
     if history_grad_norm < threshold {
         step *= config.reduced_factor;

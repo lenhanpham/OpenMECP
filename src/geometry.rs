@@ -72,7 +72,7 @@ pub fn bohr_to_angstrom(coords: &DVector<f64>) -> DVector<f64> {
 pub struct Geometry {
     /// Chemical element symbols for each atom in order
     pub elements: Vec<String>,
-    /// Flattened Cartesian coordinates [x1, y1, z1, x2, y2, z2, ...] in Angstroms
+    /// Flattened Cartesian coordinates [x1, y1, z1, x2, y2, z2, ...] in Bohr (conveted in parser)
     pub coords: DVector<f64>,
     /// Number of atoms in the molecule
     pub num_atoms: usize,

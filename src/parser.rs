@@ -941,7 +941,10 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         }
         "mp2" => config.mp2 = parse_bool(value),
         "max_steps" => config.max_steps = value.parse().unwrap_or(100),
-        "max_step_size" => config.max_step_size = value.parse().unwrap_or(0.1),
+        "max_step_size" => {
+            // User specifies in Bohr directly
+            config.max_step_size = value.parse().unwrap_or(0.1 * crate::config::ANGSTROM_TO_BOHR);
+        }
         "max_history" => {
             config.max_history = value.parse().unwrap_or_else(|_| {
                 eprintln!(

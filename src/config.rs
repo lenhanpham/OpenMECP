@@ -281,7 +281,7 @@ impl Default for Config {
         Self {
             thresholds: Thresholds::default(),
             max_steps: 100,
-            max_step_size: 0.1, // 0.1 Angstrom → 0.189 Bohr (users specify in Angstrom)
+            max_step_size: 0.1 * ANGSTROM_TO_BOHR, // 0.1 Angstrom in Bohr (internal units)
             reduced_factor: 0.5,
             nprocs: 1,
             mem: "1GB".to_string(),

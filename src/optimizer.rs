@@ -46,7 +46,7 @@
 //! The first term drives the energy difference to zero (f-vector).
 //! The second term minimizes energy perpendicular to the gradient difference (g-vector).
 
-use crate::config::{Config, ANGSTROM_TO_BOHR}; // BOHR_TO_ANGSTROM
+use crate::config::{Config, ANGSTROM_TO_BOHR};
 use crate::geometry::State;
 use nalgebra::{DMatrix, DVector};
 use std::collections::VecDeque;
@@ -625,61 +625,59 @@ pub fn bfgs_step(
     config: &Config,
     _adaptive_scale: f64, // Parameter kept for compatibility but not used for BFGS
 ) -> DVector<f64> {
-    // Solve H * dk = -g (compute Newton direction)
+    // Exact Python MECP.py propagationBFGS implementation:
+    // 1. dk = -H^-1 * g (Newton direction)
+    // 2. if ||dk|| > 0.1: dk = dk * 0.1 / ||dk||  (cap direction to 0.1 Angstrom)
+    // 3. XNew = X0 + rho * dk  (rho=15 for MECP)
+    // 4. MaxStep: if ||XNew - X0|| > MAX_STEP_SIZE: scale to MAX_STEP_SIZE
+
+    // Step 1: Compute Newton direction dk = -H^-1 * g
     let neg_g = -g0;
     let mut dk = hessian.clone().lu().solve(&neg_g).unwrap_or_else(|| {
         // Fallback to steepest descent when Hessian is singular
         println!("BFGS Step: Hessian is singular, falling back to steepest descent");
-        let step_dir = -g0 / (g0.norm() + 1e-14);
-        step_dir
+        -g0 / (g0.norm() + 1e-14)
     });
 
-    // Python algorithm (propagationBFGS):
-    // 1. Compute dk = -H^-1 * g
-    // 2. Cap dk to 0.1 if ||dk|| > 0.1
-    // 3. Apply rho=15 multiplier: XNew = X0 + rho * dk
-
-    // Step 2: Cap direction vector dk to 0.1 Angstrom (Python's hardcoded limit)
-    // Convert to Bohr for internal consistency
+    // Step 2: Cap dk to 0.1 Angstrom (Python's hardcoded limit)
+    // Convert to Bohr since internal coordinates are in Bohr
+    let dk_cap = 0.1 * ANGSTROM_TO_BOHR; // 0.1 Angstrom in Bohr
     let dk_norm = dk.norm();
-    let direction_limit = 0.1 * ANGSTROM_TO_BOHR;
-    if dk_norm > direction_limit {
-        let original_norm = dk_norm;
-        dk *= direction_limit / dk_norm;
+    if dk_norm > dk_cap {
         println!(
-            "current stepsize: {} is reduced to max_size {}",
-            original_norm, direction_limit
+            "BFGS: dk norm {:.6} > {:.6}, capping direction",
+            dk_norm, dk_cap
         );
+        dk *= dk_cap / dk_norm;
     }
 
-    // Step 3: Apply rho multiplier (from config.bfgs_rho, default 15.0)
-    // Python uses FIXED rho for BFGS, no adaptive scaling
-    // CRITICAL: rho=15 is tuned for Angstrom steps. For Bohr steps (which are ~1.89x larger),
-    // we must scale rho DOWN to maintain the same physical step aggressiveness.
+    // Step 3: Apply rho multiplier (rho=15 for MECP optimization)
+    // This aggressive multiplier helps escape shallow regions quickly
+    // Note: dk is in Bohr (same as coordinates), so no unit conversion needed
     let rho = config.bfgs_rho;
-    let final_step_size = direction_limit * rho;
-    println!(
-        "BFGS step: direction_capped={}, rho={}, final_step_size={}",
-        direction_limit,
-        rho,
-        final_step_size
-    );
-
     let x_new = x0 + &dk * rho;
 
-    // Apply step size limiting (equivalent to Python's MaxStep)
+    // Step 4: MaxStep - limit total step to max_step_size
     let step = &x_new - x0;
     let step_norm = step.norm();
 
+    // Debug: print step details for comparison with Python
+    let step_angstrom = step_norm * crate::config::BOHR_TO_ANGSTROM;
+    println!(
+        "BFGS: dk_norm={:.6}, dk_capped={:.6}, rho={}, raw_step={:.6} bohr ({:.6} Ang)",
+        dk_norm, dk.norm(), rho, step_norm, step_angstrom
+    );
+
     if step_norm > config.max_step_size {
         let scale = config.max_step_size / step_norm;
+        let final_step_angstrom = config.max_step_size * crate::config::BOHR_TO_ANGSTROM;
         println!(
-            "BFGS step size limited: {:.6} -> {:.6} bohr",
-            step_norm,
-            config.max_step_size
+            "BFGS step: {:.6} -> {:.6} bohr ({:.6} Ang) (MaxStep applied)",
+            step_norm, config.max_step_size, final_step_angstrom
         );
         x0 + &step * scale
     } else {
+        println!("BFGS step: {:.6} bohr ({:.6} Ang) (within max_step_size)", step_norm, step_angstrom);
         x_new
     }
 }
@@ -753,33 +751,36 @@ pub fn compute_adaptive_scale(
 ///
 /// // let h_new = update_hessian_psb(&h_old, &sk, &yk);
 /// ```
-pub fn update_hessian(
-    hessian: &DMatrix<f64>,
-    sk: &DVector<f64>,
-    yk: &DVector<f64>,
-) -> DMatrix<f64> {
-    let mut h_new = hessian.clone();
+//pub fn update_hessian(
+//    b: &DMatrix<f64>,
+//    sk: &DVector<f64>,
+//    yk: &DVector<f64>,
+//) -> DMatrix<f64> {
+//    let mut b_new = b.clone();
+//    let sk_sk_t = sk * sk.transpose(); // sk.T * sk
+//    let b_sk = b * sk;
+//    let y_minus_bsk = yk - &b_sk; // (y - B s)
+//
+//    let sk_sk_t_norm = sk.dot(sk);
+//    if sk_sk_t_norm.abs() < 1e-14 {
+//        return b_new;
+//    }
+//
+//    // numerator: (y - B s) * s^T + s * (y - B s)^T
+//    let term_a = &y_minus_bsk * sk.transpose() + sk * y_minus_bsk.transpose();
+//
+//    // term_b: (sk * (y - B s)) * sk^T * sk / (sk^T sk)^2
+//    let sk_dot_y_minus = sk.dot(&y_minus_bsk);
+//    let sk_sk_t_matrix = sk * sk.transpose();
+//    let term_b = &sk_sk_t_matrix * (sk_dot_y_minus / (sk_sk_t_norm * sk_sk_t_norm));
+//
+//    b_new += (&term_a - &term_b) / sk_sk_t_norm;
+//
+//    // Symmetrize
+//    b_new = 0.5 * (&b_new + b_new.transpose());
+//    b_new
+//}
 
-    // Check curvature condition: s^T y > 0 for meaningful update
-    // Reference: Nocedal & Wright "Numerical Optimization" Theorem 6.2
-    let sk_dot_yk = sk.dot(yk);
-    let sk_dot_sk = sk.dot(sk);
-
-    // Only update if curvature condition is satisfied and s is not zero
-    if sk_dot_yk > 1e-12 * sk_dot_sk * yk.norm() && sk_dot_sk.abs() > 1e-10 {
-        let hsk = hessian * sk;
-        let diff = yk - &hsk;
-        let sk_diff = sk.dot(&diff);
-        let term1 = &diff * sk.transpose() + sk * diff.transpose();
-        let term2 = (sk * sk.transpose()) * (sk_diff / sk_dot_sk);
-
-        h_new += (term1 - term2) / sk_dot_sk;
-    }
-    // If curvature condition not satisfied, return current Hessian
-    // This prevents degradation in convergence properties
-
-    h_new
-}
 
 /// Updates the Hessian matrix using the BFGS formula.
 ///
@@ -831,6 +832,68 @@ pub fn update_hessian(
 ///
 ///    h_new
 ///}
+pub fn update_hessian(
+    hessian: &DMatrix<f64>,
+    sk: &DVector<f64>,
+    yk: &DVector<f64>,
+) -> DMatrix<f64> {
+    // Quick finite checks
+    if !sk.iter().all(|v| v.is_finite()) || !yk.iter().all(|v| v.is_finite()) {
+        return hessian.clone();
+    }
+    if !hessian.iter().all(|v| v.is_finite()) {
+        return hessian.clone();
+    }
+
+    let mut h_new = hessian.clone();
+
+    // Relative tolerances based on norms
+    let s_norm = sk.norm();
+    let y_norm = yk.norm();
+    let b_norm = hessian.norm();
+    let rel_tol = 1e-8;
+
+    // compute scalars
+    let s_ty = sk.dot(yk);
+    let hsk = hessian * sk;
+    let s_h_s = sk.dot(&hsk);
+
+    // thresholds scaled to problem size
+    let tol_s_ty = rel_tol * s_norm * y_norm.max(1.0);
+    let tol_s_h_s = rel_tol * s_norm * s_norm * b_norm.max(1.0);
+
+    // Guard denominators and finiteness
+    if !s_ty.is_finite() || s_ty.abs() <= tol_s_ty {
+        // skip update: curvature condition failed
+        return h_new;
+    }
+    if !s_h_s.is_finite() || s_h_s.abs() <= tol_s_h_s {
+        // skip update: B s small or ill-conditioned
+        return h_new;
+    }
+
+    // BFGS Hessian update: B += y y^T / (s^T y) - (B s s^T B) / (s^T B s)
+    let term1 = (yk * yk.transpose()) / s_ty;
+    let term2 = (&hsk * hsk.transpose()) / s_h_s;
+    h_new += term1 - term2;
+
+    // Symmetrize and clip non-finite entries
+    h_new = 0.5 * (&h_new + h_new.transpose());
+    for v in h_new.iter_mut() {
+        if !v.is_finite() {
+            *v = 0.0;
+        }
+    }
+
+    // Optional PD enforcement: if you detect negative eigenvalues, add small diag
+    // (expensive; do only when you see problems)
+    // let eigs = eigenvalues(&h_new); if any < -eps { h_new += eps2 * I }
+
+    h_new
+}
+
+
+
 
 /// Tracks convergence status for each optimization criterion.
 ///
@@ -959,10 +1022,29 @@ pub fn check_convergence(
     let disp = x_new - x_old;
 
     let rms_disp = disp.norm() / (disp.len() as f64).sqrt();
-    let max_disp = disp.iter().map(|x| x.abs()).fold(0.0, f64::max);
+    
+    // Max displacement: per-atom 3D distance (matching Python MECP.py)
+    // Python computes sqrt(dx² + dy² + dz²) for each atom and finds max
+    let max_disp = disp
+        .as_slice()
+        .chunks(3)
+        .map(|chunk| {
+            let dx = chunk.get(0).unwrap_or(&0.0);
+            let dy = chunk.get(1).unwrap_or(&0.0);
+            let dz = chunk.get(2).unwrap_or(&0.0);
+            (dx * dx + dy * dy + dz * dz).sqrt()
+        })
+        .fold(0.0, f64::max);
 
     let rms_grad = grad.norm() / (grad.len() as f64).sqrt();
-    let max_grad = grad.iter().map(|x| x.abs()).fold(0.0, f64::max);
+    
+    // Max gradient: only X component of each atom (matching Python MECP.py)
+    // Python: for i in range(0, NUM_ATOM * 3, 3): g = abs(G1[i])
+    let max_grad = grad
+        .as_slice()
+        .chunks(3)
+        .map(|chunk| chunk.get(0).unwrap_or(&0.0).abs())
+        .fold(0.0, f64::max);
 
     ConvergenceStatus {
         de_converged: de < config.thresholds.de,
@@ -1132,6 +1214,7 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     rhs[n] = 1.0;
 
     let solution = b_matrix.lu().solve(&rhs).unwrap_or_else(|| {
+        println!("[DEBUG] GDIIS: B matrix solve failed, using uniform coefficients");
         let mut fallback = DVector::zeros(n + 1);
         for i in 0..n {
             fallback[i] = 1.0 / (n as f64);
@@ -1139,7 +1222,21 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         fallback
     });
 
-    let coeffs = solution.rows(0, n);
+    // CRITICAL: Check for NaN in solution (ill-conditioned B matrix)
+    let has_nan = solution.iter().any(|&x| x.is_nan() || x.is_infinite());
+    let coeffs = if has_nan {
+        println!("[DEBUG] GDIIS: Solution contains NaN/Inf, falling back to uniform coefficients");
+        let mut fallback = DVector::zeros(n);
+        for i in 0..n {
+            fallback[i] = 1.0 / (n as f64);
+        }
+        fallback
+    } else {
+        solution.rows(0, n).clone_owned()
+    };
+
+    // Debug: print coefficients
+    println!("[DEBUG] GDIIS coefficients: {:?}", coeffs.as_slice());
 
     // --- Start of Bug Fix ---
 
@@ -1149,10 +1246,22 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         x_new_prime += geom * coeffs[i];
     }
 
+    // CRITICAL: Check for NaN in interpolated geometry
+    if x_new_prime.iter().any(|&x| x.is_nan() || x.is_infinite()) {
+        println!("[DEBUG] GDIIS: Interpolated geometry contains NaN, falling back to last geometry");
+        x_new_prime = opt_state.geom_history.back().unwrap().clone();
+    }
+
     // 2. Interpolate gradient to get g_new_prime (THE CORRECT WAY)
     let mut g_new_prime = DVector::zeros(opt_state.grad_history[0].len());
     for (i, grad) in opt_state.grad_history.iter().enumerate() {
         g_new_prime += grad * coeffs[i];
+    }
+
+    // CRITICAL: Check for NaN in interpolated gradient
+    if g_new_prime.iter().any(|&x| x.is_nan() || x.is_infinite()) {
+        println!("[DEBUG] GDIIS: Interpolated gradient contains NaN, falling back to last gradient");
+        g_new_prime = opt_state.grad_history.back().unwrap().clone();
     }
 
     // 3. Interpolate Lagrange multipliers (CRITICAL FIX)
@@ -1201,8 +1310,30 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         .solve(&g_new_prime)
         .unwrap_or_else(|| g_new_prime.clone());
 
+    // CRITICAL: Check for NaN in correction
+    let correction = if correction.iter().any(|&x| x.is_nan() || x.is_infinite()) {
+        println!("[DEBUG] GDIIS: Correction contains NaN, using zero correction");
+        DVector::zeros(correction.len())
+    } else {
+        correction
+    };
+
     // 7. Apply correction to the interpolated geometry
     let mut x_new = x_new_prime - &correction;
+
+    // CRITICAL: Final NaN check on x_new
+    if x_new.iter().any(|&x| x.is_nan() || x.is_infinite()) {
+        println!("[DEBUG] GDIIS: Final geometry contains NaN, falling back to last geometry with small steepest descent step");
+        let last_geom = opt_state.geom_history.back().unwrap();
+        let last_grad = opt_state.grad_history.back().unwrap();
+        let grad_norm = last_grad.norm();
+        if grad_norm > 1e-10 {
+            // Small steepest descent step
+            x_new = last_geom - last_grad * (0.01 / grad_norm);
+        } else {
+            x_new = last_geom.clone();
+        }
+    }
 
     // --- End of Bug Fix ---
 

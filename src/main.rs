@@ -1674,9 +1674,24 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let disp_vec = &x_new - &x_old;
         let disp_norm = disp_vec.norm();
         let rms_disp = disp_norm / (disp_vec.len() as f64).sqrt();
-        let max_disp = disp_vec.iter().map(|x| x.abs()).fold(0.0, f64::max);
+        // Max displacement: per-atom 3D distance (matching Python MECP.py)
+        let max_disp = disp_vec
+            .as_slice()
+            .chunks(3)
+            .map(|chunk| {
+                let dx = chunk.get(0).unwrap_or(&0.0);
+                let dy = chunk.get(1).unwrap_or(&0.0);
+                let dz = chunk.get(2).unwrap_or(&0.0);
+                (dx * dx + dy * dy + dz * dz).sqrt()
+            })
+            .fold(0.0, f64::max);
         let rms_grad = grad_new.norm() / (grad_new.len() as f64).sqrt();
-        let max_grad = grad_new.iter().map(|x| x.abs()).fold(0.0, f64::max);
+        // Max gradient: only X component of each atom (matching Python MECP.py)
+        let max_grad = grad_new
+            .as_slice()
+            .chunks(3)
+            .map(|chunk| chunk.get(0).unwrap_or(&0.0).abs())
+            .fold(0.0, f64::max);
 
         // Update stuck detection (adaptive step size)
         opt_state.update_stuck_detection(disp_norm);
@@ -2649,9 +2664,24 @@ fn run_single_optimization(
         let de = (state_a_new.energy - state_b_new.energy).abs();
         let disp_vec = &x_new - &x_old;
         let rms_disp = disp_vec.norm() / (disp_vec.len() as f64).sqrt();
-        let max_disp = disp_vec.iter().map(|x| x.abs()).fold(0.0, f64::max);
+        // Max displacement: per-atom 3D distance (matching Python MECP.py)
+        let max_disp = disp_vec
+            .as_slice()
+            .chunks(3)
+            .map(|chunk| {
+                let dx = chunk.get(0).unwrap_or(&0.0);
+                let dy = chunk.get(1).unwrap_or(&0.0);
+                let dz = chunk.get(2).unwrap_or(&0.0);
+                (dx * dx + dy * dy + dz * dz).sqrt()
+            })
+            .fold(0.0, f64::max);
         let rms_grad = grad_new.norm() / (grad_new.len() as f64).sqrt();
-        let max_grad = grad_new.iter().map(|x| x.abs()).fold(0.0, f64::max);
+        // Max gradient: only X component of each atom (matching Python MECP.py)
+        let max_grad = grad_new
+            .as_slice()
+            .chunks(3)
+            .map(|chunk| chunk.get(0).unwrap_or(&0.0).abs())
+            .fold(0.0, f64::max);
 
         // Print convergence status
         print_convergence_status(&conv, de, rms_grad, max_grad, rms_disp, max_disp, config);
@@ -3730,9 +3760,24 @@ fn run_restart(
         let de = (state_a.energy - state_b.energy).abs();
         let disp_vec = &x_new - &x_old;
         let rms_disp = disp_vec.norm() / (disp_vec.len() as f64).sqrt();
-        let max_disp = disp_vec.iter().map(|x| x.abs()).fold(0.0, f64::max);
+        // Max displacement: per-atom 3D distance (matching Python MECP.py)
+        let max_disp = disp_vec
+            .as_slice()
+            .chunks(3)
+            .map(|chunk| {
+                let dx = chunk.get(0).unwrap_or(&0.0);
+                let dy = chunk.get(1).unwrap_or(&0.0);
+                let dz = chunk.get(2).unwrap_or(&0.0);
+                (dx * dx + dy * dy + dz * dz).sqrt()
+            })
+            .fold(0.0, f64::max);
         let rms_grad = grad.norm() / (grad.len() as f64).sqrt();
-        let max_grad = grad.iter().map(|x| x.abs()).fold(0.0, f64::max);
+        // Max gradient: only X component of each atom (matching Python MECP.py)
+        let max_grad = grad
+            .as_slice()
+            .chunks(3)
+            .map(|chunk| chunk.get(0).unwrap_or(&0.0).abs())
+            .fold(0.0, f64::max);
 
         // Print energy and convergence status
         println!(

@@ -618,66 +618,176 @@ pub fn compute_mecp_gradient(
 ///
 /// // let x_new = bfgs_step(&x0, &g0, &hessian, &config, 1.0);
 /// ```
+///pub fn bfgs_step(
+///    x0: &DVector<f64>,
+///    g0: &DVector<f64>,
+///    hessian: &DMatrix<f64>,
+///    config: &Config,
+///    _adaptive_scale: f64, // Parameter kept for compatibility but not used for BFGS
+///) -> DVector<f64> {
+///    // Exact Python MECP.py propagationBFGS implementation:
+///    // 1. dk = -H^-1 * g (Newton direction)
+///    // 2. if ||dk|| > 0.1: dk = dk * 0.1 / ||dk||  (cap direction to 0.1 Angstrom)
+///    // 3. XNew = X0 + rho * dk  (rho=15 for MECP)
+///    // 4. MaxStep: if ||XNew - X0|| > MAX_STEP_SIZE: scale to MAX_STEP_SIZE
+///
+///    // Step 1: Compute Newton direction dk = -H^-1 * g
+///    let neg_g = -g0;
+///    let mut dk = hessian.clone().lu().solve(&neg_g).unwrap_or_else(|| {
+///        // Fallback to steepest descent when Hessian is singular
+///        println!("BFGS Step: Hessian is singular, falling back to steepest descent");
+///        -g0 / (g0.norm() + 1e-14)
+///    });
+///
+///    // Step 2: Cap dk to 0.1 Angstrom (Python's hardcoded limit)
+///    // Convert to Bohr since internal coordinates are in Bohr
+///    let dk_cap = 0.1 * ANGSTROM_TO_BOHR; // 0.1 Angstrom in Bohr
+///    let dk_norm = dk.norm();
+///    if dk_norm > dk_cap {
+///        println!(
+///            "BFGS: dk norm {:.6} > {:.6}, capping direction",
+///            dk_norm, dk_cap
+///        );
+///        dk *= dk_cap / dk_norm;
+///    }
+///
+///    // Step 3: Apply rho multiplier (rho=15 for MECP optimization)
+///    // This aggressive multiplier helps escape shallow regions quickly
+///    // Note: dk is in Bohr (same as coordinates), so no unit conversion needed
+///    let rho = config.bfgs_rho;
+///    let x_new = x0 + &dk * rho;
+///
+///    // Step 4: MaxStep - limit total step to max_step_size
+///    let step = &x_new - x0;
+///    let step_norm = step.norm();
+///
+///    // Debug: print step details for comparison with Python
+///    let step_angstrom = step_norm * crate::config::BOHR_TO_ANGSTROM;
+///    println!(
+///        "BFGS: dk_norm={:.6}, dk_capped={:.6}, rho={}, raw_step={:.6} bohr ({:.6} Ang)",
+///        dk_norm, dk.norm(), rho, step_norm, step_angstrom
+///    );
+///
+///    if step_norm > config.max_step_size {
+///        let scale = config.max_step_size / step_norm;
+///        let final_step_angstrom = config.max_step_size * crate::config::BOHR_TO_ANGSTROM;
+///        println!(
+///            "BFGS step: {:.6} -> {:.6} bohr ({:.6} Ang) (MaxStep applied)",
+///            step_norm, config.max_step_size, final_step_angstrom
+///        );
+///        x0 + &step * scale
+///    } else {
+///        println!("BFGS step: {:.6} bohr ({:.6} Ang) (within max_step_size)", step_norm, step_angstrom);
+///        x_new
+///    }
+///}
+
+/// Performs a BFGS optimization step following the Fortran MECP implementation.
+///
+/// This implementation matches the original Harvey Fortran code (easymecp.py):
+/// - Uses **inverse Hessian** (not Hessian) for Newton step
+/// - Works in **Angstrom** internally (converts from/to Bohr at boundaries)
+/// - Two-stage step limiting: total norm, then max component
+///
+/// # Algorithm (from Fortran UpdateX subroutine)
+///
+/// 1. First step: `ChgeX = -0.7 * G` (steepest descent with H_inv diagonal = 0.7)
+/// 2. Later steps: `ChgeX = -H_inv * G` (Newton step with BFGS-updated inverse Hessian)
+/// 3. Limit step: if `||ChgeX|| > 0.1*N`, scale down
+/// 4. Limit components: if `max(|ChgeX_i|) > 0.1`, scale down
+///
+/// # Units
+///
+/// - Input coordinates: Bohr (converted to Angstrom internally)
+/// - Input gradient: Ha/Bohr (converted to Ha/Angstrom internally)
+/// - Inverse Hessian: Ang²/Ha (initialized to 0.7 on diagonal)
+/// - Output coordinates: Bohr
 pub fn bfgs_step(
     x0: &DVector<f64>,
     g0: &DVector<f64>,
-    hessian: &DMatrix<f64>,
+    inv_hessian: &DMatrix<f64>,
     config: &Config,
     _adaptive_scale: f64, // Parameter kept for compatibility but not used for BFGS
 ) -> DVector<f64> {
-    // Exact Python MECP.py propagationBFGS implementation:
-    // 1. dk = -H^-1 * g (Newton direction)
-    // 2. if ||dk|| > 0.1: dk = dk * 0.1 / ||dk||  (cap direction to 0.1 Angstrom)
-    // 3. XNew = X0 + rho * dk  (rho=15 for MECP)
-    // 4. MaxStep: if ||XNew - X0|| > MAX_STEP_SIZE: scale to MAX_STEP_SIZE
-
-    // Step 1: Compute Newton direction dk = -H^-1 * g
-    let neg_g = -g0;
-    let mut dk = hessian.clone().lu().solve(&neg_g).unwrap_or_else(|| {
-        // Fallback to steepest descent when Hessian is singular
-        println!("BFGS Step: Hessian is singular, falling back to steepest descent");
-        -g0 / (g0.norm() + 1e-14)
-    });
-
-    // Step 2: Cap dk to 0.1 Angstrom (Python's hardcoded limit)
-    // Convert to Bohr since internal coordinates are in Bohr
-    let dk_cap = 0.1 * ANGSTROM_TO_BOHR; // 0.1 Angstrom in Bohr
-    let dk_norm = dk.norm();
-    if dk_norm > dk_cap {
-        println!(
-            "BFGS: dk norm {:.6} > {:.6}, capping direction",
-            dk_norm, dk_cap
-        );
-        dk *= dk_cap / dk_norm;
+    // Fortran MECP uses:
+    // - Coordinates in Angstrom
+    // - Gradients in Ha/Angstrom (converted from Ha/Bohr by dividing by 0.529177)
+    // - Inverse Hessian in Ang²/Ha (diagonal = 0.7)
+    //
+    // Our Rust code uses:
+    // - Coordinates in Bohr
+    // - Gradients in Ha/Bohr
+    // - We pass inverse Hessian (not Hessian!)
+    
+    let n = x0.len();
+    let bohr_to_ang = crate::config::BOHR_TO_ANGSTROM;
+    let ang_to_bohr = ANGSTROM_TO_BOHR;
+    
+    // Convert gradient from Ha/Bohr to Ha/Angstrom (multiply by Bohr/Ang = 1/0.529)
+    // g_ang = g_bohr * (bohr/ang) = g_bohr / 0.529177
+    let g_angstrom: DVector<f64> = g0.map(|v| v / bohr_to_ang);
+    
+    // Compute Newton step: ChgeX = -H_inv * G (in Angstrom)
+    // The inverse Hessian should be in Ang²/Ha, gradient in Ha/Ang
+    // Result: ChgeX in Angstrom
+    let mut chge_x: DVector<f64> = -(inv_hessian * &g_angstrom);
+    
+    // Check for NaN/Inf in step
+    if chge_x.iter().any(|&v| !v.is_finite()) {
+        println!("BFGS: Newton step contains NaN/Inf, falling back to steepest descent");
+        // Fallback: steepest descent with step size 0.7 (matching Fortran initialization)
+        chge_x = -0.7 * &g_angstrom;
     }
-
-    // Step 3: Apply rho multiplier (rho=15 for MECP optimization)
-    // This aggressive multiplier helps escape shallow regions quickly
-    // Note: dk is in Bohr (same as coordinates), so no unit conversion needed
-    let rho = config.bfgs_rho;
-    let x_new = x0 + &dk * rho;
-
-    // Step 4: MaxStep - limit total step to max_step_size
-    let step = &x_new - x0;
-    let step_norm = step.norm();
-
-    // Debug: print step details for comparison with Python
-    let step_angstrom = step_norm * crate::config::BOHR_TO_ANGSTROM;
-    println!(
-        "BFGS: dk_norm={:.6}, dk_capped={:.6}, rho={}, raw_step={:.6} bohr ({:.6} Ang)",
-        dk_norm, dk.norm(), rho, step_norm, step_angstrom
-    );
-
-    if step_norm > config.max_step_size {
-        let scale = config.max_step_size / step_norm;
-        let final_step_angstrom = config.max_step_size * crate::config::BOHR_TO_ANGSTROM;
+    
+    // Fortran step limiting (two stages):
+    // 1. Limit total step norm to STPMX * N = 0.1 * N Angstrom
+    let stpmx = 0.1_f64; // Max single component (Angstrom)
+    let stpmax = stpmx * (n as f64); // Max total norm (Angstrom)
+    
+    let step_norm = chge_x.norm();
+    if step_norm > stpmax {
         println!(
-            "BFGS step: {:.6} -> {:.6} bohr ({:.6} Ang) (MaxStep applied)",
-            step_norm, config.max_step_size, final_step_angstrom
+            "BFGS: step norm {:.6} Ang > stpmax {:.6} Ang, scaling down",
+            step_norm, stpmax
         );
-        x0 + &step * scale
+        chge_x *= stpmax / step_norm;
+    }
+    
+    // 2. Limit max component to STPMX = 0.1 Angstrom
+    let max_component = chge_x.iter().map(|v| v.abs()).fold(0.0_f64, f64::max);
+    if max_component > stpmx {
+        println!(
+            "BFGS: max component {:.6} Ang > stpmx {:.6} Ang, scaling down",
+            max_component, stpmx
+        );
+        chge_x *= stpmx / max_component;
+    }
+    
+    // Convert step from Angstrom to Bohr
+    let chge_x_bohr: DVector<f64> = chge_x.map(|v| v * ang_to_bohr);
+    
+    // Apply step
+    let x_new = x0 + &chge_x_bohr;
+    
+    // Debug output
+    let final_step_norm_ang = chge_x.norm();
+    let final_step_norm_bohr = chge_x_bohr.norm();
+    println!(
+        "BFGS: step = {:.6} Ang ({:.6} Bohr), max_component = {:.6} Ang",
+        final_step_norm_ang, final_step_norm_bohr, chge_x.iter().map(|v| v.abs()).fold(0.0_f64, f64::max)
+    );
+    
+    // Additional safety: apply config max_step_size (in Bohr)
+    let step_bohr = &x_new - x0;
+    let step_bohr_norm = step_bohr.norm();
+    if step_bohr_norm > config.max_step_size {
+        let scale = config.max_step_size / step_bohr_norm;
+        println!(
+            "BFGS: applying config max_step_size: {:.6} -> {:.6} Bohr",
+            step_bohr_norm, config.max_step_size
+        );
+        x0 + &step_bohr * scale
     } else {
-        println!("BFGS step: {:.6} bohr ({:.6} Ang) (within max_step_size)", step_norm, step_angstrom);
         x_new
     }
 }
@@ -782,114 +892,127 @@ pub fn compute_adaptive_scale(
 //}
 
 
-/// Updates the Hessian matrix using the BFGS formula.
+/// Initializes the inverse Hessian matrix for BFGS optimization.
 ///
-/// The BFGS update guarantees that the Hessian remains positive definite if the
-/// initial Hessian is positive definite and the curvature condition (s^T y > 0) holds.
-///
-/// Formula:
-/// ```text
-/// H_new = H + (y * y^T) / (y^T * s) - (H * s * s^T * H) / (s^T * H * s)
-/// ```
+/// Following the Fortran MECP implementation, the inverse Hessian is initialized
+/// as a diagonal matrix with value 0.7 Ang²/Ha. This corresponds to a Hessian
+/// of approximately 1.4 Ha/Ang², which is typical for molecular vibrations.
 ///
 /// # Arguments
 ///
-/// * `hessian` - Current Hessian approximation
-/// * `sk` - Step vector (x_new - x_old)
-/// * `yk` - Gradient difference (g_new - g_old)
+/// * `n` - Dimension of the matrix (3 × number of atoms)
 ///
 /// # Returns
 ///
-/// Returns the updated Hessian matrix. If the update would be unstable (e.g., division by zero),
-/// returns the original Hessian.
+/// Returns an n×n diagonal matrix with 0.7 on the diagonal.
+///
+/// # Units
+///
+/// The inverse Hessian is in Ang²/Ha (Angstrom squared per Hartree).
+/// This matches the Fortran MECP code which works in Angstrom coordinates.
+pub fn initialize_inverse_hessian(n: usize) -> DMatrix<f64> {
+    // Fortran: H(i,i) = 0.7 (Ang²/Ha)
+    // This corresponds to Hessian diagonal of ~1.4 Ha/Ang²
+    let mut h_inv = DMatrix::zeros(n, n);
+    for i in 0..n {
+        h_inv[(i, i)] = 0.7;
+    }
+    h_inv
+}
 
-///pub fn update_hessian(
-///    hessian: &DMatrix<f64>,
-///    sk: &DVector<f64>,
-///    yk: &DVector<f64>,
-///) -> DMatrix<f64> {
-///    let mut h_new = hessian.clone();
+/// Updates the inverse Hessian matrix using the BFGS formula.
 ///
-///    let sk_dot_yk = sk.dot(yk);
+/// This implements the BFGS update for the **inverse Hessian** (not Hessian),
+/// matching the Fortran MECP implementation exactly.
 ///
-///    // Check curvature condition: s^T y > 0
-///    // Also check for numerical stability (avoid division by very small numbers)
-///    if sk_dot_yk > 1e-10 {
-///        let hsk = hessian * sk;
-///        let sk_h_sk = sk.dot(&hsk);
+/// # Fortran BFGS Formula (from UpdateX subroutine)
 ///
-///        if sk_h_sk > 1e-10 {
-///            let term1 = (yk * yk.transpose()) / sk_dot_yk;
-///            let term2 = (&hsk * hsk.transpose()) / sk_h_sk;
+/// ```text
+/// fac = 1 / (DelG · DelX)
+/// fad = 1 / (DelG · H_inv · DelG)
+/// w = fac * DelX - fad * H_inv · DelG
+/// H_inv_new = H_inv + fac * DelX * DelX^T - fad * (H_inv·DelG) * (H_inv·DelG)^T + fae * w * w^T
+/// ```
 ///
-///            h_new += term1 - term2;
+/// where:
+/// - DelX = X_new - X_old (step vector, in Angstrom)
+/// - DelG = G_new - G_old (gradient difference, in Ha/Angstrom)
+/// - fae = DelG · H_inv · DelG
 ///
-///            // Enforce symmetry to prevent accumulation of numerical errors
-///            // Although BFGS is theoretically symmetric, floating point errors can drift
-///            h_new = (&h_new + h_new.transpose()) / 2.0;
-///        }
-///    }
+/// # Arguments
 ///
-///    h_new
-///}
+/// * `h_inv` - Current inverse Hessian approximation (Ang²/Ha)
+/// * `sk` - Step vector (x_new - x_old) in Angstrom
+/// * `yk` - Gradient difference (g_new - g_old) in Ha/Angstrom
+///
+/// # Returns
+///
+/// Returns the updated inverse Hessian matrix. If the update would be unstable,
+/// returns the original inverse Hessian.
+///
+/// # Units
+///
+/// All inputs and outputs are in Angstrom/Hartree units to match Fortran.
 pub fn update_hessian(
-    hessian: &DMatrix<f64>,
+    h_inv: &DMatrix<f64>,
     sk: &DVector<f64>,
     yk: &DVector<f64>,
 ) -> DMatrix<f64> {
     // Quick finite checks
     if !sk.iter().all(|v| v.is_finite()) || !yk.iter().all(|v| v.is_finite()) {
-        return hessian.clone();
+        return h_inv.clone();
     }
-    if !hessian.iter().all(|v| v.is_finite()) {
-        return hessian.clone();
-    }
-
-    let mut h_new = hessian.clone();
-
-    // Relative tolerances based on norms
-    let s_norm = sk.norm();
-    let y_norm = yk.norm();
-    let b_norm = hessian.norm();
-    let rel_tol = 1e-8;
-
-    // compute scalars
-    let s_ty = sk.dot(yk);
-    let hsk = hessian * sk;
-    let s_h_s = sk.dot(&hsk);
-
-    // thresholds scaled to problem size
-    let tol_s_ty = rel_tol * s_norm * y_norm.max(1.0);
-    let tol_s_h_s = rel_tol * s_norm * s_norm * b_norm.max(1.0);
-
-    // Guard denominators and finiteness
-    if !s_ty.is_finite() || s_ty.abs() <= tol_s_ty {
-        // skip update: curvature condition failed
-        return h_new;
-    }
-    if !s_h_s.is_finite() || s_h_s.abs() <= tol_s_h_s {
-        // skip update: B s small or ill-conditioned
-        return h_new;
+    if !h_inv.iter().all(|v| v.is_finite()) {
+        return h_inv.clone();
     }
 
-    // BFGS Hessian update: B += y y^T / (s^T y) - (B s s^T B) / (s^T B s)
-    let term1 = (yk * yk.transpose()) / s_ty;
-    let term2 = (&hsk * hsk.transpose()) / s_h_s;
-    h_new += term1 - term2;
+    let mut h_inv_new = h_inv.clone();
 
-    // Symmetrize and clip non-finite entries
-    h_new = 0.5 * (&h_new + h_new.transpose());
-    for v in h_new.iter_mut() {
+    // Fortran BFGS update for inverse Hessian:
+    // fac = 1 / (DelG · DelX)
+    // fad = 1 / (DelG · H_inv · DelG)  
+    // w = fac * DelX - fad * H_inv · DelG
+    // H_inv_new = H_inv + fac * DelX * DelX^T - fad * HDelG * HDelG^T + fae * w * w^T
+    
+    // Compute H_inv * DelG
+    let h_del_g = h_inv * yk;
+    
+    // Compute scalars
+    let fac_denom = yk.dot(sk);  // DelG · DelX
+    let fae = yk.dot(&h_del_g);  // DelG · H_inv · DelG
+    
+    // Check for numerical stability
+    if fac_denom.abs() < 1e-14 || fae.abs() < 1e-14 {
+        println!("BFGS update skipped: denominators too small (fac_denom={:.2e}, fae={:.2e})", 
+                 fac_denom, fae);
+        return h_inv_new;
+    }
+    
+    let fac = 1.0 / fac_denom;
+    let fad = 1.0 / fae;
+    
+    // Compute w = fac * DelX - fad * H_inv · DelG
+    let w = sk * fac - &h_del_g * fad;
+    
+    // Update inverse Hessian:
+    // H_inv_new = H_inv + fac * DelX * DelX^T - fad * HDelG * HDelG^T + fae * w * w^T
+    let term1 = (sk * sk.transpose()) * fac;
+    let term2 = (&h_del_g * h_del_g.transpose()) * fad;
+    let term3 = (&w * w.transpose()) * fae;
+    
+    h_inv_new += term1 - term2 + term3;
+
+    // Symmetrize to prevent numerical drift
+    h_inv_new = 0.5 * (&h_inv_new + h_inv_new.transpose());
+    
+    // Clip non-finite entries
+    for v in h_inv_new.iter_mut() {
         if !v.is_finite() {
             *v = 0.0;
         }
     }
 
-    // Optional PD enforcement: if you detect negative eigenvalues, add small diag
-    // (expensive; do only when you see problems)
-    // let eigs = eigenvalues(&h_new); if any < -eps { h_new += eps2 * I }
-
-    h_new
+    h_inv_new
 }
 
 

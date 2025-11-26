@@ -43,7 +43,7 @@
 //! - `.log` - Gaussian output files (with final geometry)
 //! - `.gjf` - Gaussian input files
 
-use nalgebra::DMatrix;
+use nalgebra::{DMatrix, DVector};
 use omecp::config;
 use omecp::qm_interface::get_output_file_base;
 use omecp::*;
@@ -1440,7 +1440,8 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Initialize optimization
     let mut opt_state = optimizer::OptimizationState::new(config.max_history);
     let mut x_old = geometry.coords.clone();
-    let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len());
+    // Initialize inverse Hessian with diagonal = 0.7 Ang²/Ha (matching Fortran MECP)
+    let mut inv_hessian = optimizer::initialize_inverse_hessian(geometry.coords.len());
 
     // Track last convergence status for non-convergence reporting
     let mut last_conv = optimizer::ConvergenceStatus {
@@ -1541,9 +1542,9 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                     step, config.switch_step
                 );
             }
-            // BFGS uses fixed rho in Python, no adaptive scaling
+            // BFGS uses inverse Hessian (matching Fortran MECP)
             // Pass 1.0 as adaptive_scale parameter for compatibility but it won't be used
-            optimizer::bfgs_step(&x_old, &grad, &hessian, &config, 1.0)
+            optimizer::bfgs_step(&x_old, &grad, &inv_hessian, &config, 1.0)
         } else if config.use_gediis {
             if config.use_hybrid_gediis {
                 println!(
@@ -1728,10 +1729,23 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
 
-        // Update Hessian
-        let sk = &x_new - &x_old;
-        let yk = &grad_new - &grad;
-        hessian = optimizer::update_hessian(&hessian, &sk, &yk);
+        // Update inverse Hessian (BFGS formula for H^-1)
+        // CRITICAL: Convert from Bohr to Angstrom to match Fortran MECP units
+        // Fortran works in Angstrom coordinates and Ha/Angstrom gradients
+        let bohr_to_ang = config::BOHR_TO_ANGSTROM;
+        
+        // sk (step) in Angstrom: multiply Bohr by conversion factor
+        let sk_bohr = &x_new - &x_old;
+        let sk_ang: DVector<f64> = sk_bohr.map(|v| v * bohr_to_ang);
+        
+        // yk (gradient difference) in Ha/Angstrom: divide Ha/Bohr by conversion factor
+        // g_ang = g_bohr / bohr_to_ang (since Ha/Bohr * Bohr/Ang = Ha/Ang... wait, that's wrong)
+        // Actually: Ha/Bohr = Ha / (Ang * bohr_to_ang) = (Ha/Ang) / bohr_to_ang
+        // So: g_ang = g_bohr / bohr_to_ang
+        let yk_bohr = &grad_new - &grad;
+        let yk_ang: DVector<f64> = yk_bohr.map(|v| v / bohr_to_ang);
+        
+        inv_hessian = optimizer::update_hessian(&inv_hessian, &sk_ang, &yk_ang);
 
         // Add to history for GDIIS/GEDIIS
         // CRITICAL FIX: Use QM-verified geometry, not optimizer prediction
@@ -1741,7 +1755,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         opt_state.add_to_history(
             state_a_new.geometry.coords.clone(),
             grad_new.clone(),
-            hessian.clone(),
+            inv_hessian.clone(),
             energy_diff,
             opt_state.lambdas.clone(),
             opt_state.lambda_de,
@@ -1755,7 +1769,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 step,
                 &geometry,
                 &state_a_new.geometry.coords,
-                &hessian,
+                &inv_hessian,
                 &opt_state,
                 &config,
             );
@@ -2528,7 +2542,8 @@ fn run_single_optimization(
 
     let mut opt_state = optimizer::OptimizationState::new(config.max_history);
     let mut x_old = geometry.coords.clone();
-    let mut hessian = DMatrix::identity(geometry.coords.len(), geometry.coords.len());
+    // Initialize inverse Hessian with diagonal = 0.7 Ang²/Ha (matching Fortran MECP)
+    let mut inv_hessian = optimizer::initialize_inverse_hessian(geometry.coords.len());
 
     for step in 1..=config.max_steps {
         let output_ext = get_output_file_base(config.program);
@@ -2553,8 +2568,15 @@ fn run_single_optimization(
             let violations = constraints::evaluate_constraints(geometry, constraints);
             let jacobian = constraints::build_constraint_jacobian(geometry, constraints);
 
+            // For constrained optimization, we need the Hessian (not inverse)
+            // Invert the inverse Hessian for the constrained solver
+            let hessian_for_constraint = inv_hessian.clone().try_inverse().unwrap_or_else(|| {
+                println!("Warning: Could not invert inverse Hessian, using identity");
+                DMatrix::identity(inv_hessian.nrows(), inv_hessian.ncols())
+            });
+
             if let Some((delta_x, lambdas)) =
-                optimizer::solve_constrained_step(&hessian, &grad, &jacobian, &violations)
+                optimizer::solve_constrained_step(&hessian_for_constraint, &grad, &jacobian, &violations)
             {
                 opt_state.lambdas = lambdas.iter().cloned().collect();
 
@@ -2573,8 +2595,8 @@ fn run_single_optimization(
             } else {
                 // Fallback to BFGS if solver fails
                 println!("Warning: Constrained step solver failed. Falling back to BFGS.");
-                // BFGS uses fixed rho in Python, no adaptive scaling
-                optimizer::bfgs_step(&x_old, &grad, &hessian, &config, 1.0)
+                // BFGS uses inverse Hessian (matching Fortran MECP)
+                optimizer::bfgs_step(&x_old, &grad, &inv_hessian, &config, 1.0)
             }
         } else {
             // Choose optimizer based on switch_step configuration
@@ -2603,7 +2625,8 @@ fn run_single_optimization(
                         step,
                     )
                 };
-                optimizer::bfgs_step(&x_old, &grad, &hessian, config, adaptive_scale)
+                // BFGS uses inverse Hessian (matching Fortran MECP)
+                optimizer::bfgs_step(&x_old, &grad, &inv_hessian, config, adaptive_scale)
             } else if config.use_gediis {
                 if config.use_hybrid_gediis {
                     println!(
@@ -2706,14 +2729,20 @@ fn run_single_optimization(
             return Ok(());
         }
 
-        let sk = &x_new - &x_old;
-        let yk = &grad_new - &grad;
-        hessian = optimizer::update_hessian(&hessian, &sk, &yk);
+        // Update inverse Hessian (BFGS formula for H^-1)
+        // CRITICAL: Convert from Bohr to Angstrom to match Fortran MECP units
+        let bohr_to_ang = config::BOHR_TO_ANGSTROM;
+        let sk_bohr = &x_new - &x_old;
+        let sk_ang: DVector<f64> = sk_bohr.map(|v| v * bohr_to_ang);
+        let yk_bohr = &grad_new - &grad;
+        let yk_ang: DVector<f64> = yk_bohr.map(|v| v / bohr_to_ang);
+        inv_hessian = optimizer::update_hessian(&inv_hessian, &sk_ang, &yk_ang);
+        
         let energy_diff = state_a_new.energy - state_b_new.energy;
         opt_state.add_to_history(
             state_a_new.geometry.coords.clone(),
             grad_new.clone(),
-            hessian.clone(),
+            inv_hessian.clone(),
             energy_diff,
             opt_state.lambdas.clone(),
             opt_state.lambda_de,
@@ -3600,7 +3629,8 @@ fn run_restart(
     let step = checkpoint_load.step;
     let mut geometry = checkpoint_load.geometry;
     let x_old = checkpoint_load.x_old;
-    let hessian = checkpoint_load.hessian;
+    // Note: checkpoint stores inverse Hessian (matching Fortran MECP)
+    let inv_hessian = checkpoint_load.hessian;
     let mut opt_state = checkpoint_load.opt_state;
     let config = checkpoint_load.config;
 
@@ -3672,8 +3702,15 @@ fn run_restart(
             let violations = constraints::evaluate_constraints(&geometry, constraints);
             let jacobian = constraints::build_constraint_jacobian(&geometry, constraints);
 
+            // For constrained optimization, we need the Hessian (not inverse)
+            // Invert the inverse Hessian for the constrained solver
+            let hessian_for_constraint = inv_hessian.clone().try_inverse().unwrap_or_else(|| {
+                println!("Warning: Could not invert inverse Hessian, using identity");
+                DMatrix::identity(inv_hessian.nrows(), inv_hessian.ncols())
+            });
+
             if let Some((delta_x, lambdas)) =
-                optimizer::solve_constrained_step(&hessian, &grad, &jacobian, &violations)
+                optimizer::solve_constrained_step(&hessian_for_constraint, &grad, &jacobian, &violations)
             {
                 opt_state.lambdas = lambdas.iter().cloned().collect();
 
@@ -3692,8 +3729,8 @@ fn run_restart(
             } else {
                 // Fallback to BFGS if solver fails
                 println!("Warning: Constrained step solver failed. Falling back to BFGS.");
-                // BFGS uses fixed rho in Python, no adaptive scaling
-                optimizer::bfgs_step(&x_old, &grad, &hessian, &config, 1.0)
+                // BFGS uses inverse Hessian (matching Fortran MECP)
+                optimizer::bfgs_step(&x_old, &grad, &inv_hessian, &config, 1.0)
             }
         } else {
             // Choose optimizer based on switch_step configuration
@@ -3717,8 +3754,8 @@ fn run_restart(
                         step, config.switch_step
                     );
                 }
-                // BFGS uses fixed rho in Python, no adaptive scaling
-                optimizer::bfgs_step(&x_old, &grad, &hessian, &config, 1.0)
+                // BFGS uses inverse Hessian (matching Fortran MECP)
+                optimizer::bfgs_step(&x_old, &grad, &inv_hessian, &config, 1.0)
             } else if config.use_gediis {
                 if config.use_hybrid_gediis {
                     println!(

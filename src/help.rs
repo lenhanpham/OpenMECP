@@ -354,6 +354,72 @@ pub const KEYWORDS: &[Keyword] = &[
         example: Some("switch_step = 10  # BFGS for steps 1-10, then DIIS"),
         required: false,
     },
+    // Fortran-ported robust DIIS options
+    Keyword {
+        name: "use_robust_diis",
+        category: KeywordCategory::Convergence,
+        description: "Use Fortran-ported DIIS implementations with SR1 updates and validation checks",
+        default_value: Some("false"),
+        example: Some("use_robust_diis = true"),
+        required: false,
+    },
+    Keyword {
+        name: "gediis_variant",
+        category: KeywordCategory::Convergence,
+        description: "GEDIIS variant: auto, rfo, energy, or simultaneous (only with use_robust_diis)",
+        default_value: Some("auto"),
+        example: Some("gediis_variant = energy"),
+        required: false,
+    },
+    Keyword {
+        name: "gdiis_cosine_check",
+        category: KeywordCategory::Convergence,
+        description: "Cosine check mode for GDIIS: none, zero, standard, variable, strict",
+        default_value: Some("standard"),
+        example: Some("gdiis_cosine_check = variable"),
+        required: false,
+    },
+    Keyword {
+        name: "gdiis_coeff_check",
+        category: KeywordCategory::Convergence,
+        description: "Coefficient check mode for GDIIS: none, regular, force_recent, combined",
+        default_value: Some("regular"),
+        example: Some("gdiis_coeff_check = combined"),
+        required: false,
+    },
+    Keyword {
+        name: "n_neg",
+        category: KeywordCategory::Convergence,
+        description: "Number of negative Hessian eigenvalues (0=minimum, 1=TS search)",
+        default_value: Some("0"),
+        example: Some("n_neg = 1  # Transition state search"),
+        required: false,
+    },
+    Keyword {
+        name: "gediis_sim_switch",
+        category: KeywordCategory::Convergence,
+        description: "RMS error threshold for GEDIIS variant switching",
+        default_value: Some("0.0025"),
+        example: Some("gediis_sim_switch = 0.005"),
+        required: false,
+    },
+    // Advanced Hessian update options
+    Keyword {
+        name: "use_advanced_hessian_update",
+        category: KeywordCategory::Convergence,
+        description: "Use Fortran-ported Hessian update methods (more options available)",
+        default_value: Some("false"),
+        example: Some("use_advanced_hessian_update = true"),
+        required: false,
+    },
+    Keyword {
+        name: "hessian_update_method",
+        category: KeywordCategory::Convergence,
+        description: "Hessian update method: bfgs, bfgs_pure, powell, bofill, bfgs_powell_mix",
+        default_value: Some("bfgs"),
+        example: Some("hessian_update_method = bofill  # For TS-like crossings"),
+        required: false,
+    },
 
     // ADVANCED OPTIONS
     Keyword {

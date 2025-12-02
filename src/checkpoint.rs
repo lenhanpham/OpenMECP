@@ -34,16 +34,34 @@
 //! used manually:
 //!
 //! ```no_run
-//! use omecp::checkpoint::Checkpoint;
+//! use omecp::checkpoint::{Checkpoint, CheckpointLoad};
+//! use omecp::geometry::Geometry;
+//! use omecp::optimizer::OptimizationState;
+//! use omecp::config::Config;
+//! use nalgebra::{DMatrix, DVector};
 //! use std::path::Path;
 //!
-//! // Save checkpoint
-//! let checkpoint = Checkpoint::new(step, &geometry, &x_old, &hessian, &opt_state, &config);
-//! checkpoint.save(Path::new("mecp.chk"))?;
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     // Create test data
+//!     let elements = vec!["H".to_string()];
+//!     let coords = vec![0.0, 0.0, 0.0];
+//!     let geometry = Geometry::new(elements, coords);
+//!     let x_old = DVector::from_vec(vec![0.0, 0.0, 0.0]);
+//!     let hessian = DMatrix::identity(3, 3);
+//!     let opt_state = OptimizationState::new(5);
+//!     let config = Config::default();
 //!
-//! // Load checkpoint
-//! let (step, geometry, x_old, hessian, opt_state, config) =
-//!     Checkpoint::load(Path::new("mecp.chk"))?;
+//!     // Save checkpoint
+//!     let checkpoint = Checkpoint::new(1, &geometry, &x_old, &hessian, &opt_state, &config);
+//!     checkpoint.save(Path::new("mecp.chk"))?;
+//!
+//!     // Load checkpoint
+//!     let loaded: CheckpointLoad = Checkpoint::load(Path::new("mecp.chk"))?;
+//!     println!("Loaded step: {}", loaded.step);
+//!
+//!     std::fs::remove_file("mecp.chk")?;
+//!     Ok(())
+//! }
 //! ```
 //!
 //! # File Location
@@ -57,14 +75,22 @@
 //! including geometry, gradients, Hessian, and history for recovery.
 
 use crate::config::Config;
-use crate::geometry::{angstrom_to_bohr, Geometry};
+use crate::geometry::Geometry;
 use crate::optimizer::OptimizationState;
 use nalgebra::{DMatrix, DVector};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-/// Default checkpoint version (1 = Angstroms for backward compatibility)
+/// Default checkpoint version for backward compatibility.
+///
+/// Version history:
+/// - Version 1: Legacy format with coordinates in Angstrom (original)
+/// - Version 2: Legacy format with coordinates in Bohr (intermediate)
+/// - Version 3: Current format with coordinates in Angstrom (unit standardization)
+///
+/// The default is version 1 for backward compatibility when loading old checkpoints
+/// that don't have a version field.
 fn default_version() -> u32 {
     1
 }
@@ -187,9 +213,31 @@ impl From<SerializableOptimizationState> for OptimizationState {
 /// A checkpoint contains all information needed to continue an optimization
 /// from a specific step, including the current geometry, optimization history,
 /// and calculation configuration.
+///
+/// # Unit Conventions
+///
+/// As of version 3 (unit standardization), all coordinates are stored in Angstrom (Å):
+/// - `geometry.coords`: Molecular coordinates in Angstrom
+/// - `x_old`: Previous geometry coordinates in Angstrom
+/// - `opt_state.geom_history`: Geometry history in Angstrom
+///
+/// Gradients are stored in Hartree/Bohr (Ha/a₀):
+/// - `opt_state.grad_history`: Gradient history in Ha/Bohr
+///
+/// # Version History
+///
+/// - Version 1: Original format with coordinates in Angstrom
+/// - Version 2: Intermediate format with coordinates in Bohr (deprecated)
+/// - Version 3: Current format with coordinates in Angstrom (unit standardization)
+///
+/// **Validates: Requirement 1.5**
 #[derive(Serialize, Deserialize)]
 pub struct Checkpoint {
-    /// Checkpoint format version (1 = Angstroms, 2 = Bohrs)
+    /// Checkpoint format version.
+    ///
+    /// - Version 1: Coordinates in Angstrom (legacy)
+    /// - Version 2: Coordinates in Bohr (legacy, deprecated)
+    /// - Version 3: Coordinates in Angstrom (current, unit standardization)
     #[serde(default = "default_version")]
     pub version: u32,
     /// Current optimization step number
@@ -255,7 +303,7 @@ impl Checkpoint {
     /// let geometry = Geometry::new(elements, coords);
     /// let x_old = vec![0.0, 0.0, 0.0];
     /// let hessian = DMatrix::identity(3, 3);
-    /// let opt_state = OptimizationState::new();
+    /// let opt_state = OptimizationState::new(5);  // max_history = 5
     /// let config = Config::default();
     ///
     /// let checkpoint = Checkpoint::new(
@@ -275,8 +323,13 @@ impl Checkpoint {
         opt_state: &OptimizationState,
         config: &Config,
     ) -> Self {
+        // Version 3: Coordinates stored in Angstrom (unit standardization)
+        // This matches the internal coordinate storage convention where
+        // Geometry.coords are in Angstrom throughout the codebase.
+        //
+        // Validates: Requirement 1.5 - checkpoint saves coordinates in Angstrom
         Self {
-            version: 2, // Version 2: coordinates in Bohrs
+            version: 3, // Version 3: coordinates in Angstrom (unit standardization)
             step,
             geometry: geometry.into(),
             x_old: x_old.data.as_vec().clone(),
@@ -317,7 +370,7 @@ impl Checkpoint {
     ///     let geometry = Geometry::new(elements, coords);
     ///     let x_old = vec![0.0, 0.0, 0.0];
     ///     let hessian = DMatrix::identity(3, 3);
-    ///     let opt_state = OptimizationState::new();
+    ///     let opt_state = OptimizationState::new(5);  // max_history = 5
     ///     let config = Config::default();
     ///
     ///     let checkpoint = Checkpoint::new(
@@ -379,7 +432,7 @@ impl Checkpoint {
     ///     let geometry = Geometry::new(elements, coords);
     ///     let x_old = vec![0.0, 0.0, 0.0];
     ///     let hessian = DMatrix::identity(3, 3);
-    ///     let opt_state = OptimizationState::new();
+    ///     let opt_state = OptimizationState::new(5);  // max_history = 5
     ///     let config = Config::default();
     ///
     ///     let checkpoint = Checkpoint::new(
@@ -400,25 +453,67 @@ impl Checkpoint {
     /// }
     /// ```
     pub fn load(path: &Path) -> Result<CheckpointLoad, Box<dyn std::error::Error>> {
+        use crate::geometry::bohr_to_angstrom;
+        
         let content = fs::read_to_string(path)?;
         let checkpoint: Checkpoint = serde_json::from_str(&content)?;
 
-        // Handle backward compatibility: convert Angstrom geometries to Bohrs
         let mut geometry = Geometry::from(checkpoint.geometry);
         let mut x_old = DVector::from_vec(checkpoint.x_old);
         let mut opt_state = OptimizationState::from(checkpoint.opt_state);
 
-        if checkpoint.version == 1 {
-            // Version 1: coordinates in Angstroms, convert to Bohrs
-            geometry.coords = angstrom_to_bohr(&geometry.coords);
-            x_old = angstrom_to_bohr(&x_old);
+        // Handle backward compatibility for different checkpoint versions
+        // Current internal storage: coordinates in Angstrom (unit standardization)
+        //
+        // Validates: Requirement 1.5 - backward compatibility for Bohr checkpoints
+        match checkpoint.version {
+            1 => {
+                // Version 1: coordinates already in Angstrom - no conversion needed
+                // This is the original format and matches our current internal storage
+                println!("INFO: Loading version 1 checkpoint (Angstrom coordinates)");
+            }
+            2 => {
+                // Version 2: coordinates in Bohr - convert to Angstrom
+                // This was an intermediate format that stored coordinates in Bohr
+                println!("WARNING: Loading version 2 checkpoint with Bohr coordinates");
+                println!("         Converting to Angstrom for unit standardization");
+                
+                geometry.coords = bohr_to_angstrom(&geometry.coords);
+                x_old = bohr_to_angstrom(&x_old);
 
-            // Convert geometry history in optimization state
-            for geom in &mut opt_state.geom_history {
-                *geom = angstrom_to_bohr(geom);
+                // Convert geometry history in optimization state
+                for geom in &mut opt_state.geom_history {
+                    *geom = bohr_to_angstrom(geom);
+                }
+            }
+            3 => {
+                // Version 3: coordinates in Angstrom (current format) - no conversion needed
+                // This is the unit standardization format
+            }
+            _ => {
+                // Unknown version - attempt to detect units by magnitude
+                // Typical molecular coordinates in Angstrom: 0.5 - 5 Å
+                // Typical molecular coordinates in Bohr: 1 - 10 a₀
+                // If max coordinate > 10, likely in Bohr
+                let max_coord = geometry.coords.iter().map(|x| x.abs()).fold(0.0_f64, f64::max);
+                
+                if max_coord > 10.0 {
+                    println!("WARNING: Unknown checkpoint version {}, coordinates appear to be in Bohr", checkpoint.version);
+                    println!("         (max coordinate magnitude: {:.2})", max_coord);
+                    println!("         Converting to Angstrom for unit standardization");
+                    
+                    geometry.coords = bohr_to_angstrom(&geometry.coords);
+                    x_old = bohr_to_angstrom(&x_old);
+
+                    for geom in &mut opt_state.geom_history {
+                        *geom = bohr_to_angstrom(geom);
+                    }
+                } else {
+                    println!("INFO: Unknown checkpoint version {}, assuming Angstrom coordinates", checkpoint.version);
+                }
             }
         }
-        // Version 2: coordinates already in Bohrs, no conversion needed
+
         let nrows = checkpoint.hessian.len();
         let ncols = if nrows > 0 {
             checkpoint.hessian[0].len()

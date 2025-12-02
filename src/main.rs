@@ -57,8 +57,13 @@ use std::process;
 /// This function displays all 5 convergence criteria with:
 /// - Current value (with appropriate units)
 /// - Threshold value
-/// - Pass/fail status using ✓/✗ symbols
-/// - Automatic unit conversion (Bohr → Angstrom for displacements)
+/// - Pass/fail status using YES/NO indicators
+///
+/// # Units
+///
+/// - **Energy difference**: Hartree (Ha)
+/// - **Gradients**: Hartree/Bohr (Ha/a₀)
+/// - **Displacements**: Angstrom (Å)
 ///
 /// # Arguments
 ///
@@ -66,8 +71,8 @@ use std::process;
 /// * `de` - Current energy difference (Hartree)
 /// * `rms_grad` - Current RMS gradient (Hartree/Bohr)
 /// * `max_grad` - Current max gradient (Hartree/Bohr)
-/// * `rms_disp` - Current RMS displacement (Bohr)
-/// * `max_disp` - Current max displacement (Bohr)
+/// * `rms_disp` - Current RMS displacement (Angstrom)
+/// * `max_disp` - Current max displacement (Angstrom)
 /// * `config` - Configuration with threshold values
 fn print_convergence_status(
     conv: &optimizer::ConvergenceStatus,
@@ -673,6 +678,32 @@ fn print_configuration(
             "false"
         }
     );
+    println!(
+        "    Use Robust DIIS:          {}",
+        if input_config.use_robust_diis {
+            "true (Experimental)"
+        } else {
+            "false (default)"
+        }
+    );
+    if input_config.use_robust_diis {
+        println!("    GEDIIS Variant:           {}", input_config.gediis_variant);
+        println!("    GDIIS Cosine Check:       {}", input_config.gdiis_cosine_check);
+        println!("    GDIIS Coeff Check:        {}", input_config.gdiis_coeff_check);
+        println!("    N Neg (TS search):        {}", input_config.n_neg);
+        println!("    GEDIIS Sim Switch:        {}", input_config.gediis_sim_switch);
+    }
+    println!(
+        "    Advanced Hessian Update:  {}",
+        if input_config.use_advanced_hessian_update {
+            "true (Experimental)"
+        } else {
+            "false (default)"
+        }
+    );
+    if input_config.use_advanced_hessian_update {
+        println!("    Hessian Update Method:    {}", input_config.hessian_update_method);
+    }
     println!("    Switch Step:              {}", input_config.switch_step);
     println!("    BFGS Rho:                 {}", input_config.bfgs_rho);
     println!(
@@ -813,13 +844,13 @@ fn print_configuration(
         "  Max Gradient:               {:>12.8} hartree/bohr ",
         input_config.thresholds.max_g
     );
-    // Displacement thresholds: stored in Bohr internally
+    // Displacement thresholds: stored in Angstrom
     println!(
-        "  RMS Displacement:           {:>12.8} bohr ",
+        "  RMS Displacement:           {:>12.8} angstrom ",
         input_config.thresholds.rms
     );
     println!(
-        "  Max Displacement:           {:>12.8} bohr ",
+        "  Max Displacement:           {:>12.8} angstrom ",
         input_config.thresholds.max_dis
     );
 
@@ -1545,7 +1576,34 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             // BFGS uses inverse Hessian (matching Fortran MECP)
             // Pass 1.0 as adaptive_scale parameter for compatibility but it won't be used
             optimizer::bfgs_step(&x_old, &grad, &inv_hessian, &config, 1.0)
+        } else if config.use_robust_diis {
+            // Use new Experimental DIIS implementations
+            if config.use_gediis {
+                println!(
+                    "Using Robust GEDIIS (Experimental) (step {} >= switch point {})",
+                    step, config.switch_step
+                );
+                let gediis_cfg = optimizer::GediisConfig {
+                    max_vectors: config.max_history,
+                    variant: optimizer::parse_gediis_variant(&config.gediis_variant),
+                    sim_switch: config.gediis_sim_switch,
+                    max_rises: 1,
+                    auto_switch: config.gediis_variant == "auto",
+                    ts_scale: 1.0,
+                    n_neg: config.n_neg,
+                };
+                optimizer::robust_gediis_step(&mut opt_state, &config, Some(gediis_cfg))
+            } else {
+                println!(
+                    "Using Robust GDIIS (Experimental) (step {} >= switch point {})",
+                    step, config.switch_step
+                );
+                let cosine_mode = Some(optimizer::parse_cosine_mode(&config.gdiis_cosine_check));
+                let coeff_mode = Some(optimizer::parse_coeff_mode(&config.gdiis_coeff_check));
+                optimizer::robust_gdiis_step(&mut opt_state, &config, cosine_mode, coeff_mode)
+            }
         } else if config.use_gediis {
+            // Use existing implementations (backward compatible)
             if config.use_hybrid_gediis {
                 println!(
                     "Using Smart Hybrid GEDIIS optimizer (adaptive) (step {} >= switch point {})",
@@ -1730,22 +1788,19 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Update inverse Hessian (BFGS formula for H^-1)
-        // CRITICAL: Convert from Bohr to Angstrom to match Fortran MECP units
-        // Fortran works in Angstrom coordinates and Ha/Angstrom gradients
-        let bohr_to_ang = config::BOHR_TO_ANGSTROM;
+        // Unit standardization: inverse Hessian is in Bohr²/Ha
+        // - sk (step) must be in Bohr
+        // - yk (gradient difference) must be in Ha/Bohr
+        let ang_to_bohr = config::ANGSTROM_TO_BOHR;
         
-        // sk (step) in Angstrom: multiply Bohr by conversion factor
-        let sk_bohr = &x_new - &x_old;
-        let sk_ang: DVector<f64> = sk_bohr.map(|v| v * bohr_to_ang);
+        // sk (step) in Bohr: coordinates are in Angstrom, convert to Bohr
+        let sk_angstrom = &x_new - &x_old;
+        let sk_bohr: DVector<f64> = sk_angstrom.map(|v| v * ang_to_bohr);
         
-        // yk (gradient difference) in Ha/Angstrom: divide Ha/Bohr by conversion factor
-        // g_ang = g_bohr / bohr_to_ang (since Ha/Bohr * Bohr/Ang = Ha/Ang... wait, that's wrong)
-        // Actually: Ha/Bohr = Ha / (Ang * bohr_to_ang) = (Ha/Ang) / bohr_to_ang
-        // So: g_ang = g_bohr / bohr_to_ang
+        // yk (gradient difference) in Ha/Bohr: gradients are already in Ha/Bohr
         let yk_bohr = &grad_new - &grad;
-        let yk_ang: DVector<f64> = yk_bohr.map(|v| v / bohr_to_ang);
         
-        inv_hessian = optimizer::update_hessian(&inv_hessian, &sk_ang, &yk_ang);
+        inv_hessian = optimizer::update_hessian_config_driven(&inv_hessian, &sk_bohr, &yk_bohr, &config);
 
         // Add to history for GDIIS/GEDIIS
         // CRITICAL FIX: Use QM-verified geometry, not optimizer prediction
@@ -2627,7 +2682,34 @@ fn run_single_optimization(
                 };
                 // BFGS uses inverse Hessian (matching Fortran MECP)
                 optimizer::bfgs_step(&x_old, &grad, &inv_hessian, config, adaptive_scale)
+            } else if config.use_robust_diis {
+                // Use new Experimental DIIS implementations
+                if config.use_gediis {
+                    println!(
+                        "Using Robust GEDIIS (Experimental) (step {} >= switch point {})",
+                        step, config.switch_step
+                    );
+                    let gediis_cfg = optimizer::GediisConfig {
+                        max_vectors: config.max_history,
+                        variant: optimizer::parse_gediis_variant(&config.gediis_variant),
+                        sim_switch: config.gediis_sim_switch,
+                        max_rises: 1,
+                        auto_switch: config.gediis_variant == "auto",
+                        ts_scale: 1.0,
+                        n_neg: config.n_neg,
+                    };
+                    optimizer::robust_gediis_step(&mut opt_state, config, Some(gediis_cfg))
+                } else {
+                    println!(
+                        "Using Robust GDIIS (Experimental) (step {} >= switch point {})",
+                        step, config.switch_step
+                    );
+                    let cosine_mode = Some(optimizer::parse_cosine_mode(&config.gdiis_cosine_check));
+                    let coeff_mode = Some(optimizer::parse_coeff_mode(&config.gdiis_coeff_check));
+                    optimizer::robust_gdiis_step(&mut opt_state, config, cosine_mode, coeff_mode)
+                }
             } else if config.use_gediis {
+                // Use existing implementations (backward compatible)
                 if config.use_hybrid_gediis {
                     println!(
                         "Using Smart Hybrid GEDIIS optimizer (adaptive) (step {} >= switch point {})",
@@ -2730,13 +2812,19 @@ fn run_single_optimization(
         }
 
         // Update inverse Hessian (BFGS formula for H^-1)
-        // CRITICAL: Convert from Bohr to Angstrom to match Fortran MECP units
-        let bohr_to_ang = config::BOHR_TO_ANGSTROM;
-        let sk_bohr = &x_new - &x_old;
-        let sk_ang: DVector<f64> = sk_bohr.map(|v| v * bohr_to_ang);
+        // Unit standardization: inverse Hessian is in Bohr²/Ha
+        // - sk (step) must be in Bohr
+        // - yk (gradient difference) must be in Ha/Bohr
+        let ang_to_bohr = config::ANGSTROM_TO_BOHR;
+        
+        // sk (step) in Bohr: coordinates are in Angstrom, convert to Bohr
+        let sk_angstrom = &x_new - &x_old;
+        let sk_bohr: DVector<f64> = sk_angstrom.map(|v| v * ang_to_bohr);
+        
+        // yk (gradient difference) in Ha/Bohr: gradients are already in Ha/Bohr
         let yk_bohr = &grad_new - &grad;
-        let yk_ang: DVector<f64> = yk_bohr.map(|v| v / bohr_to_ang);
-        inv_hessian = optimizer::update_hessian(&inv_hessian, &sk_ang, &yk_ang);
+        
+        inv_hessian = optimizer::update_hessian_config_driven(&inv_hessian, &sk_bohr, &yk_bohr, config);
         
         let energy_diff = state_a_new.energy - state_b_new.energy;
         opt_state.add_to_history(
@@ -3756,7 +3844,34 @@ fn run_restart(
                 }
                 // BFGS uses inverse Hessian (matching Fortran MECP)
                 optimizer::bfgs_step(&x_old, &grad, &inv_hessian, &config, 1.0)
+            } else if config.use_robust_diis {
+                // Use new Experimental DIIS implementations
+                if config.use_gediis {
+                    println!(
+                        "Using Robust GEDIIS (Experimental) (step {} >= switch point {})",
+                        step, config.switch_step
+                    );
+                    let gediis_cfg = optimizer::GediisConfig {
+                        max_vectors: config.max_history,
+                        variant: optimizer::parse_gediis_variant(&config.gediis_variant),
+                        sim_switch: config.gediis_sim_switch,
+                        max_rises: 1,
+                        auto_switch: config.gediis_variant == "auto",
+                        ts_scale: 1.0,
+                        n_neg: config.n_neg,
+                    };
+                    optimizer::robust_gediis_step(&mut opt_state, &config, Some(gediis_cfg))
+                } else {
+                    println!(
+                        "Using Robust GDIIS (Experimental) (step {} >= switch point {})",
+                        step, config.switch_step
+                    );
+                    let cosine_mode = Some(optimizer::parse_cosine_mode(&config.gdiis_cosine_check));
+                    let coeff_mode = Some(optimizer::parse_coeff_mode(&config.gdiis_coeff_check));
+                    optimizer::robust_gdiis_step(&mut opt_state, &config, cosine_mode, coeff_mode)
+                }
             } else if config.use_gediis {
+                // Use existing implementations (backward compatible)
                 if config.use_hybrid_gediis {
                     println!(
                         "Using Smart Hybrid GEDIIS optimizer (adaptive) (step {} >= switch point {})",

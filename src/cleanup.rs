@@ -487,7 +487,7 @@ impl CleanupManager {
     /// # Returns
     ///
     /// Returns `true` if the file should be preserved, `false` otherwise
-    fn should_preserve_file(
+    pub fn should_preserve_file(
         &self,
         extension: &str,
         _path: &Path,

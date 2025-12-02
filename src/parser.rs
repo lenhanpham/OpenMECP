@@ -74,8 +74,7 @@
 
 use crate::config::{Config, QMProgram, RunMode, ScanSpec, ScanType};
 use crate::constraints::Constraint;
-use crate::geometry::{angstrom_to_bohr, Geometry};
-use nalgebra::DVector;
+use crate::geometry::Geometry;
 use regex::Regex;
 use std::fs;
 use std::path::Path;
@@ -385,32 +384,18 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
     validate_tail_section_with_filtering_context(&tail1, "TAIL1")?;
     validate_tail_section_with_filtering_context(&tail2, "TAIL2")?;
 
-    let geometry = Geometry::new(
-        elements,
-        angstrom_to_bohr(&DVector::from_vec(coords))
-            .data
-            .as_vec()
-            .clone(),
-    );
+    // Coordinates are stored directly in Angstrom (no conversion needed)
+    let geometry = Geometry::new(elements, coords);
+    
     let lst1 = if !lst1_elements.is_empty() {
-        Some(Geometry::new(
-            lst1_elements,
-            angstrom_to_bohr(&DVector::from_vec(lst1_coords))
-                .data
-                .as_vec()
-                .clone(),
-        ))
+        // LST geometry coordinates are also stored in Angstrom
+        Some(Geometry::new(lst1_elements, lst1_coords))
     } else {
         None
     };
     let lst2 = if !lst2_elements.is_empty() {
-        Some(Geometry::new(
-            lst2_elements,
-            angstrom_to_bohr(&DVector::from_vec(lst2_coords))
-                .data
-                .as_vec()
-                .clone(),
-        ))
+        // LST geometry coordinates are also stored in Angstrom
+        Some(Geometry::new(lst2_elements, lst2_coords))
     } else {
         None
     };
@@ -1044,6 +1029,16 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "smart_history" => config.smart_history = parse_bool(value),
         "reduced_factor" => config.reduced_factor = value.parse().unwrap_or(0.5),
         "bfgs_rho" => config.bfgs_rho = value.parse().unwrap_or(15.0),
+        // New Fortran-ported DIIS options
+        "use_robust_diis" => config.use_robust_diis = parse_bool(value),
+        "gediis_variant" => config.gediis_variant = value.to_lowercase(),
+        "gdiis_cosine_check" => config.gdiis_cosine_check = value.to_lowercase(),
+        "gdiis_coeff_check" => config.gdiis_coeff_check = value.to_lowercase(),
+        "n_neg" => config.n_neg = value.parse().unwrap_or(0),
+        "gediis_sim_switch" => config.gediis_sim_switch = value.parse().unwrap_or(0.0025),
+        // Advanced Hessian update options
+        "use_advanced_hessian_update" => config.use_advanced_hessian_update = parse_bool(value),
+        "hessian_update_method" => config.hessian_update_method = value.to_lowercase(),
         _ => {}
     }
     Ok(())

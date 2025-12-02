@@ -72,31 +72,30 @@ pub struct ScanSpec {
 /// These are the same criteria used in Gaussian optimizations and are
 /// considered industry standard.
 ///
+/// # Units
+///
+/// - **Displacement thresholds** (`rms`, `max_dis`): Angstrom (Å)
+/// - **Gradient thresholds** (`max_g`, `rms_g`): Hartree/Bohr (Ha/a₀)
+/// - **Energy threshold** (`de`): Hartree (Ha)
+///
 /// # Default Values
 ///
-/// Users specify displacement thresholds in Angstrom (familiar units):
-/// - RMS displacement: 0.0025 Angstrom
-/// - Max displacement: 0.0040 Angstrom
-///
-/// These are automatically converted to Bohr for internal use:
-/// - RMS displacement: 0.0025 * 1.889726 ≈ 0.00472 bohr
-/// - Max displacement: 0.0040 * 1.889726 ≈ 0.00756 bohr
-///
-/// Other thresholds:
-/// - Energy difference (ΔE): 0.000050 hartree (~0.00136 eV)
-/// - Max gradient: 0.0007 hartree/bohr
-/// - RMS gradient: 0.0005 hartree/bohr
+/// - Energy difference (ΔE): 0.000050 Ha (~0.00136 eV)
+/// - RMS displacement: 0.0025 Å
+/// - Max displacement: 0.004 Å
+/// - Max gradient: 0.0007 Ha/Bohr
+/// - RMS gradient: 0.0005 Ha/Bohr
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Thresholds {
-    /// Energy difference threshold (ΔE < de) in hartree
+    /// Energy difference threshold (ΔE < de) in Hartree.
     pub de: f64,
-    /// RMS displacement threshold in bohr (converted from Angstrom in config)
+    /// RMS displacement threshold in Angstrom (Å).
     pub rms: f64,
-    /// Maximum displacement threshold in bohr (converted from Angstrom in config)
+    /// Maximum displacement threshold in Angstrom (Å).
     pub max_dis: f64,
-    /// Maximum gradient threshold in hartree/bohr
+    /// Maximum gradient threshold in Hartree/Bohr (Ha/a₀).
     pub max_g: f64,
-    /// RMS gradient threshold in hartree/bohr
+    /// RMS gradient threshold in Hartree/Bohr (Ha/a₀).
     pub rms_g: f64,
 }
 
@@ -104,10 +103,10 @@ impl Default for Thresholds {
     fn default() -> Self {
         Self {
             de: 0.000050,
-            rms: 0.0025 * ANGSTROM_TO_BOHR, 
-            max_dis: 0.004 * ANGSTROM_TO_BOHR,
-            max_g: 0.0007 / ANGSTROM_TO_BOHR, 
-            rms_g: 0.0005 / ANGSTROM_TO_BOHR,
+            rms: 0.0025,     // Angstrom (no conversion needed)
+            max_dis: 0.004,  // Angstrom (no conversion needed)
+            max_g: 0.0007,   // Ha/Bohr (no conversion needed)
+            rms_g: 0.0005,   // Ha/Bohr (no conversion needed)
         }
     }
 }
@@ -158,7 +157,7 @@ pub struct Config {
     pub thresholds: Thresholds,
     /// Maximum number of optimization steps
     pub max_steps: usize,
-    /// Maximum step size in bohr (converted from Angstrom in config)
+    /// Maximum step size in Angstrom (Å).
     pub max_step_size: f64,
     /// Step size reduction factor for line search
     pub reduced_factor: f64,
@@ -274,6 +273,102 @@ pub struct Config {
     ///
     /// Set to true if you want to experiment with smart history management.
     pub smart_history: bool,
+
+    // ========== New Fortran-ported DIIS Options ==========
+
+    /// Use the new Fortran-ported DIIS implementations (more robust).
+    ///
+    /// When enabled, uses `GdiisOptimizer` and `GediisOptimizer` classes
+    /// ported from Gaussian's l103.F, which include:
+    /// - SR1 inverse matrix updates for GDIIS
+    /// - Multiple GEDIIS variants (RFO, Energy, Simultaneous)
+    /// - Cosine and coefficient validation
+    /// - Energy rise tracking and adaptive variant selection
+    ///
+    /// **Default**: false (for backward compatibility)
+    pub use_robust_diis: bool,
+
+    /// GEDIIS variant selection (only used when use_robust_diis = true).
+    ///
+    /// Options:
+    /// - "auto": Automatically select based on RMS error and energy trend
+    /// - "rfo": RFO-DIIS using quadratic step overlaps
+    /// - "energy": Energy-DIIS using gradient-coordinate products
+    /// - "simultaneous": Combines Energy-DIIS with quadratic terms
+    ///
+    /// **Default**: "auto"
+    pub gediis_variant: String,
+
+    /// Cosine check mode for GDIIS step validation.
+    ///
+    /// Controls how the GDIIS step direction is validated against the last error vector.
+    /// Options:
+    /// - "none": No cosine check
+    /// - "zero": CosLim = 0.0
+    /// - "standard": CosLim = 0.71 (recommended)
+    /// - "variable": Variable limit based on number of vectors
+    /// - "strict": CosLim = 0.866
+    ///
+    /// **Default**: "standard"
+    pub gdiis_cosine_check: String,
+
+    /// Coefficient check mode for GDIIS validation.
+    ///
+    /// Controls validation of DIIS coefficients to prevent excessive extrapolation.
+    /// Options:
+    /// - "none": No coefficient check
+    /// - "regular": Standard coefficient check
+    /// - "force_recent": Force recent vectors to have larger weight
+    /// - "combined": Regular + ForceRecent
+    ///
+    /// **Default**: "regular"
+    pub gdiis_coeff_check: String,
+
+    /// Number of negative Hessian eigenvalues for saddle point search.
+    ///
+    /// - 0: Minimum search (default)
+    /// - 1: Transition state search
+    /// - >1: Higher-order saddle points (rare)
+    ///
+    /// Affects GEDIIS variant selection and TS scaling.
+    /// **Default**: 0
+    pub n_neg: usize,
+
+    /// RMS error threshold for GEDIIS variant switching (SimSw in Fortran).
+    ///
+    /// When RMS error > this threshold, Energy-DIIS is preferred.
+    /// When RMS error <= this threshold, RFO-DIIS is used.
+    ///
+    /// **Default**: 0.0025 (matching Fortran)
+    pub gediis_sim_switch: f64,
+
+    // ========== Advanced Hessian Update Options ==========
+
+    /// Use advanced Hessian update methods from Fortran-ported module.
+    ///
+    /// When enabled, uses the new `update_hessian_advanced()` function
+    /// which supports multiple update methods. When disabled, uses the
+    /// legacy `update_hessian()` function (BFGS only).
+    ///
+    /// **Default**: false (for backward compatibility)
+    pub use_advanced_hessian_update: bool,
+
+    /// Hessian update method selection (only used when use_advanced_hessian_update = true).
+    ///
+    /// Options:
+    /// - "bfgs": Standard BFGS for minima (default, with curvature check)
+    /// - "bfgs_pure": BFGS without curvature check
+    /// - "powell": Symmetric rank-one (SR1) update
+    /// - "bofill": Weighted Powell/MS for saddle points
+    /// - "bfgs_powell_mix": Adaptive BFGS/Powell blend
+    ///
+    /// **Recommendations**:
+    /// - Use "bfgs" for standard MECP optimization
+    /// - Use "bofill" or "powell" for TS-like crossing points
+    /// - Use "bfgs_powell_mix" for difficult convergence cases
+    ///
+    /// **Default**: "bfgs"
+    pub hessian_update_method: String,
 }
 
 impl Default for Config {
@@ -281,7 +376,7 @@ impl Default for Config {
         Self {
             thresholds: Thresholds::default(),
             max_steps: 100,
-            max_step_size: 0.1 * ANGSTROM_TO_BOHR, // 0.1 Angstrom in Bohr (internal units)
+            max_step_size: 0.1, // Angstrom (no conversion needed)
             reduced_factor: 0.5,
             nprocs: 1,
             mem: "1GB".to_string(),
@@ -322,6 +417,16 @@ impl Default for Config {
             max_history: 4, // Match Python's history size (keeps max 4 gradients)
             print_checkpoint: false, // Default to saving checkpoints for backward compatibility
             smart_history: false, // Default to traditional FIFO history management
+            // New Fortran-ported DIIS options
+            use_robust_diis: false,
+            gediis_variant: "auto".to_string(),
+            gdiis_cosine_check: "standard".to_string(),
+            gdiis_coeff_check: "regular".to_string(),
+            n_neg: 0,
+            gediis_sim_switch: 0.0025,
+            // Advanced Hessian update options
+            use_advanced_hessian_update: false,
+            hessian_update_method: "bfgs".to_string(),
         }
     }
 }

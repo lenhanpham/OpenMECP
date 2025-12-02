@@ -67,6 +67,8 @@ Where `x_norm = (f1 - f2) / |f1 - f2|` is the normalized gradient difference.
 - **GDIIS Optimizer**: Geometry-based DIIS for 2-3x faster convergence
 - **GEDIIS Optimizer**: Energy-informed DIIS for enhanced convergence
 - **Hybrid Strategy**: Automatic switching between BFGS, GDIIS, and GEDIIS
+- **Robust DIIS (Experimental)**: Enhanced GDIIS/GEDIIS with SR1 updates, cosine validation, and coefficient checks
+- **Multiple Hessian Updates (Experimental)**: BFGS, Powell, Bofill, and adaptive BFGS/Powell blend
 
 ### Constraints
 
@@ -446,6 +448,43 @@ H  1.2  0.0  0.5
 | `bfgs_rho`          | float   | `15.0`  | Scaling factor for BFGS step size              |
 | `print_checkpoint`  | boolean | `false` | Enable/disable checkpoint JSON file generation |
 
+#### Advanced DIIS Options (Experimental)
+
+These options enable the robust GDIIS/GEDIIS implementations, providing enhanced convergence and validation features.
+
+| Keyword              | Type    | Default      | Description                                                      |
+| -------------------- | ------- | ------------ | ---------------------------------------------------------------- |
+| `use_robust_diis`    | boolean | `false`      | Enable experimental DIIS with SR1 updates & validation           |
+| `gediis_variant`     | string  | `"auto"`     | GEDIIS variant: `auto`, `rfo`, `energy`, `simultaneous`          |
+| `gdiis_cosine_check` | string  | `"standard"` | Cosine check: `none`, `zero`, `standard`, `variable`, `strict`   |
+| `gdiis_coeff_check`  | string  | `"regular"`  | Coefficient check: `none`, `regular`, `force_recent`, `combined` |
+| `n_neg`              | integer | `0`          | Negative eigenvalues (0=minimum, 1=TS search)                    |
+| `gediis_sim_switch`  | float   | `0.0025`     | RMS error threshold for GEDIIS variant switching                 |
+
+**GEDIIS Variants:**
+
+- `auto`: Automatically selects based on RMS error and energy trend
+- `rfo`: RFO-DIIS using quadratic step overlaps (good for minima)
+- `energy`: Energy-DIIS using gradient-coordinate products (good when far from minimum)
+- `simultaneous`: Combines Energy-DIIS with quadratic terms
+
+#### Advanced Hessian Update Options (experimental)
+
+These options enable multiple Hessian update methods.
+
+| Keyword                       | Type    | Default  | Description                                                        |
+| ----------------------------- | ------- | -------- | ------------------------------------------------------------------ |
+| `use_advanced_hessian_update` | boolean | `false`  | Enable experimental Hessian update methods                         |
+| `hessian_update_method`       | string  | `"bfgs"` | Method: `bfgs`, `bfgs_pure`, `powell`, `bofill`, `bfgs_powell_mix` |
+
+**Hessian Update Methods:**
+
+- `bfgs`: Standard BFGS for minima (with curvature check) - **default**
+- `bfgs_pure`: BFGS without curvature check (more aggressive)
+- `powell`: Symmetric rank-one (SR1) update (handles negative curvature)
+- `bofill`: Weighted Powell/Murtagh-Sargent for saddle points - **recommended for TS-like crossings**
+- `bfgs_powell_mix`: Adaptive blend of BFGS and Powell
+
 #### Convergence Thresholds
 
 | Keyword          | Type  | Default    | Description                           |
@@ -507,12 +546,12 @@ H  1.2  0.0  0.5
 
 | New Keyword | Status     | Description                     |
 | ----------- | ---------- | ------------------------------- |
-| `mult_a`    | Deprecated | Multiplicity for state A        |
-| `mult_b`    | Deprecated | Multiplicity for state B        |
-| `td_a`      | Deprecated | TD-DFT keywords for state A     |
-| `td_b`      | Deprecated | TD-DFT keywords for state B     |
-| `state_a`   | Deprecated | Excited state index for state A |
-| `state_b`   | Deprecated | Excited state index for state B |
+| `mult_1`    | Deprecated | Multiplicity for state A        |
+| `mult_2`    | Deprecated | Multiplicity for state B        |
+| `td_1`      | Deprecated | TD-DFT keywords for state A     |
+| `td_2`      | Deprecated | TD-DFT keywords for state B     |
+| `state_1`   | Deprecated | Excited state index for state A |
+| `state_2`   | Deprecated | Excited state index for state B |
 
 **Note**: Deprecated keywords still work but will show warnings. Please use the new keywords in new input files.
 
@@ -1433,6 +1472,76 @@ mem = 4GB
 charge = 0
 mult_a = 1
 mult_b = 3
+```
+
+### Example 14: Robust DIIS with Energy-DIIS Variant
+
+Use the experimental GEDIIS implementation with Energy-DIIS variant for difficult convergence cases:
+
+```
+*GEOM
+C      0.037739    0.000000   -0.000000
+C      1.362261    0.000000   -0.000000
+H     -0.524574    0.930562    0.000000
+H     -0.524574   -0.930562   -0.000000
+H      1.924574    0.930562   -0.000000
+H      1.924574   -0.930562    0.000000
+*
+
+*TAIL1
+*
+
+*TAIL2
+*
+
+program = gaussian
+method = B3LYP/6-31G*
+nprocs = 4
+mem = 4GB
+charge = 0
+mult_a = 1
+mult_b = 3
+# Enable robust DIIS (experimental)
+use_robust_diis = true
+use_gediis = true
+gediis_variant = energy
+gdiis_cosine_check = standard
+```
+
+### Example 15: Advanced Hessian Update for TS-like Crossings
+
+Use Bofill Hessian update method for transition state-like crossing points:
+
+```
+*GEOM
+C      0.037739    0.000000   -0.000000
+C      1.362261    0.000000   -0.000000
+H     -0.524574    0.930562    0.000000
+H     -0.524574   -0.930562   -0.000000
+H      1.924574    0.930562   -0.000000
+H      1.924574   -0.930562    0.000000
+*
+
+*TAIL1
+*
+
+*TAIL2
+*
+
+program = gaussian
+method = B3LYP/6-31G*
+nprocs = 4
+mem = 4GB
+charge = 0
+mult_a = 1
+mult_b = 3
+# Enable advanced Hessian update
+use_advanced_hessian_update = true
+hessian_update_method = bofill
+# Combine with robust DIIS for best results
+use_robust_diis = true
+use_gediis = true
+n_neg = 1
 ```
 
 ## Troubleshooting

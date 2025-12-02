@@ -4,7 +4,6 @@
 //! in various formats including XYZ, Gaussian input/output, and checkpoint files.
 
 use crate::geometry::Geometry;
-use nalgebra::DVector;
 use std::fs;
 use std::io::Result;
 use std::path::Path;
@@ -48,13 +47,10 @@ pub fn write_xyz(geom: &Geometry, path: &Path) -> Result<()> {
 
     for i in 0..geom.num_atoms {
         let coords = geom.get_atom_coords(i);
-        // Convert from Bohrs to Angstroms for XYZ output
-        let angstrom_coords = crate::geometry::bohr_to_angstrom(&DVector::from_vec(vec![
-            coords[0], coords[1], coords[2],
-        ]));
+        // Coordinates are already in Angstrom - write directly
         content.push_str(&format!(
             "{}  {:.8}  {:.8}  {:.8}\n",
-            geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
+            geom.elements[i], coords[0], coords[1], coords[2]
         ));
     }
 
@@ -1116,12 +1112,12 @@ mod tests {
         let header = build_program_header(&config, 0, 1, "", 0);
         assert!(header.contains("B3LYP/6-31G* force stable=opt guess=read"));
 
-        // ORCA with noread mode
+        // ORCA with noread mode - use build_program_header_with_basename for ORCA
         config.program = crate::config::QMProgram::Orca;
         config.method = "B3LYP def2-SVP".to_string();
         config.run_mode = crate::config::RunMode::NoRead;
 
-        let header = build_program_header(&config, 0, 1, "", 0);
+        let header = build_program_header_with_basename(&config, 0, 1, "", 0, "test_job");
         assert!(header.contains("B3LYP def2-SVP engrad"));
         assert!(!header.contains("!moread"));
     }
@@ -1140,9 +1136,9 @@ mod tests {
         assert!(header.contains("%chk=state_A.chk"));
         assert!(header.contains("%nprocshared="));
 
-        // ORCA
+        // ORCA - use build_program_header_with_basename for ORCA
         config.program = crate::config::QMProgram::Orca;
-        let header = build_program_header(&config, 0, 1, "", 0);
+        let header = build_program_header_with_basename(&config, 0, 1, "", 0, "test_job");
         assert!(header.contains("%pal nprocs"));
         assert!(header.contains("*xyz"));
 
@@ -1171,23 +1167,23 @@ mod tests {
         config.mult_state_a = 1;
         config.mult_state_b = 3;
 
-        // Test default behavior (should use "calc" as default basename)
-        let header = build_program_header(&config, 0, 1, "", 0);
-        assert!(header.contains("calc/state_A.gbw"));
+        // Test with "calc" basename (ORCA requires basename)
+        let header = build_program_header_with_basename(&config, 0, 1, "", 0, "calc");
+        assert!(header.contains("calc_state_A.gbw"));
         assert!(!header.contains("***"));
 
-        let header = build_program_header(&config, 0, 3, "", 0);
-        assert!(header.contains("calc/state_B.gbw"));
+        let header = build_program_header_with_basename(&config, 0, 3, "", 0, "calc");
+        assert!(header.contains("calc_state_B.gbw"));
         assert!(!header.contains("***"));
 
         // Test with custom basename (should use custom basename)
         let header = build_program_header_with_basename(&config, 0, 1, "", 0, "compound_x");
-        assert!(header.contains("compound_x/state_A.gbw"));
+        assert!(header.contains("compound_x_state_A.gbw"));
         assert!(!header.contains("***"));
         assert!(!header.contains("calc"));
 
         let header = build_program_header_with_basename(&config, 0, 3, "", 0, "compound_x");
-        assert!(header.contains("compound_x/state_B.gbw"));
+        assert!(header.contains("compound_x_state_B.gbw"));
         assert!(!header.contains("***"));
         assert!(!header.contains("calc"));
     }

@@ -166,9 +166,15 @@ pub mod checkpoint;
 pub mod cleanup;
 pub mod config;
 pub mod constraints;
+/// GDIIS (Geometry Direct Inversion in Iterative Subspace) implementation
+pub mod gdiis;
+/// GEDIIS (Geometry Energy Direct Inversion in Iterative Subspace) implementation
+pub mod gediis;
 pub mod geometry;
 /// Built-in help system
 pub mod help;
+/// Hessian update methods (BFGS, Bofill, Powell)
+pub mod hessian_update;
 pub mod io;
 /// Linear synchronous transit interpolation
 pub mod lst;

@@ -52,7 +52,7 @@
 //! - Forces/gradients (in hartree/bohr)
 //! - Final geometry
 
-use crate::geometry::{angstrom_to_bohr, Geometry, State};
+use crate::geometry::{bohr_to_angstrom, forces_bohr_to_angstrom, Geometry, State};
 use crate::io;
 use lazy_static::lazy_static;
 use nalgebra::DVector;
@@ -240,14 +240,10 @@ impl QMInterface for GaussianInterface {
 
         for i in 0..geom.num_atoms {
             let coords = geom.get_atom_coords(i);
-            // Convert from Bohrs to Angstroms for QM input
-            let angstrom_coords =
-                crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![
-                    coords[0], coords[1], coords[2],
-                ]));
+            // Coordinates are already in Angstrom - write directly
             content.push_str(&format!(
                 "{}  {:.8}  {:.8}  {:.8}\n",
-                geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
+                geom.elements[i], coords[0], coords[1], coords[2]
             ));
         }
 
@@ -386,13 +382,11 @@ impl QMInterface for GaussianInterface {
 
         let state = State {
             energy,
-            forces: DVector::from_vec(forces),
+            // Convert forces from Ha/Bohr to Ha/Å for consistency with coordinates
+            forces: forces_bohr_to_angstrom(&DVector::from_vec(forces)),
             geometry: Geometry::new(
                 original_geometry.elements.clone(), // Preserve original atom order
-                angstrom_to_bohr(&nalgebra::DVector::from_vec(geom_coords))
-                    .data
-                    .as_vec()
-                    .clone(),
+                geom_coords,  // Coordinates in Angstrom (native Gaussian output)
             ),
         };
 
@@ -578,14 +572,10 @@ impl QMInterface for OrcaInterface {
 
         for i in 0..geom.num_atoms {
             let coords = geom.get_atom_coords(i);
-            // Convert from Bohrs to Angstroms for QM input
-            let angstrom_coords =
-                crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![
-                    coords[0], coords[1], coords[2],
-                ]));
+            // Coordinates are already in Angstrom - write directly
             content.push_str(&format!(
                 "{}  {:.8}  {:.8}  {:.8}\n",
-                geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
+                geom.elements[i], coords[0], coords[1], coords[2]
             ));
         }
 
@@ -711,7 +701,7 @@ impl QMInterface for OrcaInterface {
                         e
                     ))
                 })?;
-                forces.push(-val);
+                forces.push(-val); // Orca engrad stores gradient not force, so we need to negate gradients to have forces 
             }
         }
 
@@ -756,10 +746,14 @@ impl QMInterface for OrcaInterface {
             )));
         }
 
+        // Convert coordinates from Bohr (ORCA .engrad native) to Angstrom (internal storage)
+        let geom_coords_angstrom = bohr_to_angstrom(&DVector::from_vec(geom_coords));
+
         let state = State {
             energy,
-            forces: DVector::from_vec(forces),
-            geometry: Geometry::new(elements, geom_coords),
+            // Convert forces from Ha/Bohr to Ha/Å for consistency with coordinates
+            forces: forces_bohr_to_angstrom(&DVector::from_vec(forces)),
+            geometry: Geometry::new(elements, geom_coords_angstrom.data.as_vec().clone()),  // Coordinates in Angstrom
         };
 
         // Validate the state to ensure meaningful data
@@ -983,10 +977,14 @@ impl QMInterface for BagelInterface {
             )));
         }
 
+        // Convert coordinates from Bohr (BAGEL native) to Angstrom (internal storage)
+        let geom_coords_angstrom = bohr_to_angstrom(&DVector::from_vec(geom_coords));
+
         let state = State {
             energy,
-            forces: DVector::from_vec(forces),
-            geometry: Geometry::new(elements, geom_coords),
+            // Convert forces from Ha/Bohr to Ha/Å for consistency with coordinates
+            forces: forces_bohr_to_angstrom(&DVector::from_vec(forces)),
+            geometry: Geometry::new(elements, geom_coords_angstrom.data.as_vec().clone()),  // Coordinates in Angstrom
         };
 
         // Validate the state to ensure meaningful data
@@ -1140,10 +1138,14 @@ impl QMInterface for XtbInterface {
             )));
         }
 
+        // Convert coordinates from Bohr (XTB .engrad native) to Angstrom (internal storage)
+        let geom_coords_angstrom = bohr_to_angstrom(&DVector::from_vec(geom_coords));
+
         let state = State {
             energy,
-            forces: DVector::from_vec(forces),
-            geometry: Geometry::new(elements, geom_coords),
+            // Convert forces from Ha/Bohr to Ha/Å for consistency with coordinates
+            forces: forces_bohr_to_angstrom(&DVector::from_vec(forces)),
+            geometry: Geometry::new(elements, geom_coords_angstrom.data.as_vec().clone()),  // Coordinates in Angstrom
         };
 
         // Validate the state to ensure meaningful data
@@ -1161,14 +1163,15 @@ fn geometry_to_json(geom: &Geometry) -> String {
 
     for i in 0..geom.num_atoms {
         let coords = geom.get_atom_coords(i);
-        // Convert from Bohrs to Angstroms for QM input
-        let angstrom_coords =
-            crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![
+        // Coordinates are already in Angstrom - write directly
+        // Note: BAGEL expects Bohr coordinates in JSON, so we convert Angstrom to Bohr
+        let bohr_coords =
+            crate::geometry::angstrom_to_bohr(&nalgebra::DVector::from_vec(vec![
                 coords[0], coords[1], coords[2],
             ]));
         result.push_str(&format!(
             "{{ \"atom\" : \"{}\", \"xyz\" : [ {:.8}, {:.8}, {:.8} ] }}",
-            geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
+            geom.elements[i], bohr_coords[0], bohr_coords[1], bohr_coords[2]
         ));
 
         if i < geom.num_atoms - 1 {
@@ -1291,14 +1294,10 @@ impl QMInterface for CustomInterface {
         let mut geometry_lines = Vec::new();
         for i in 0..geom.num_atoms {
             let coords = geom.get_atom_coords(i);
-            // Convert from Bohrs to Angstroms for QM input
-            let angstrom_coords =
-                crate::geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![
-                    coords[0], coords[1], coords[2],
-                ]));
+            // Coordinates are already in Angstrom - write directly
             geometry_lines.push(format!(
                 "{}  {:.8}  {:.8}  {:.8}",
-                geom.elements[i], angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
+                geom.elements[i], coords[0], coords[1], coords[2]
             ));
         }
         let geometry_str = geometry_lines.join("\n");
@@ -1432,7 +1431,8 @@ impl QMInterface for CustomInterface {
 
         let state = State {
             energy,
-            forces,
+            // Convert forces from Ha/Bohr to Ha/Å for consistency with coordinates
+            forces: forces_bohr_to_angstrom(&forces),
             geometry,
         };
 

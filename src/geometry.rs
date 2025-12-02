@@ -6,7 +6,11 @@
 //! - [`Geometry`]: Molecular structure with element types and Cartesian coordinates
 //! - [`State`]: Electronic state with energy, forces, and associated geometry
 //!
-//! All coordinates are in Bohrs and forces are in Hartree/Bohr.
+//! # Unit Conventions
+//!
+//! - **Coordinates**: Stored in Angstrom (Å) - the standard unit for molecular geometry
+//! - **Forces/Gradients**: Stored in Hartree/Bohr (Ha/a₀) - native QM program output
+//! - **Energy**: Stored in Hartree (Ha)
 
 use nalgebra::DVector;
 
@@ -24,6 +28,18 @@ pub fn bohr_to_angstrom(coords: &DVector<f64>) -> DVector<f64> {
     coords * BOHR_TO_ANGSTROM
 }
 
+/// Convert forces from Hartree/Bohr to Hartree/Angstrom.
+///
+/// Forces have units of energy/length. To convert from Ha/Bohr to Ha/Å:
+/// ```text
+/// F(Ha/Å) = F(Ha/Bohr) × (1 Bohr / 0.529177 Å) = F(Ha/Bohr) × ANGSTROM_TO_BOHR
+/// ```
+///
+/// This ensures forces are consistent with coordinates stored in Angstrom.
+pub fn forces_bohr_to_angstrom(forces: &DVector<f64>) -> DVector<f64> {
+    forces * ANGSTROM_TO_BOHR
+}
+
 /// Represents a molecular geometry with atomic elements and Cartesian coordinates.
 ///
 /// The `Geometry` struct stores the fundamental information about a molecular
@@ -33,7 +49,7 @@ pub fn bohr_to_angstrom(coords: &DVector<f64>) -> DVector<f64> {
 ///
 /// # Coordinate System
 ///
-/// - Units: Bohrs (a0)
+/// - Units: Angstrom (Å) - standard molecular geometry unit
 /// - Coordinate frame: Cartesian (x, y, z)
 /// - Origin: Arbitrary (typically centered for convenience)
 ///
@@ -48,7 +64,7 @@ pub fn bohr_to_angstrom(coords: &DVector<f64>) -> DVector<f64> {
 /// ```
 /// use omecp::geometry::Geometry;
 ///
-/// // Create a water molecule geometry
+/// // Create a water molecule geometry (coordinates in Angstrom)
 /// let elements = vec![
 ///     "O".to_string(),
 ///     "H".to_string(),
@@ -56,8 +72,8 @@ pub fn bohr_to_angstrom(coords: &DVector<f64>) -> DVector<f64> {
 /// ];
 /// let coords = vec![
 ///     0.0, 0.0, 0.0,        // O at origin
-///     0.757, 0.586, 0.0,    // H1
-///     -0.757, 0.586, 0.0,   // H2
+///     0.757, 0.586, 0.0,    // H1 (Angstrom)
+///     -0.757, 0.586, 0.0,   // H2 (Angstrom)
 /// ];
 ///
 /// let geometry = Geometry::new(elements, coords);
@@ -65,14 +81,14 @@ pub fn bohr_to_angstrom(coords: &DVector<f64>) -> DVector<f64> {
 ///
 /// // Get coordinates of atom 0 (oxygen)
 /// let oxygen_coords = geometry.get_atom_coords(0);
-/// println!("Oxygen position: ({:.3}, {:.3}, {:.3})",
+/// println!("Oxygen position: ({:.3}, {:.3}, {:.3}) Angstrom",
 ///          oxygen_coords[0], oxygen_coords[1], oxygen_coords[2]);
 /// ```
 #[derive(Debug, Clone)]
 pub struct Geometry {
     /// Chemical element symbols for each atom in order
     pub elements: Vec<String>,
-    /// Flattened Cartesian coordinates [x1, y1, z1, x2, y2, z2, ...] in Bohr (conveted in parser)
+    /// Flattened Cartesian coordinates [x1, y1, z1, x2, y2, z2, ...] in Angstrom (Å)
     pub coords: DVector<f64>,
     /// Number of atoms in the molecule
     pub num_atoms: usize,
@@ -152,10 +168,11 @@ impl Geometry {
 /// "state A" and "state B") and seek the geometry where their energies are equal
 /// while minimizing the perpendicular gradient component.
 ///
-/// # Energy Units
+/// # Unit Conventions
 ///
-/// - Energy: Hartree (Eh)
-/// - Forces: Hartree/Bohr (Eh/a0)
+/// - **Energy**: Hartree (Ha) - atomic unit of energy
+/// - **Forces/Gradients**: Hartree/Angstrom (Ha/Å) - converted from native QM output
+/// - **Geometry coordinates**: Angstrom (Å) - see [`Geometry`] documentation
 ///
 /// # Force Convention
 ///
@@ -164,16 +181,17 @@ impl Geometry {
 /// F = -∇E
 /// ```
 /// This is the standard convention in quantum chemistry, where positive forces
-/// point in the direction of decreasing energy.
+/// point in the direction of decreasing energy. Forces are converted from the
+/// native QM program output (Ha/Bohr) to Ha/Å for consistency with coordinates.
 ///
 #[derive(Debug, Clone)]
 pub struct State {
-    /// Potential energy of the state in Hartree (Eh)
+    /// Potential energy of the state in Hartree (Ha)
     pub energy: f64,
-    /// Gradient (negative of forces) in Hartree/Bohr
+    /// Forces (negative gradient) in Hartree/Angstrom (Ha/Å)
     /// Stored as a flat vector matching Geometry::coords format
     pub forces: DVector<f64>,
-    /// Molecular geometry at which energy and forces were evaluated
+    /// Molecular geometry at which energy and forces were evaluated (coordinates in Angstrom)
     pub geometry: Geometry,
 }
 impl State {

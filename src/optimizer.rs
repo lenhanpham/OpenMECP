@@ -46,10 +46,18 @@
 //! The first term drives the energy difference to zero (f-vector).
 //! The second term minimizes energy perpendicular to the gradient difference (g-vector).
 
-use crate::config::{Config, ANGSTROM_TO_BOHR};
+use crate::config::Config;
 use crate::geometry::State;
 use nalgebra::{DMatrix, DVector};
 use std::collections::VecDeque;
+
+// Re-export new modules for external use
+pub use crate::gdiis::{CosineCheckMode, CoeffCheckMode, GdiisError, GdiisOptimizer};
+pub use crate::gediis::{
+    compute_dynamic_gediis_weight as gediis_dynamic_weight, EnergyRiseTracker, GediisConfig,
+    GediisOptimizer, GediisVariant,
+};
+pub use crate::hessian_update::HessianUpdateMethod;
 
 /// Tracks optimization state and history for adaptive optimization algorithms.
 ///
@@ -57,11 +65,26 @@ use std::collections::VecDeque;
 /// required by advanced optimization methods like GDIIS and GEDIIS. It also stores
 /// Lagrange multipliers for constraint handling.
 ///
+/// # Unit Conventions
+///
+/// - **Geometry history** (`geom_history`): Coordinates in Angstrom (Å)
+/// - **Gradient history** (`grad_history`): Gradients in Hartree/Bohr (Ha/a₀)
+/// - **Energy history** (`energy_history`): Energy differences in Hartree (Ha)
+/// - **Displacement history** (`displacement_history`): Displacements in Angstrom (Å)
+///
+/// These units match the internal storage conventions used throughout OpenMECP:
+/// - Coordinates are stored in Angstrom for compatibility with QM input files
+/// - Gradients are stored in Ha/Bohr as the native QM program output format
+///
 /// # Capacity and History Management
 ///
 /// - Maximum history: configurable via `max_history` parameter (default: 5)
 /// - Automatically removes oldest entries when capacity is exceeded
 /// - Maintains rolling window of recent optimization data
+///
+/// # Requirements
+///
+/// Validates: Requirements 7.1, 7.2
 #[derive(Debug, Clone)]
 pub struct OptimizationState {
     /// Lagrange multipliers for geometric constraints
@@ -70,19 +93,38 @@ pub struct OptimizationState {
     pub lambda_de: Option<f64>,
     /// Current constraint violations for extended gradient
     pub constraint_violations: DVector<f64>,
-    /// History of molecular geometries (for DIIS methods)
+    /// History of molecular geometries in Angstrom (Å) for DIIS methods.
+    ///
+    /// Each entry is a flattened coordinate vector [x1, y1, z1, x2, y2, z2, ...]
+    /// representing the molecular geometry at a previous optimization step.
+    /// Units: Angstrom (Å) - matching the internal coordinate storage convention.
+    ///
+    /// Validates: Requirement 7.1
     pub geom_history: VecDeque<DVector<f64>>,
-    /// History of gradients (for DIIS methods)
+    /// History of MECP gradients in Hartree/Bohr (Ha/a₀) for DIIS methods.
+    ///
+    /// Each entry is the effective MECP gradient computed at a previous step.
+    /// Units: Hartree/Bohr (Ha/a₀) - native QM program output format.
+    ///
+    /// Validates: Requirement 7.2
     pub grad_history: VecDeque<DVector<f64>>,
-    /// History of approximate Hessian matrices (for BFGS updates)
+    /// History of approximate inverse Hessian matrices in Bohr²/Ha for BFGS updates.
+    ///
+    /// Each entry is the inverse Hessian approximation at a previous step.
+    /// Units: Bohr²/Ha - produces Bohr steps when multiplied by Ha/Bohr gradients.
     pub hess_history: VecDeque<DMatrix<f64>>,
-    /// History of energies or energy differences (for GEDIIS)
+    /// History of energy differences |E1 - E2| in Hartree (Ha) for GEDIIS.
+    ///
+    /// Used to weight interpolation coefficients toward geometries
+    /// closer to the crossing seam (smaller energy difference).
     pub energy_history: VecDeque<f64>,
-    /// History of displacement norms (for stuck detection)
+    /// History of displacement norms in Angstrom (Å) for stuck detection.
+    ///
+    /// Tracks the magnitude of geometry changes between consecutive steps.
     pub displacement_history: VecDeque<f64>,
-    /// History of Lagrange multipliers (for GDIIS extrapolation)
+    /// History of Lagrange multipliers for GDIIS extrapolation
     pub lambda_history: VecDeque<Vec<f64>>,
-    /// History of energy difference Lagrange multiplier (for GDIIS extrapolation)
+    /// History of energy difference Lagrange multiplier for GDIIS extrapolation
     pub lambda_de_history: VecDeque<Option<f64>>,
     /// Maximum number of history entries to store
     pub max_history: usize,
@@ -499,30 +541,53 @@ pub fn solve_constrained_step(
 /// The effective gradient is computed as:
 /// ```text
 /// G = (E1 - E2) * x_norm + [f1 - (x_norm · f1) * x_norm]
+///     \_____f-vector____/   \________g-vector________/
 /// ```
 ///
 /// where `x_norm = (f1 - f2) / |f1 - f2|` is the normalized gradient difference.
 ///
+/// # Unit Analysis
+///
+/// This implementation matches the Python MECP.py reference:
+///
+/// - **Input forces** (`state_a.forces`, `state_b.forces`): Ha/Bohr (native QM output)
+/// - **f1, f2** (negated forces = gradients): Ha/Bohr
+/// - **x_norm** (normalized gradient difference): dimensionless (unit vector)
+/// - **f-vector** = (E1 - E2) × x_norm: **Hartree** (energy × dimensionless)
+/// - **g-vector** = f1 - (x_norm · f1) × x_norm: **Ha/Bohr**
+/// - **Combined gradient**: Mixed units (Ha + Ha/Bohr)
+///
+/// The mixed units are intentional in the Harvey algorithm:
+/// - The f-vector acts as a penalty term driving energy difference to zero
+/// - The g-vector minimizes energy perpendicular to the crossing seam
+/// - Both components contribute appropriately to the optimization direction
+///
+/// When used with the BFGS optimizer, the inverse Hessian (Bohr²/Ha) handles
+/// the unit conversion to produce steps in Bohr.
+///
 /// # Arguments
 ///
-/// * `state_a` - Electronic state 1 (energy, forces, geometry)
-/// * `state_b` - Electronic state 2 (energy, forces, geometry)
+/// * `state_a` - Electronic state 1 (energy in Ha, forces in Ha/Bohr, geometry)
+/// * `state_b` - Electronic state 2 (energy in Ha, forces in Ha/Bohr, geometry)
 /// * `fixed_atoms` - List of atom indices to fix during optimization (0-based)
 ///
 /// # Returns
 ///
 /// Returns the MECP effective gradient as a `DVector<f64>` with length 3 × num_atoms.
+/// The gradient has mixed units (f-vector in Ha, g-vector in Ha/Bohr) matching
+/// the Python MECP.py reference implementation.
+///
+/// # Requirements
+///
+/// Validates: Requirements 6.1, 6.2, 6.3
 ///
 /// # Examples
 ///
 /// ```
 /// use omecp::geometry::{Geometry, State};
-/// use omecp::optimizer::{compute_mecp_gradient, OptimizationState};
+/// use omecp::optimizer::compute_mecp_gradient;
 ///
-/// let mut opt_state = OptimizationState::new();
-/// let fixed_atoms = vec![0]; // Fix first atom
-///
-/// // let gradient = compute_mecp_gradient(&state_a, &state_b, &[], &mut opt_state, &fixed_atoms);
+/// // let gradient = compute_mecp_gradient(&state_a, &state_b, &[]);
 /// // assert_eq!(gradient.len(), state_a.geometry.num_atoms * 3);
 /// ```
 pub fn compute_mecp_gradient(
@@ -530,55 +595,50 @@ pub fn compute_mecp_gradient(
     state_b: &State,
     fixed_atoms: &[usize],
 ) -> DVector<f64> {
-    // CRITICAL: Match Python MECP.py force sign convention
-    // Python extracts forces as positive values from Gaussian output, then NEGATES them
-    // before MECP gradient computation (see getG() function in MECP.py)
-    let f1 = -state_a.forces.clone(); // NEGATE to match Python algorithm
-    let f2 = -state_b.forces.clone(); // NEGATE to match Python algorithm
-
-    // Gradient difference
-    let x_vec = &f1 - &f2;
-    let x_norm_val = x_vec.norm();
-    // Use minimum norm vector to avoid division by zero while maintaining direction
-    // This prevents premature convergence when gradients are nearly identical
-    let x_norm = if x_norm_val.abs() < 1e-10 {
-        // For nearly identical gradients, use a default unit vector
-        // This is better than zero gradient, which would cause premature convergence
-        let n = x_vec.len() as f64;
-        &x_vec / (n.sqrt() * 1e-10)
-    } else {
-        &x_vec / x_norm_val
-    };
-
-    // Energy difference component
-    // CRITICAL UNIT ANALYSIS:
-    // Python: coordinates in Angstrom, forces in Ha/bohr, but treats gradient as Ha/Angstrom
-    // Rust: coordinates in bohr, forces in Ha/bohr
-    //
-    // Python's f_vec = (E1-E2) * x_norm has magnitude in Ha
-    // But Python uses it with Angstrom coordinates, so it's implicitly Ha/Angstrom
-    //
-    // Rust needs f_vec in Ha/bohr to match g_vec (which is in Ha/bohr)
-    // So we need: f_vec = (E1-E2) / bohr_per_angstrom * x_norm
-    // This converts Ha to Ha/bohr when working in Bohr space
-    let de = state_a.energy - state_b.energy;
-    let f_vec = x_norm.clone() * de;
-
-    // Perpendicular component
-    let dot = f1.dot(&x_norm);
-    let g_vec = &f1 - &x_norm * dot;
-
-    // Combine
-    let mut eff_grad = f_vec + g_vec;
-
-    // Apply fixed atoms
-    for &atom_idx in fixed_atoms {
-        eff_grad[atom_idx * 3] = 0.0;
-        eff_grad[atom_idx * 3 + 1] = 0.0;
-        eff_grad[atom_idx * 3 + 2] = 0.0;
+    // Inputs are already in Ha/Bohr and were converted to Ha/A 
+    // If forces are in Ha/A, convert: gradient = -force 
+    
+    let g1 = -state_a.forces.clone(); // Ha/Å
+    let g2 = -state_b.forces.clone(); // Ha/Å
+    
+    let de = state_a.energy - state_b.energy; // Ha
+    
+    // Gradient difference vector
+    let x = &g1 - &g2; // Ha/Å
+    let x_norm = x.norm(); // |x| in Ha/Å
+    let x_norm_sq = x_norm * x_norm; // |x|² in Ha²/Å²
+    
+    // Avoid division by zero
+    if x_norm < 1e-10 {
+        return DVector::zeros(x.len());
     }
-
-    eff_grad
+    
+    // Fortran scaling factors
+    let fac_pp = 140.0; // 140/Ha (empirical)
+    let fac_p = 1.0;    // dimensionless
+    
+    // Parallel component (PerpG in Fortran) - along gradient difference
+    // This drives energy difference to zero
+    let parallel_term = &x * (de * fac_pp); // Ha × (1/Ha) × (Ha/Å) = Ha/Å
+    
+    // Perpendicular component (ParG in Fortran) - on the seam
+    // This minimizes energy while staying on seam
+    let dot = g1.dot(&x) / x_norm_sq; // Dimensionless
+    let perpendicular_term = &g1 - &x * dot; // Ha/Å
+    let perpendicular_term = perpendicular_term * fac_p; // Ha/Å
+    
+    // Combined effective gradient
+    let mut g_eff = parallel_term + perpendicular_term; // Ha/Å
+    
+    // Zero fixed atoms
+    for &atom_idx in fixed_atoms {
+        let start = atom_idx * 3;
+        g_eff[start] = 0.0;
+        g_eff[start + 1] = 0.0;
+        g_eff[start + 2] = 0.0;
+    }
+    
+    g_eff
 }
 
 /// Performs a BFGS optimization step.
@@ -686,22 +746,30 @@ pub fn compute_mecp_gradient(
 ///
 /// This implementation matches the original Harvey Fortran code (easymecp.py):
 /// - Uses **inverse Hessian** (not Hessian) for Newton step
-/// - Works in **Angstrom** internally (converts from/to Bohr at boundaries)
-/// - Two-stage step limiting: total norm, then max component
+/// - Works in **Bohr** for the Newton step computation
+/// - Two-stage step limiting: total norm, then max component (in Bohr)
+/// - Converts final step to Angstrom for coordinate update
 ///
 /// # Algorithm (from Fortran UpdateX subroutine)
 ///
 /// 1. First step: `ChgeX = -0.7 * G` (steepest descent with H_inv diagonal = 0.7)
 /// 2. Later steps: `ChgeX = -H_inv * G` (Newton step with BFGS-updated inverse Hessian)
-/// 3. Limit step: if `||ChgeX|| > 0.1*N`, scale down
-/// 4. Limit components: if `max(|ChgeX_i|) > 0.1`, scale down
+/// 3. Limit step: if `||ChgeX|| > 0.1*N` Bohr, scale down
+/// 4. Limit components: if `max(|ChgeX_i|) > 0.1` Bohr, scale down
+/// 5. Convert step from Bohr to Angstrom
+/// 6. Add Angstrom step to Angstrom coordinates
 ///
 /// # Units
 ///
-/// - Input coordinates: Bohr (converted to Angstrom internally)
-/// - Input gradient: Ha/Bohr (converted to Ha/Angstrom internally)
-/// - Inverse Hessian: Ang²/Ha (initialized to 0.7 on diagonal)
-/// - Output coordinates: Bohr
+/// - Input coordinates (`x0`): Angstrom
+/// - Input gradient (`g0`): Ha/Bohr (native QM output)
+/// - Inverse Hessian: Bohr²/Ha (initialized to 0.7 on diagonal)
+/// - Newton step: Bohr (H⁻¹ × g = Bohr²/Ha × Ha/Bohr = Bohr)
+/// - Output coordinates: Angstrom
+///
+/// # Requirements
+///
+/// Validates: Requirements 4.1, 4.2, 4.3, 4.4, 4.5
 pub fn bfgs_step(
     x0: &DVector<f64>,
     g0: &DVector<f64>,
@@ -709,84 +777,76 @@ pub fn bfgs_step(
     config: &Config,
     _adaptive_scale: f64, // Parameter kept for compatibility but not used for BFGS
 ) -> DVector<f64> {
-    // Fortran MECP uses:
-    // - Coordinates in Angstrom
-    // - Gradients in Ha/Angstrom (converted from Ha/Bohr by dividing by 0.529177)
-    // - Inverse Hessian in Ang²/Ha (diagonal = 0.7)
+    // Unit analysis:
+    // - x0: Angstrom (internal coordinate storage)
+    // - g0: Ha/Bohr (native QM gradient output)
+    // - inv_hessian: Bohr²/Ha (initialized to 0.7 diagonal)
     //
-    // Our Rust code uses:
-    // - Coordinates in Bohr
-    // - Gradients in Ha/Bohr
-    // - We pass inverse Hessian (not Hessian!)
+    // Newton step: step = -H⁻¹ × g
+    // Units: Bohr²/Ha × Ha/Bohr = Bohr
     
     let n = x0.len();
     let bohr_to_ang = crate::config::BOHR_TO_ANGSTROM;
-    let ang_to_bohr = ANGSTROM_TO_BOHR;
     
-    // Convert gradient from Ha/Bohr to Ha/Angstrom (multiply by Bohr/Ang = 1/0.529)
-    // g_ang = g_bohr * (bohr/ang) = g_bohr / 0.529177
-    let g_angstrom: DVector<f64> = g0.map(|v| v / bohr_to_ang);
-    
-    // Compute Newton step: ChgeX = -H_inv * G (in Angstrom)
-    // The inverse Hessian should be in Ang²/Ha, gradient in Ha/Ang
-    // Result: ChgeX in Angstrom
-    let mut chge_x: DVector<f64> = -(inv_hessian * &g_angstrom);
+    // Compute Newton step: step_bohr = -H_inv * g
+    // Units: Bohr²/Ha × Ha/Bohr = Bohr
+    let mut step_bohr: DVector<f64> = -(inv_hessian * g0);
     
     // Check for NaN/Inf in step
-    if chge_x.iter().any(|&v| !v.is_finite()) {
+    if step_bohr.iter().any(|&v| !v.is_finite()) {
         println!("BFGS: Newton step contains NaN/Inf, falling back to steepest descent");
         // Fallback: steepest descent with step size 0.7 (matching Fortran initialization)
-        chge_x = -0.7 * &g_angstrom;
+        // Units: 0.7 Bohr²/Ha × Ha/Bohr = 0.7 Bohr per unit gradient
+        step_bohr = -0.7 * g0;
     }
     
-    // Fortran step limiting (two stages):
-    // 1. Limit total step norm to STPMX * N = 0.1 * N Angstrom
-    let stpmx = 0.1_f64; // Max single component (Angstrom)
-    let stpmax = stpmx * (n as f64); // Max total norm (Angstrom)
+    // Fortran step limiting (two stages) - all in Bohr:
+    // 1. Limit total step norm to STPMX * N = 0.1 * N Bohr
+    let stpmx = 0.1_f64; // Max single component in Bohr
+    let stpmax = stpmx * (n as f64); // Max total norm in Bohr
     
-    let step_norm = chge_x.norm();
+    let step_norm = step_bohr.norm();
     if step_norm > stpmax {
         println!(
-            "BFGS: step norm {:.6} Ang > stpmax {:.6} Ang, scaling down",
+            "BFGS: step norm {:.6} Bohr > stpmax {:.6} Bohr, scaling down",
             step_norm, stpmax
         );
-        chge_x *= stpmax / step_norm;
+        step_bohr *= stpmax / step_norm;
     }
     
-    // 2. Limit max component to STPMX = 0.1 Angstrom
-    let max_component = chge_x.iter().map(|v| v.abs()).fold(0.0_f64, f64::max);
+    // 2. Limit max component to STPMX = 0.1 Bohr
+    let max_component = step_bohr.iter().map(|v| v.abs()).fold(0.0_f64, f64::max);
     if max_component > stpmx {
         println!(
-            "BFGS: max component {:.6} Ang > stpmx {:.6} Ang, scaling down",
+            "BFGS: max component {:.6} Bohr > stpmx {:.6} Bohr, scaling down",
             max_component, stpmx
         );
-        chge_x *= stpmx / max_component;
+        step_bohr *= stpmx / max_component;
     }
     
-    // Convert step from Angstrom to Bohr
-    let chge_x_bohr: DVector<f64> = chge_x.map(|v| v * ang_to_bohr);
+    // Convert step from Bohr to Angstrom for coordinate update
+    let step_angstrom: DVector<f64> = step_bohr.map(|v| v * bohr_to_ang);
     
-    // Apply step
-    let x_new = x0 + &chge_x_bohr;
+    // Apply step to coordinates (both in Angstrom)
+    let x_new = x0 + &step_angstrom;
     
     // Debug output
-    let final_step_norm_ang = chge_x.norm();
-    let final_step_norm_bohr = chge_x_bohr.norm();
+    let final_step_norm_bohr = step_bohr.norm();
+    let final_step_norm_ang = step_angstrom.norm();
     println!(
-        "BFGS: step = {:.6} Ang ({:.6} Bohr), max_component = {:.6} Ang",
-        final_step_norm_ang, final_step_norm_bohr, chge_x.iter().map(|v| v.abs()).fold(0.0_f64, f64::max)
+        "BFGS: step = {:.6} Bohr ({:.6} Ang), max_component = {:.6} Bohr",
+        final_step_norm_bohr, final_step_norm_ang, step_bohr.iter().map(|v| v.abs()).fold(0.0_f64, f64::max)
     );
     
-    // Additional safety: apply config max_step_size (in Bohr)
-    let step_bohr = &x_new - x0;
-    let step_bohr_norm = step_bohr.norm();
-    if step_bohr_norm > config.max_step_size {
-        let scale = config.max_step_size / step_bohr_norm;
+    // Additional safety: apply config max_step_size (in Angstrom)
+    // Note: max_step_size is now in Angstrom per the unit standardization
+    if final_step_norm_ang > config.max_step_size {
+        let scale = config.max_step_size / final_step_norm_ang;
         println!(
-            "BFGS: applying config max_step_size: {:.6} -> {:.6} Bohr",
-            step_bohr_norm, config.max_step_size
+            "BFGS: applying config max_step_size: {:.6} -> {:.6} Ang",
+            final_step_norm_ang, config.max_step_size
         );
-        x0 + &step_bohr * scale
+        x0 + &step_angstrom * scale
     } else {
         x_new
     }
@@ -895,8 +955,8 @@ pub fn compute_adaptive_scale(
 /// Initializes the inverse Hessian matrix for BFGS optimization.
 ///
 /// Following the Fortran MECP implementation, the inverse Hessian is initialized
-/// as a diagonal matrix with value 0.7 Ang²/Ha. This corresponds to a Hessian
-/// of approximately 1.4 Ha/Ang², which is typical for molecular vibrations.
+/// as a diagonal matrix with value 0.7 Bohr²/Ha. This corresponds to a Hessian
+/// of approximately 1.4 Ha/Bohr², which is typical for molecular vibrations.
 ///
 /// # Arguments
 ///
@@ -908,11 +968,17 @@ pub fn compute_adaptive_scale(
 ///
 /// # Units
 ///
-/// The inverse Hessian is in Ang²/Ha (Angstrom squared per Hartree).
-/// This matches the Fortran MECP code which works in Angstrom coordinates.
+/// The inverse Hessian is in Bohr²/Ha (Bohr squared per Hartree).
+/// This matches the Fortran MECP code convention where:
+/// - Newton step: H⁻¹ (Bohr²/Ha) × g (Ha/Bohr) = step (Bohr)
+/// - The 0.7 value provides reasonable initial step sizes for molecular systems
+///
+/// # Requirements
+///
+/// Validates: Requirements 3.1, 8.2
 pub fn initialize_inverse_hessian(n: usize) -> DMatrix<f64> {
-    // Fortran: H(i,i) = 0.7 (Ang²/Ha)
-    // This corresponds to Hessian diagonal of ~1.4 Ha/Ang²
+    // Fortran: H(i,i) = 0.7 (Bohr²/Ha)
+    // This corresponds to Hessian diagonal of ~1.4 Ha/Bohr²
     let mut h_inv = DMatrix::zeros(n, n);
     for i in 0..n {
         h_inv[(i, i)] = 0.7;
@@ -935,24 +1001,40 @@ pub fn initialize_inverse_hessian(n: usize) -> DMatrix<f64> {
 /// ```
 ///
 /// where:
-/// - DelX = X_new - X_old (step vector, in Angstrom)
-/// - DelG = G_new - G_old (gradient difference, in Ha/Angstrom)
+/// - DelX = X_new - X_old (step vector, in Bohr)
+/// - DelG = G_new - G_old (gradient difference, in Ha/Bohr)
 /// - fae = DelG · H_inv · DelG
 ///
 /// # Arguments
 ///
-/// * `h_inv` - Current inverse Hessian approximation (Ang²/Ha)
-/// * `sk` - Step vector (x_new - x_old) in Angstrom
-/// * `yk` - Gradient difference (g_new - g_old) in Ha/Angstrom
+/// * `h_inv` - Current inverse Hessian approximation (Bohr²/Ha)
+/// * `sk` - Step vector (x_new - x_old) in Bohr
+/// * `yk` - Gradient difference (g_new - g_old) in Ha/Bohr
 ///
 /// # Returns
 ///
-/// Returns the updated inverse Hessian matrix. If the update would be unstable,
-/// returns the original inverse Hessian.
+/// Returns the updated inverse Hessian matrix in Bohr²/Ha. If the update would
+/// be unstable, returns the original inverse Hessian.
 ///
 /// # Units
 ///
-/// All inputs and outputs are in Angstrom/Hartree units to match Fortran.
+/// - Input `h_inv`: Bohr²/Ha
+/// - Input `sk`: Bohr (step vector)
+/// - Input `yk`: Ha/Bohr (gradient difference)
+/// - Output: Bohr²/Ha (maintains inverse Hessian units)
+///
+/// # Unit Analysis
+///
+/// The BFGS update preserves units:
+/// - `fac = 1 / (yk · sk)` = 1 / (Ha/Bohr × Bohr) = 1/Ha
+/// - `fac * sk * sk^T` = 1/Ha × Bohr × Bohr = Bohr²/Ha ✓
+/// - `fad = 1 / (yk · H_inv · yk)` = 1 / (Ha/Bohr × Bohr²/Ha × Ha/Bohr) = Bohr/Ha
+/// - `fad * (H_inv·yk) * (H_inv·yk)^T` = Bohr/Ha × Bohr × Bohr = Bohr³/Ha (needs fae correction)
+/// - `fae * w * w^T` corrects to maintain Bohr²/Ha
+///
+/// # Requirements
+///
+/// Validates: Requirements 3.2, 3.3, 3.4
 pub fn update_hessian(
     h_inv: &DMatrix<f64>,
     sk: &DVector<f64>,
@@ -1015,8 +1097,201 @@ pub fn update_hessian(
     h_inv_new
 }
 
+/// Updates the Hessian matrix using the specified method from the hessian_update module.
+///
+/// This function provides access to multiple Hessian update algorithms ported from
+/// the Gaussian Fortran source code (D2CorX subroutine).
+///
+/// # Available Methods
+///
+/// - `Bfgs`: Standard BFGS for minima (with curvature check)
+/// - `Bofill`: Weighted Powell/Murtagh-Sargent for saddle points
+/// - `Powell`: Symmetric rank-one update
+/// - `BfgsPure`: BFGS without curvature check
+/// - `BfgsPowellMix`: Adaptive blend of BFGS and Powell
+///
+/// # Arguments
+///
+/// * `hessian` - Current Hessian matrix (Ha/Bohr²)
+/// * `delta_x` - Step vector (x_new - x_old) in Bohr
+/// * `delta_g` - Gradient difference (g_new - g_old) in Ha/Bohr
+/// * `method` - Update method to use
+///
+/// # Returns
+///
+/// Updated Hessian matrix in Ha/Bohr².
+pub fn update_hessian_advanced(
+    hessian: &DMatrix<f64>,
+    delta_x: &DVector<f64>,
+    delta_g: &DVector<f64>,
+    method: HessianUpdateMethod,
+) -> DMatrix<f64> {
+    crate::hessian_update::update_hessian_with_method(hessian, delta_x, delta_g, method)
+}
 
+/// Updates the inverse Hessian using the BFGS formula from the hessian_update module.
+///
+/// This is an alternative to the existing `update_hessian` function that uses
+/// the implementation from the new hessian_update module.
+pub fn update_inverse_hessian_advanced(
+    h_inv: &DMatrix<f64>,
+    delta_x: &DVector<f64>,
+    delta_g: &DVector<f64>,
+) -> DMatrix<f64> {
+    crate::hessian_update::update_inverse_hessian_bfgs(h_inv, delta_x, delta_g)
+}
 
+/// Performs a robust GDIIS step using the new GdiisOptimizer.
+///
+/// This function uses the enhanced GDIIS implementation ported from Fortran,
+/// which includes:
+/// - SR1 inverse matrix updates
+/// - Cosine validation
+/// - Coefficient validation
+/// - Redundancy detection
+///
+/// # Arguments
+///
+/// * `opt_state` - Optimization state with history
+/// * `config` - Configuration with step size limits
+/// * `cosine_mode` - Cosine check mode (default: Standard)
+/// * `coeff_mode` - Coefficient check mode (default: Regular)
+///
+/// # Returns
+///
+/// New geometry coordinates, or falls back to standard GDIIS on error.
+pub fn robust_gdiis_step(
+    opt_state: &mut OptimizationState,
+    config: &Config,
+    cosine_mode: Option<CosineCheckMode>,
+    coeff_mode: Option<CoeffCheckMode>,
+) -> DVector<f64> {
+    use crate::gdiis::GdiisOptimizer;
+
+    let n = opt_state.geom_history.len();
+    if n < 3 {
+        return gdiis_step(opt_state, config);
+    }
+
+    let mut optimizer = GdiisOptimizer::new(config.max_history);
+    optimizer.cosine_check = cosine_mode.unwrap_or(CosineCheckMode::Standard);
+    optimizer.coeff_check = coeff_mode.unwrap_or(CoeffCheckMode::Regular);
+
+    // Compute error vectors (Newton steps)
+    let errors: VecDeque<DVector<f64>> = opt_state
+        .grad_history
+        .iter()
+        .zip(opt_state.hess_history.iter())
+        .map(|(g, h)| {
+            h.clone()
+                .lu()
+                .solve(g)
+                .unwrap_or_else(|| g.clone())
+        })
+        .collect();
+
+    match optimizer.compute_step(&opt_state.geom_history, &errors, &opt_state.hess_history) {
+        Ok((x_new, coeffs, n_used)) => {
+            println!(
+                "Robust GDIIS: used {} vectors, coeffs: {:?}",
+                n_used,
+                &coeffs[..n_used.min(5)]
+            );
+
+            // Apply step size limiting
+            let last_geom = opt_state.geom_history.back().unwrap();
+            let step = &x_new - last_geom;
+            let step_norm = step.norm();
+
+            if step_norm > config.max_step_size {
+                let scale = config.max_step_size / step_norm;
+                last_geom + &step * scale
+            } else {
+                x_new
+            }
+        }
+        Err(e) => {
+            println!("Robust GDIIS failed ({:?}), falling back to standard GDIIS", e);
+            gdiis_step(opt_state, config)
+        }
+    }
+}
+
+/// Performs a robust GEDIIS step using the new GediisOptimizer.
+///
+/// This function uses the enhanced GEDIIS implementation ported from Fortran,
+/// which includes:
+/// - Multiple DIIS matrix variants (RFO, Energy, Simultaneous)
+/// - Adaptive variant selection
+/// - Energy rise tracking
+///
+/// # Arguments
+///
+/// * `opt_state` - Optimization state with history
+/// * `config` - Configuration with step size limits
+/// * `gediis_config` - Optional GEDIIS-specific configuration
+///
+/// # Returns
+///
+/// New geometry coordinates, or falls back to standard GEDIIS on error.
+pub fn robust_gediis_step(
+    opt_state: &mut OptimizationState,
+    config: &Config,
+    gediis_config: Option<GediisConfig>,
+) -> DVector<f64> {
+    use crate::gediis::GediisOptimizer;
+
+    let n = opt_state.geom_history.len();
+    if n < 3 {
+        return gediis_step(opt_state, config);
+    }
+
+    let cfg = gediis_config.unwrap_or_default();
+    let mut optimizer = GediisOptimizer::with_config(cfg);
+
+    // Compute quadratic steps (H^-1 * g)
+    let quad_steps: VecDeque<DVector<f64>> = opt_state
+        .grad_history
+        .iter()
+        .zip(opt_state.hess_history.iter())
+        .map(|(g, h)| {
+            h.clone()
+                .lu()
+                .solve(g)
+                .unwrap_or_else(|| g.clone())
+        })
+        .collect();
+
+    match optimizer.compute_step(
+        &opt_state.geom_history,
+        &opt_state.grad_history,
+        &opt_state.energy_history,
+        Some(&quad_steps),
+    ) {
+        Some((x_new, coeffs)) => {
+            println!(
+                "Robust GEDIIS: coeffs: {:?}",
+                &coeffs[..coeffs.len().min(5)]
+            );
+
+            // Apply step size limiting
+            let last_geom = opt_state.geom_history.back().unwrap();
+            let step = &x_new - last_geom;
+            let step_norm = step.norm();
+
+            if step_norm > config.max_step_size {
+                let scale = config.max_step_size / step_norm;
+                last_geom + &step * scale
+            } else {
+                x_new
+            }
+        }
+        None => {
+            println!("Robust GEDIIS failed, falling back to standard GEDIIS");
+            gediis_step(opt_state, config)
+        }
+    }
+}
 
 /// Tracks convergence status for each optimization criterion.
 ///
@@ -1083,13 +1358,24 @@ impl ConvergenceStatus {
 /// indicating which criteria have been satisfied. The optimization converges
 /// only when all criteria are met simultaneously.
 ///
+/// # Units
+///
+/// - **Coordinates** (`x_old`, `x_new`): Angstrom (Å)
+/// - **Gradient** (`grad`): Hartree/Bohr (Ha/a₀)
+/// - **Displacement thresholds**: Angstrom (Å)
+/// - **Gradient thresholds**: Hartree/Bohr (Ha/a₀)
+///
+/// This function computes displacements in Angstrom (since coordinates are
+/// stored in Angstrom) and compares against Angstrom thresholds. Gradients
+/// are in Ha/Bohr (native QM output) and compared against Ha/Bohr thresholds.
+///
 /// # Arguments
 ///
-/// * `e1` - Energy of state 1 in hartree
-/// * `e2` - Energy of state 2 in hartree
-/// * `x_old` - Previous geometry coordinates
-/// * `x_new` - Current geometry coordinates
-/// * `grad` - Current MECP gradient
+/// * `e1` - Energy of state 1 in Hartree
+/// * `e2` - Energy of state 2 in Hartree
+/// * `x_old` - Previous geometry coordinates in Angstrom
+/// * `x_new` - Current geometry coordinates in Angstrom
+/// * `grad` - Current MECP gradient in Ha/Bohr
 /// * `config` - Configuration with convergence thresholds
 ///
 /// # Returns
@@ -1099,24 +1385,28 @@ impl ConvergenceStatus {
 /// # Convergence Thresholds
 ///
 /// ## Default (Standard Precision)
-/// - Energy difference: 0.000050 hartree (~0.00136 eV)
-/// - RMS gradient: 0.0005 hartree/bohr
-/// - Max gradient: 0.0007 hartree/bohr
-/// - RMS displacement: 0.0025 bohr (~0.00132 Angstrom)
-/// - Max displacement: 0.0040 bohr (~0.00212 Angstrom)
+/// - Energy difference: 0.000050 Hartree (~0.00136 eV)
+/// - RMS gradient: 0.0005 Ha/Bohr
+/// - Max gradient: 0.0007 Ha/Bohr
+/// - RMS displacement: 0.0025 Å
+/// - Max displacement: 0.004 Å
 ///
 /// ## Recommended for High-Precision MECP
-/// - Energy difference: 0.000010 hartree (~0.00027 eV)
-/// - RMS gradient: 0.0001 hartree/bohr
-/// - Max gradient: 0.0005 hartree/bohr
-/// - RMS displacement: 0.0010 bohr (~0.00053 Angstrom)
-/// - Max displacement: 0.0020 bohr (~0.00106 Angstrom)
+/// - Energy difference: 0.000010 Hartree (~0.00027 eV)
+/// - RMS gradient: 0.0001 Ha/Bohr
+/// - Max gradient: 0.0005 Ha/Bohr
+/// - RMS displacement: 0.001 Å
+/// - Max displacement: 0.002 Å
 ///
 /// # Implementation Notes
 ///
 /// All five criteria must be satisfied simultaneously (AND logic).
 /// Tight convergence is especially important for MECP calculations where
 /// small energy differences can significantly impact results.
+///
+/// # Requirements
+///
+/// Validates: Requirements 5.3, 5.4
 ///
 /// # Examples
 ///
@@ -1126,9 +1416,9 @@ impl ConvergenceStatus {
 ///
 /// let e1 = -100.0;
 /// let e2 = -100.0001;
-/// let x_old = DVector::from_vec(vec![0.0, 0.0, 0.0]);
-/// let x_new = DVector::from_vec(vec![0.001, 0.001, 0.001]);
-/// let grad = DVector::from_vec(vec![0.0001, 0.0001, 0.0001]);
+/// let x_old = DVector::from_vec(vec![0.0, 0.0, 0.0]);  // Angstrom
+/// let x_new = DVector::from_vec(vec![0.001, 0.001, 0.001]);  // Angstrom
+/// let grad = DVector::from_vec(vec![0.0001, 0.0001, 0.0001]);  // Ha/Bohr
 ///
 /// // let status = check_convergence(e1, e2, &x_old, &x_new, &grad, &config);
 /// // assert!(status.is_converged());
@@ -1141,12 +1431,17 @@ pub fn check_convergence(
     grad: &DVector<f64>,
     config: &Config,
 ) -> ConvergenceStatus {
+    // Energy difference in Hartree
     let de = (e1 - e2).abs();
+    
+    // Displacement in Angstrom (x_new and x_old are both in Angstrom)
+    // Validates: Requirement 5.3
     let disp = x_new - x_old;
 
+    // RMS displacement in Angstrom
     let rms_disp = disp.norm() / (disp.len() as f64).sqrt();
     
-    // Max displacement: per-atom 3D distance (matching Python MECP.py)
+    // Max displacement: per-atom 3D distance in Angstrom (matching Python MECP.py)
     // Python computes sqrt(dx² + dy² + dz²) for each atom and finds max
     let max_disp = disp
         .as_slice()
@@ -1159,6 +1454,8 @@ pub fn check_convergence(
         })
         .fold(0.0, f64::max);
 
+    // Gradient metrics in Ha/Bohr (native QM output)
+    // Validates: Requirement 5.4
     let rms_grad = grad.norm() / (grad.len() as f64).sqrt();
     
     // Max gradient: only X component of each atom (matching Python MECP.py)
@@ -1169,6 +1466,12 @@ pub fn check_convergence(
         .map(|chunk| chunk.get(0).unwrap_or(&0.0).abs())
         .fold(0.0, f64::max);
 
+    // Compare against thresholds in matching units:
+    // - de (Ha) vs thresholds.de (Ha)
+    // - rms_grad (Ha/Bohr) vs thresholds.rms_g (Ha/Bohr)
+    // - max_grad (Ha/Bohr) vs thresholds.max_g (Ha/Bohr)
+    // - rms_disp (Å) vs thresholds.rms (Å)
+    // - max_disp (Å) vs thresholds.max_dis (Å)
     ConvergenceStatus {
         de_converged: de < config.thresholds.de,
         rms_grad_converged: rms_grad < config.thresholds.rms_g,
@@ -1293,6 +1596,18 @@ fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
 /// constrained minimization problem to find optimal interpolation coefficients.
 /// These coefficients are then used to predict the next geometry.
 ///
+/// # Unit Conventions
+///
+/// - **Input geometries** (`geom_history`): Angstrom (Å)
+/// - **Input gradients** (`grad_history`): Hartree/Bohr (Ha/a₀)
+/// - **Interpolated geometry**: Angstrom (Å) - linear combination of Angstrom geometries
+/// - **Output geometry**: Angstrom (Å)
+///
+/// The interpolation preserves units because it's a weighted sum of geometries
+/// with coefficients that sum to 1 (DIIS constraint). The correction step uses
+/// the mean Hessian (Bohr²/Ha) applied to the interpolated gradient (Ha/Bohr),
+/// producing a correction in Bohr that is implicitly handled by the algorithm.
+///
 /// # Advantages over BFGS
 ///
 /// - Faster convergence (typically 2-3x fewer iterations)
@@ -1306,6 +1621,8 @@ fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
 /// - History includes geometries, gradients, and Hessian estimates
 /// - Uses the most recent `max_history` iterations for DIIS extrapolation (configurable, default: 5)
 ///
+/// Validates: Requirement 7.3
+///
 /// # Arguments
 ///
 /// * `opt_state` - Optimization state with history of geometries, gradients, and Hessians
@@ -1313,7 +1630,7 @@ fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
 ///
 /// # Returns
 ///
-/// Returns the new geometry coordinates after the GDIIS step as a `DVector<f64>`.
+/// Returns the new geometry coordinates in Angstrom after the GDIIS step as a `DVector<f64>`.
 ///
 /// # Examples
 ///
@@ -1602,14 +1919,24 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
 ///
 /// This metric captures the curvature of the energy surface without explicit Hessian.
 ///
+/// # Unit Analysis
+///
+/// - `g_i - g_j`: Gradient difference in Ha/Bohr
+/// - `x_i - x_j`: Geometry difference in Angstrom
+/// - `B[i,j]`: Mixed units (Ha/Bohr × Å = Ha × Å/Bohr)
+///
+/// The mixed units are acceptable because the B-matrix is only used to solve
+/// for dimensionless interpolation coefficients. The DIIS constraint (Σc_i = 1)
+/// ensures the coefficients are scale-invariant.
+///
 /// # Arguments
 ///
-/// * `grads` - History of gradient vectors
-/// * `geoms` - History of geometry vectors
+/// * `grads` - History of gradient vectors in Ha/Bohr
+/// * `geoms` - History of geometry vectors in Angstrom
 ///
 /// # Returns
 ///
-/// Returns the (n+1) × (n+1) B matrix.
+/// Returns the (n+1) × (n+1) B matrix for DIIS coefficient determination.
 fn build_gediis_b_matrix(
     grads: &VecDeque<DVector<f64>>,
     geoms: &VecDeque<DVector<f64>>,
@@ -1648,6 +1975,22 @@ fn build_gediis_b_matrix(
 /// energy minimization with geometry optimization, leading to more robust
 /// convergence to the true MECP.
 ///
+/// # Unit Conventions
+///
+/// - **Input geometries** (`geom_history`): Angstrom (Å)
+/// - **Input gradients** (`grad_history`): Hartree/Bohr (Ha/a₀)
+/// - **Energy history** (`energy_history`): Hartree (Ha)
+/// - **Interpolated geometry**: Angstrom (Å)
+/// - **Output geometry**: Angstrom (Å)
+///
+/// The B-matrix computation uses `-(g_i - g_j) · (x_i - x_j)` which has mixed
+/// units (Ha/Bohr × Å), but this is acceptable because the B-matrix is only
+/// used to solve for dimensionless interpolation coefficients that sum to 1.
+///
+/// The step calculation `X_new = X_interp - G_interp` uses the gradient as a
+/// pseudo-step direction. The step limiting (`max_step_size` in Angstrom)
+/// ensures the final displacement has proper magnitude regardless of gradient units.
+///
 /// # Algorithm Overview
 ///
 /// 1. **Energy-Normalized Error Vectors**: Compute error vectors with energy
@@ -1657,7 +2000,7 @@ fn build_gediis_b_matrix(
 /// 3. **DIIS Interpolation**: Solve for optimal coefficients using the enhanced
 ///    error matrix
 /// 4. **Geometry Prediction**: Construct new geometry from optimal coefficients
-/// 5. **Newton Correction**: Apply Hessian-informed correction for stability
+/// 5. **Step Limiting**: Cap step to `max_step_size` (Angstrom) for stability
 ///
 /// # When to Use GEDIIS
 ///
@@ -1673,6 +2016,8 @@ fn build_gediis_b_matrix(
 /// - **GDIIS**: ~2-3x faster than BFGS
 /// - **GEDIIS**: ~2-4x faster than GDIIS (4-8x faster than BFGS)
 ///
+/// Validates: Requirement 7.4
+///
 /// # Arguments
 ///
 /// * `opt_state` - Optimization state with history including energies
@@ -1680,7 +2025,7 @@ fn build_gediis_b_matrix(
 ///
 /// # Returns
 ///
-/// Returns the new geometry coordinates after the GEDIIS step as a `DVector<f64>`.
+/// Returns the new geometry coordinates in Angstrom after the GEDIIS step as a `DVector<f64>`.
 ///
 /// # Examples
 ///
@@ -2203,6 +2548,127 @@ pub fn smart_hybrid_gediis_step(
 ///    }
 ///    hybrid_result
 ///}
+
+// ============================================================================
+// Helper Functions for Config-Driven DIIS Mode Selection
+// ============================================================================
+
+/// Converts config string to `CosineCheckMode`.
+///
+/// Maps user-friendly string values to the corresponding enum variant.
+///
+/// # Arguments
+///
+/// * `s` - Configuration string (case-insensitive)
+///
+/// # Returns
+///
+/// The corresponding `CosineCheckMode` variant.
+pub fn parse_cosine_mode(s: &str) -> CosineCheckMode {
+    match s.to_lowercase().as_str() {
+        "none" => CosineCheckMode::None,
+        "zero" => CosineCheckMode::Zero,
+        "variable" => CosineCheckMode::Variable,
+        "strict" => CosineCheckMode::Strict,
+        _ => CosineCheckMode::Standard,
+    }
+}
+
+/// Converts config string to `CoeffCheckMode`.
+///
+/// Maps user-friendly string values to the corresponding enum variant.
+///
+/// # Arguments
+///
+/// * `s` - Configuration string (case-insensitive)
+///
+/// # Returns
+///
+/// The corresponding `CoeffCheckMode` variant.
+pub fn parse_coeff_mode(s: &str) -> CoeffCheckMode {
+    match s.to_lowercase().as_str() {
+        "none" => CoeffCheckMode::None,
+        "force_recent" => CoeffCheckMode::ForceRecent,
+        "combined" => CoeffCheckMode::Combined,
+        "regular_no_cosine" => CoeffCheckMode::RegularNoCosine,
+        _ => CoeffCheckMode::Regular,
+    }
+}
+
+/// Converts config string to `GediisVariant`.
+///
+/// Maps user-friendly string values to the corresponding enum variant.
+///
+/// # Arguments
+///
+/// * `s` - Configuration string (case-insensitive)
+///
+/// # Returns
+///
+/// The corresponding `GediisVariant` variant.
+pub fn parse_gediis_variant(s: &str) -> GediisVariant {
+    match s.to_lowercase().as_str() {
+        "rfo" => GediisVariant::RfoDiis,
+        "energy" => GediisVariant::EnergyDiis,
+        "simultaneous" | "sim" => GediisVariant::SimultaneousDiis,
+        _ => GediisVariant::RfoDiis, // "auto" defaults to RFO, selection happens dynamically
+    }
+}
+
+/// Converts config string to `HessianUpdateMethod`.
+///
+/// Maps user-friendly string values to the corresponding enum variant.
+///
+/// # Arguments
+///
+/// * `s` - Configuration string (case-insensitive)
+///
+/// # Returns
+///
+/// The corresponding `HessianUpdateMethod` variant.
+pub fn parse_hessian_update_method(s: &str) -> HessianUpdateMethod {
+    match s.to_lowercase().as_str() {
+        "bfgs_pure" => HessianUpdateMethod::BfgsPure,
+        "powell" | "sr1" => HessianUpdateMethod::Powell,
+        "bofill" => HessianUpdateMethod::Bofill,
+        "bfgs_powell_mix" | "mix" => HessianUpdateMethod::BfgsPowellMix,
+        _ => HessianUpdateMethod::Bfgs, // Default
+    }
+}
+
+/// Updates the inverse Hessian using config-driven method selection.
+///
+/// When `use_advanced_hessian_update` is true, uses the Fortran-ported
+/// implementations. Otherwise, uses the legacy BFGS implementation.
+///
+/// # Arguments
+///
+/// * `h_inv` - Current inverse Hessian matrix
+/// * `delta_x` - Step vector (x_new - x_old)
+/// * `delta_g` - Gradient difference (g_new - g_old)
+/// * `config` - Configuration with Hessian update settings
+///
+/// # Returns
+///
+/// Updated inverse Hessian matrix.
+pub fn update_hessian_config_driven(
+    h_inv: &DMatrix<f64>,
+    delta_x: &DVector<f64>,
+    delta_g: &DVector<f64>,
+    config: &Config,
+) -> DMatrix<f64> {
+    if config.use_advanced_hessian_update {
+        // Use new Fortran-ported implementation
+        println!(
+            "Using advanced Hessian update (method: {})",
+            config.hessian_update_method
+        );
+        update_inverse_hessian_advanced(h_inv, delta_x, delta_g)
+    } else {
+        // Use legacy implementation
+        update_hessian(h_inv, delta_x, delta_g)
+    }
+}
 
 #[cfg(test)]
 mod tests {

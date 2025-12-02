@@ -68,13 +68,13 @@ pub use crate::hessian_update::HessianUpdateMethod;
 /// # Unit Conventions
 ///
 /// - **Geometry history** (`geom_history`): Coordinates in Angstrom (Å)
-/// - **Gradient history** (`grad_history`): Gradients in Hartree/Bohr (Ha/a₀)
+/// - **Gradient history** (`grad_history`): Gradients in Hartree/Angstrom (Ha/Å)
 /// - **Energy history** (`energy_history`): Energy differences in Hartree (Ha)
 /// - **Displacement history** (`displacement_history`): Displacements in Angstrom (Å)
 ///
 /// These units match the internal storage conventions used throughout OpenMECP:
 /// - Coordinates are stored in Angstrom for compatibility with QM input files
-/// - Gradients are stored in Ha/Bohr as the native QM program output format
+/// - Gradients are converted from native QM output (Ha/Bohr) to Ha/Å at the QM interface boundary
 ///
 /// # Capacity and History Management
 ///
@@ -101,17 +101,17 @@ pub struct OptimizationState {
     ///
     /// Validates: Requirement 7.1
     pub geom_history: VecDeque<DVector<f64>>,
-    /// History of MECP gradients in Hartree/Bohr (Ha/a₀) for DIIS methods.
+    /// History of MECP gradients in Hartree/Angstrom (Ha/Å) for DIIS methods.
     ///
     /// Each entry is the effective MECP gradient computed at a previous step.
-    /// Units: Hartree/Bohr (Ha/a₀) - native QM program output format.
+    /// Units: Hartree/Angstrom (Ha/Å) - converted from native QM output for internal consistency.
     ///
     /// Validates: Requirement 7.2
     pub grad_history: VecDeque<DVector<f64>>,
-    /// History of approximate inverse Hessian matrices in Bohr²/Ha for BFGS updates.
+    /// History of approximate inverse Hessian matrices in Ų/Ha for BFGS updates.
     ///
     /// Each entry is the inverse Hessian approximation at a previous step.
-    /// Units: Bohr²/Ha - produces Bohr steps when multiplied by Ha/Bohr gradients.
+    /// Units: Ų/Ha - produces Angstrom steps when multiplied by Ha/Å gradients.
     pub hess_history: VecDeque<DMatrix<f64>>,
     /// History of energy differences |E1 - E2| in Hartree (Ha) for GEDIIS.
     ///
@@ -391,7 +391,7 @@ impl OptimizationState {
                 let dist = (&self.geom_history[i] - other_geom).norm();
                 min_dist = min_dist.min(dist);
             }
-            // If distance < 0.01 Bohr (~0.005 Angstrom), points are redundant
+            // If distance < 0.01 Å, points are redundant
             // Tighter threshold (was 0.03) to allow fine convergence
             if min_dist < 0.01 {
                 score += 1e7; // MASSIVE Penalty for redundancy (overrides gap protection)
@@ -403,7 +403,7 @@ impl OptimizationState {
             // DIIS assumes a local quadratic region. Distant points hurt convergence.
             let dist_to_head = (&self.geom_history[i] - head_geom).norm();
             if dist_to_head > 0.1 {
-                score += 100.0 * dist_to_head; // e.g. 0.5 Bohr -> +50 score
+                score += 100.0 * dist_to_head; // e.g. 0.5 Å -> +50 score
             }
 
             // 5. Age penalty: preference for newer points
@@ -548,33 +548,33 @@ pub fn solve_constrained_step(
 ///
 /// # Unit Analysis
 ///
-/// This implementation matches the Python MECP.py reference:
+/// This implementation matches the Python MECP.py reference (adapted for Angstrom units):
 ///
-/// - **Input forces** (`state_a.forces`, `state_b.forces`): Ha/Bohr (native QM output)
-/// - **f1, f2** (negated forces = gradients): Ha/Bohr
+/// - **Input forces** (`state_a.forces`, `state_b.forces`): Ha/Å (converted from native QM output)
+/// - **f1, f2** (negated forces = gradients): Ha/Å
 /// - **x_norm** (normalized gradient difference): dimensionless (unit vector)
 /// - **f-vector** = (E1 - E2) × x_norm: **Hartree** (energy × dimensionless)
-/// - **g-vector** = f1 - (x_norm · f1) × x_norm: **Ha/Bohr**
-/// - **Combined gradient**: Mixed units (Ha + Ha/Bohr)
+/// - **g-vector** = f1 - (x_norm · f1) × x_norm: **Ha/Å**
+/// - **Combined gradient**: Mixed units (Ha + Ha/Å)
 ///
 /// The mixed units are intentional in the Harvey algorithm:
 /// - The f-vector acts as a penalty term driving energy difference to zero
 /// - The g-vector minimizes energy perpendicular to the crossing seam
 /// - Both components contribute appropriately to the optimization direction
 ///
-/// When used with the BFGS optimizer, the inverse Hessian (Bohr²/Ha) handles
-/// the unit conversion to produce steps in Bohr.
+/// When used with the BFGS optimizer, the inverse Hessian (Ų/Ha) handles
+/// the unit conversion to produce steps in Angstrom.
 ///
 /// # Arguments
 ///
-/// * `state_a` - Electronic state 1 (energy in Ha, forces in Ha/Bohr, geometry)
-/// * `state_b` - Electronic state 2 (energy in Ha, forces in Ha/Bohr, geometry)
+/// * `state_a` - Electronic state 1 (energy in Ha, forces in Ha/Å, geometry)
+/// * `state_b` - Electronic state 2 (energy in Ha, forces in Ha/Å, geometry)
 /// * `fixed_atoms` - List of atom indices to fix during optimization (0-based)
 ///
 /// # Returns
 ///
 /// Returns the MECP effective gradient as a `DVector<f64>` with length 3 × num_atoms.
-/// The gradient has mixed units (f-vector in Ha, g-vector in Ha/Bohr) matching
+/// The gradient has mixed units (f-vector in Ha, g-vector in Ha/Å) matching
 /// the Python MECP.py reference implementation.
 ///
 /// # Requirements
@@ -595,8 +595,8 @@ pub fn compute_mecp_gradient(
     state_b: &State,
     fixed_atoms: &[usize],
 ) -> DVector<f64> {
-    // Inputs are already in Ha/Bohr and were converted to Ha/A 
-    // If forces are in Ha/A, convert: gradient = -force 
+    // Forces are in Ha/Å (converted from native QM output in qm_interface)
+    // gradient = -force
     
     let g1 = -state_a.forces.clone(); // Ha/Å
     let g2 = -state_b.forces.clone(); // Ha/Å
@@ -744,27 +744,26 @@ pub fn compute_mecp_gradient(
 
 /// Performs a BFGS optimization step following the Fortran MECP implementation.
 ///
-/// This implementation matches the original Harvey Fortran code (easymecp.py):
-/// - Uses **inverse Hessian** (not Hessian) for Newton step
-/// - Works in **Bohr** for the Newton step computation
-/// - Two-stage step limiting: total norm, then max component (in Bohr)
-/// - Converts final step to Angstrom for coordinate update
+/// This implementation is adapted from the original Harvey Fortran code (easymecp.py)
+/// but operates in Angstrom-based units:
+/// - Uses **inverse Hessian** (Ų/Ha) for Newton step
+/// - Works in **Angstrom** for the Newton step computation
+/// - Two-stage step limiting: total norm, then max component (in Å)
 ///
-/// # Algorithm (from Fortran UpdateX subroutine)
+/// # Algorithm (from Fortran UpdateX subroutine, adapted for Angstrom)
 ///
 /// 1. First step: `ChgeX = -0.7 * G` (steepest descent with H_inv diagonal = 0.7)
 /// 2. Later steps: `ChgeX = -H_inv * G` (Newton step with BFGS-updated inverse Hessian)
-/// 3. Limit step: if `||ChgeX|| > 0.1*N` Bohr, scale down
-/// 4. Limit components: if `max(|ChgeX_i|) > 0.1` Bohr, scale down
-/// 5. Convert step from Bohr to Angstrom
-/// 6. Add Angstrom step to Angstrom coordinates
+/// 3. Limit step: if `||ChgeX|| > 0.1*N` Å, scale down
+/// 4. Limit components: if `max(|ChgeX_i|) > 0.1` Å, scale down
+/// 5. Add Angstrom step to Angstrom coordinates
 ///
 /// # Units
 ///
 /// - Input coordinates (`x0`): Angstrom
-/// - Input gradient (`g0`): Ha/Bohr (native QM output)
-/// - Inverse Hessian: Bohr²/Ha (initialized to 0.7 on diagonal)
-/// - Newton step: Bohr (H⁻¹ × g = Bohr²/Ha × Ha/Bohr = Bohr)
+/// - Input gradient (`g0`): Ha/Å (converted from native QM output)
+/// - Inverse Hessian: Ų/Ha (initialized to 0.7 on diagonal)
+/// - Newton step: Å (H⁻¹ × g = Ų/Ha × Ha/Å = Å)
 /// - Output coordinates: Angstrom
 ///
 /// # Requirements
@@ -777,76 +776,70 @@ pub fn bfgs_step(
     config: &Config,
     _adaptive_scale: f64, // Parameter kept for compatibility but not used for BFGS
 ) -> DVector<f64> {
-    // Unit analysis:
+    // Unit analysis (Angstrom-based internal system):
     // - x0: Angstrom (internal coordinate storage)
-    // - g0: Ha/Bohr (native QM gradient output)
-    // - inv_hessian: Bohr²/Ha (initialized to 0.7 diagonal)
+    // - g0: Ha/Å (converted from native QM output)
+    // - inv_hessian: Ų/Ha (initialized to 0.7 diagonal)
     //
     // Newton step: step = -H⁻¹ × g
-    // Units: Bohr²/Ha × Ha/Bohr = Bohr
+    // Units: Ų/Ha × Ha/Å = Å
     
     let n = x0.len();
-    let bohr_to_ang = crate::config::BOHR_TO_ANGSTROM;
     
-    // Compute Newton step: step_bohr = -H_inv * g
-    // Units: Bohr²/Ha × Ha/Bohr = Bohr
-    let mut step_bohr: DVector<f64> = -(inv_hessian * g0);
+    // Compute Newton step: step = -H_inv * g
+    // Units: Ų/Ha × Ha/Å = Å
+    let mut step: DVector<f64> = -(inv_hessian * g0);
     
     // Check for NaN/Inf in step
-    if step_bohr.iter().any(|&v| !v.is_finite()) {
+    if step.iter().any(|&v| !v.is_finite()) {
         println!("BFGS: Newton step contains NaN/Inf, falling back to steepest descent");
         // Fallback: steepest descent with step size 0.7 (matching Fortran initialization)
-        // Units: 0.7 Bohr²/Ha × Ha/Bohr = 0.7 Bohr per unit gradient
-        step_bohr = -0.7 * g0;
+        // Units: 0.7 Ų/Ha × Ha/Å = 0.7 Å per unit gradient
+        step = -0.7 * g0;
     }
     
-    // Fortran step limiting (two stages) - all in Bohr:
-    // 1. Limit total step norm to STPMX * N = 0.1 * N Bohr
-    let stpmx = 0.1_f64; // Max single component in Bohr
-    let stpmax = stpmx * (n as f64); // Max total norm in Bohr
+    // Step limiting (two stages) - all in Angstrom:
+    // 1. Limit total step norm to STPMX * N = 0.1 * N Å
+    let stpmx = 0.1_f64; // Max single component in Å
+    let stpmax = stpmx * (n as f64); // Max total norm in Å
     
-    let step_norm = step_bohr.norm();
+    let step_norm = step.norm();
     if step_norm > stpmax {
         println!(
-            "BFGS: step norm {:.6} Bohr > stpmax {:.6} Bohr, scaling down",
+            "BFGS: step norm {:.6} Å > stpmax {:.6} Å, scaling down",
             step_norm, stpmax
         );
-        step_bohr *= stpmax / step_norm;
+        step *= stpmax / step_norm;
     }
     
-    // 2. Limit max component to STPMX = 0.1 Bohr
-    let max_component = step_bohr.iter().map(|v| v.abs()).fold(0.0_f64, f64::max);
+    // 2. Limit max component to STPMX = 0.1 Å
+    let max_component = step.iter().map(|v| v.abs()).fold(0.0_f64, f64::max);
     if max_component > stpmx {
         println!(
-            "BFGS: max component {:.6} Bohr > stpmx {:.6} Bohr, scaling down",
+            "BFGS: max component {:.6} Å > stpmx {:.6} Å, scaling down",
             max_component, stpmx
         );
-        step_bohr *= stpmx / max_component;
+        step *= stpmx / max_component;
     }
     
-    // Convert step from Bohr to Angstrom for coordinate update
-    let step_angstrom: DVector<f64> = step_bohr.map(|v| v * bohr_to_ang);
-    
     // Apply step to coordinates (both in Angstrom)
-    let x_new = x0 + &step_angstrom;
+    let x_new = x0 + &step;
     
     // Debug output
-    let final_step_norm_bohr = step_bohr.norm();
-    let final_step_norm_ang = step_angstrom.norm();
+    let final_step_norm = step.norm();
     println!(
-        "BFGS: step = {:.6} Bohr ({:.6} Ang), max_component = {:.6} Bohr",
-        final_step_norm_bohr, final_step_norm_ang, step_bohr.iter().map(|v| v.abs()).fold(0.0_f64, f64::max)
+        "BFGS: step = {:.6} Å, max_component = {:.6} Å",
+        final_step_norm, step.iter().map(|v| v.abs()).fold(0.0_f64, f64::max)
     );
     
     // Additional safety: apply config max_step_size (in Angstrom)
-    // Note: max_step_size is now in Angstrom per the unit standardization
-    if final_step_norm_ang > config.max_step_size {
-        let scale = config.max_step_size / final_step_norm_ang;
+    if final_step_norm > config.max_step_size {
+        let scale = config.max_step_size / final_step_norm;
         println!(
-            "BFGS: applying config max_step_size: {:.6} -> {:.6} Ang",
-            final_step_norm_ang, config.max_step_size
+            "BFGS: applying config max_step_size: {:.6} -> {:.6} Å",
+            final_step_norm, config.max_step_size
         );
-        x0 + &step_angstrom * scale
+        x0 + &step * scale
     } else {
         x_new
     }
@@ -954,9 +947,9 @@ pub fn compute_adaptive_scale(
 
 /// Initializes the inverse Hessian matrix for BFGS optimization.
 ///
-/// Following the Fortran MECP implementation, the inverse Hessian is initialized
-/// as a diagonal matrix with value 0.7 Bohr²/Ha. This corresponds to a Hessian
-/// of approximately 1.4 Ha/Bohr², which is typical for molecular vibrations.
+/// Following the Fortran MECP implementation (adapted for Angstrom), the inverse Hessian
+/// is initialized as a diagonal matrix with value 0.7 Ų/Ha. This corresponds to a Hessian
+/// of approximately 1.4 Ha/Ų, which provides reasonable initial step sizes.
 ///
 /// # Arguments
 ///
@@ -968,17 +961,17 @@ pub fn compute_adaptive_scale(
 ///
 /// # Units
 ///
-/// The inverse Hessian is in Bohr²/Ha (Bohr squared per Hartree).
-/// This matches the Fortran MECP code convention where:
-/// - Newton step: H⁻¹ (Bohr²/Ha) × g (Ha/Bohr) = step (Bohr)
+/// The inverse Hessian is in Ų/Ha (Angstrom squared per Hartree).
+/// This matches the Angstrom-based unit system used throughout OpenMECP:
+/// - Newton step: H⁻¹ (Ų/Ha) × g (Ha/Å) = step (Å)
 /// - The 0.7 value provides reasonable initial step sizes for molecular systems
 ///
 /// # Requirements
 ///
 /// Validates: Requirements 3.1, 8.2
 pub fn initialize_inverse_hessian(n: usize) -> DMatrix<f64> {
-    // Fortran: H(i,i) = 0.7 (Bohr²/Ha)
-    // This corresponds to Hessian diagonal of ~1.4 Ha/Bohr²
+    // H⁻¹(i,i) = 0.7 (Ų/Ha)
+    // This corresponds to Hessian diagonal of ~1.4 Ha/Ų
     let mut h_inv = DMatrix::zeros(n, n);
     for i in 0..n {
         h_inv[(i, i)] = 0.7;
@@ -1001,36 +994,36 @@ pub fn initialize_inverse_hessian(n: usize) -> DMatrix<f64> {
 /// ```
 ///
 /// where:
-/// - DelX = X_new - X_old (step vector, in Bohr)
-/// - DelG = G_new - G_old (gradient difference, in Ha/Bohr)
+/// - DelX = X_new - X_old (step vector, in Å)
+/// - DelG = G_new - G_old (gradient difference, in Ha/Å)
 /// - fae = DelG · H_inv · DelG
 ///
 /// # Arguments
 ///
-/// * `h_inv` - Current inverse Hessian approximation (Bohr²/Ha)
-/// * `sk` - Step vector (x_new - x_old) in Bohr
-/// * `yk` - Gradient difference (g_new - g_old) in Ha/Bohr
+/// * `h_inv` - Current inverse Hessian approximation (Ų/Ha)
+/// * `sk` - Step vector (x_new - x_old) in Å
+/// * `yk` - Gradient difference (g_new - g_old) in Ha/Å
 ///
 /// # Returns
 ///
-/// Returns the updated inverse Hessian matrix in Bohr²/Ha. If the update would
+/// Returns the updated inverse Hessian matrix in Ų/Ha. If the update would
 /// be unstable, returns the original inverse Hessian.
 ///
 /// # Units
 ///
-/// - Input `h_inv`: Bohr²/Ha
-/// - Input `sk`: Bohr (step vector)
-/// - Input `yk`: Ha/Bohr (gradient difference)
-/// - Output: Bohr²/Ha (maintains inverse Hessian units)
+/// - Input `h_inv`: Ų/Ha
+/// - Input `sk`: Å (step vector)
+/// - Input `yk`: Ha/Å (gradient difference)
+/// - Output: Ų/Ha (maintains inverse Hessian units)
 ///
 /// # Unit Analysis
 ///
 /// The BFGS update preserves units:
-/// - `fac = 1 / (yk · sk)` = 1 / (Ha/Bohr × Bohr) = 1/Ha
-/// - `fac * sk * sk^T` = 1/Ha × Bohr × Bohr = Bohr²/Ha ✓
-/// - `fad = 1 / (yk · H_inv · yk)` = 1 / (Ha/Bohr × Bohr²/Ha × Ha/Bohr) = Bohr/Ha
-/// - `fad * (H_inv·yk) * (H_inv·yk)^T` = Bohr/Ha × Bohr × Bohr = Bohr³/Ha (needs fae correction)
-/// - `fae * w * w^T` corrects to maintain Bohr²/Ha
+/// - `fac = 1 / (yk · sk)` = 1 / (Ha/Å × Å) = 1/Ha
+/// - `fac * sk * sk^T` = 1/Ha × Å × Å = Ų/Ha ✓
+/// - `fad = 1 / (yk · H_inv · yk)` = 1 / (Ha/Å × Ų/Ha × Ha/Å) = Å/Ha
+/// - `fad * (H_inv·yk) * (H_inv·yk)^T` = Å/Ha × Å × Å = Å³/Ha (needs fae correction)
+/// - `fae * w * w^T` corrects to maintain Ų/Ha
 ///
 /// # Requirements
 ///
@@ -1112,14 +1105,14 @@ pub fn update_hessian(
 ///
 /// # Arguments
 ///
-/// * `hessian` - Current Hessian matrix (Ha/Bohr²)
-/// * `delta_x` - Step vector (x_new - x_old) in Bohr
-/// * `delta_g` - Gradient difference (g_new - g_old) in Ha/Bohr
+/// * `hessian` - Current Hessian matrix (Ha/Ų)
+/// * `delta_x` - Step vector (x_new - x_old) in Å
+/// * `delta_g` - Gradient difference (g_new - g_old) in Ha/Å
 /// * `method` - Update method to use
 ///
 /// # Returns
 ///
-/// Updated Hessian matrix in Ha/Bohr².
+/// Updated Hessian matrix in Ha/Ų.
 pub fn update_hessian_advanced(
     hessian: &DMatrix<f64>,
     delta_x: &DVector<f64>,
@@ -1361,13 +1354,13 @@ impl ConvergenceStatus {
 /// # Units
 ///
 /// - **Coordinates** (`x_old`, `x_new`): Angstrom (Å)
-/// - **Gradient** (`grad`): Hartree/Bohr (Ha/a₀)
+/// - **Gradient** (`grad`): Hartree/A (Ha/a₀)
 /// - **Displacement thresholds**: Angstrom (Å)
-/// - **Gradient thresholds**: Hartree/Bohr (Ha/a₀)
+/// - **Gradient thresholds**: Hartree/A (Ha/a₀)
 ///
 /// This function computes displacements in Angstrom (since coordinates are
 /// stored in Angstrom) and compares against Angstrom thresholds. Gradients
-/// are in Ha/Bohr (native QM output) and compared against Ha/Bohr thresholds.
+/// are in Ha/Å (converted from native QM output) and compared against Ha/Å thresholds.
 ///
 /// # Arguments
 ///
@@ -1375,7 +1368,7 @@ impl ConvergenceStatus {
 /// * `e2` - Energy of state 2 in Hartree
 /// * `x_old` - Previous geometry coordinates in Angstrom
 /// * `x_new` - Current geometry coordinates in Angstrom
-/// * `grad` - Current MECP gradient in Ha/Bohr
+/// * `grad` - Current MECP gradient in Ha/Å
 /// * `config` - Configuration with convergence thresholds
 ///
 /// # Returns
@@ -1386,15 +1379,15 @@ impl ConvergenceStatus {
 ///
 /// ## Default (Standard Precision)
 /// - Energy difference: 0.000050 Hartree (~0.00136 eV)
-/// - RMS gradient: 0.0005 Ha/Bohr
-/// - Max gradient: 0.0007 Ha/Bohr
+/// - RMS gradient: 0.0005 Ha/Å
+/// - Max gradient: 0.0007 Ha/Å
 /// - RMS displacement: 0.0025 Å
 /// - Max displacement: 0.004 Å
 ///
 /// ## Recommended for High-Precision MECP
 /// - Energy difference: 0.000010 Hartree (~0.00027 eV)
-/// - RMS gradient: 0.0001 Ha/Bohr
-/// - Max gradient: 0.0005 Ha/Bohr
+/// - RMS gradient: 0.0001 Ha/Å
+/// - Max gradient: 0.0005 Ha/Å
 /// - RMS displacement: 0.001 Å
 /// - Max displacement: 0.002 Å
 ///
@@ -1418,7 +1411,7 @@ impl ConvergenceStatus {
 /// let e2 = -100.0001;
 /// let x_old = DVector::from_vec(vec![0.0, 0.0, 0.0]);  // Angstrom
 /// let x_new = DVector::from_vec(vec![0.001, 0.001, 0.001]);  // Angstrom
-/// let grad = DVector::from_vec(vec![0.0001, 0.0001, 0.0001]);  // Ha/Bohr
+/// let grad = DVector::from_vec(vec![0.0001, 0.0001, 0.0001]);  // Ha/Å
 ///
 /// // let status = check_convergence(e1, e2, &x_old, &x_new, &grad, &config);
 /// // assert!(status.is_converged());
@@ -1454,7 +1447,7 @@ pub fn check_convergence(
         })
         .fold(0.0, f64::max);
 
-    // Gradient metrics in Ha/Bohr (native QM output)
+    // Gradient metrics in Ha/Å (converted from native QM output)
     // Validates: Requirement 5.4
     let rms_grad = grad.norm() / (grad.len() as f64).sqrt();
     
@@ -1468,8 +1461,8 @@ pub fn check_convergence(
 
     // Compare against thresholds in matching units:
     // - de (Ha) vs thresholds.de (Ha)
-    // - rms_grad (Ha/Bohr) vs thresholds.rms_g (Ha/Bohr)
-    // - max_grad (Ha/Bohr) vs thresholds.max_g (Ha/Bohr)
+    // - rms_grad (Ha/Å) vs thresholds.rms_g (Ha/Å)
+    // - max_grad (Ha/Å) vs thresholds.max_g (Ha/Å)
     // - rms_disp (Å) vs thresholds.rms (Å)
     // - max_disp (Å) vs thresholds.max_dis (Å)
     ConvergenceStatus {
@@ -1599,14 +1592,14 @@ fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
 /// # Unit Conventions
 ///
 /// - **Input geometries** (`geom_history`): Angstrom (Å)
-/// - **Input gradients** (`grad_history`): Hartree/Bohr (Ha/a₀)
+/// - **Input gradients** (`grad_history`): Hartree/Angstrom (Ha/Å)
 /// - **Interpolated geometry**: Angstrom (Å) - linear combination of Angstrom geometries
 /// - **Output geometry**: Angstrom (Å)
 ///
 /// The interpolation preserves units because it's a weighted sum of geometries
 /// with coefficients that sum to 1 (DIIS constraint). The correction step uses
-/// the mean Hessian (Bohr²/Ha) applied to the interpolated gradient (Ha/Bohr),
-/// producing a correction in Bohr that is implicitly handled by the algorithm.
+/// the mean Hessian (Ų/Ha) applied to the interpolated gradient (Ha/Å),
+/// producing a correction in Å that is implicitly handled by the algorithm.
 ///
 /// # Advantages over BFGS
 ///
@@ -1803,10 +1796,10 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         history_grad_norm
     );
 
-    // CRITICAL: Gradients in Rust are in Ha/bohr
+    // CRITICAL: Gradients in Rust are in Ha/Å
     let threshold = config.thresholds.rms_g * 10.0;
     println!(
-        "[DEBUG] Step reduction threshold: {:.8} (scaled for Ha/bohr units)",
+        "[DEBUG] Step reduction threshold: {:.8} (scaled for Ha/Å units)",
         threshold
     );
 
@@ -1921,9 +1914,9 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
 ///
 /// # Unit Analysis
 ///
-/// - `g_i - g_j`: Gradient difference in Ha/Bohr
+/// - `g_i - g_j`: Gradient difference in Ha/Å
 /// - `x_i - x_j`: Geometry difference in Angstrom
-/// - `B[i,j]`: Mixed units (Ha/Bohr × Å = Ha × Å/Bohr)
+/// - `B[i,j]`: Mixed units (Ha/Å × Å = Ha)
 ///
 /// The mixed units are acceptable because the B-matrix is only used to solve
 /// for dimensionless interpolation coefficients. The DIIS constraint (Σc_i = 1)
@@ -1931,7 +1924,7 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
 ///
 /// # Arguments
 ///
-/// * `grads` - History of gradient vectors in Ha/Bohr
+/// * `grads` - History of gradient vectors in Ha/Å
 /// * `geoms` - History of geometry vectors in Angstrom
 ///
 /// # Returns
@@ -1978,14 +1971,14 @@ fn build_gediis_b_matrix(
 /// # Unit Conventions
 ///
 /// - **Input geometries** (`geom_history`): Angstrom (Å)
-/// - **Input gradients** (`grad_history`): Hartree/Bohr (Ha/a₀)
+/// - **Input gradients** (`grad_history`): Hartree/Angstrom (Ha/Å)
 /// - **Energy history** (`energy_history`): Hartree (Ha)
 /// - **Interpolated geometry**: Angstrom (Å)
 /// - **Output geometry**: Angstrom (Å)
 ///
-/// The B-matrix computation uses `-(g_i - g_j) · (x_i - x_j)` which has mixed
-/// units (Ha/Bohr × Å), but this is acceptable because the B-matrix is only
-/// used to solve for dimensionless interpolation coefficients that sum to 1.
+/// The B-matrix computation uses `-(g_i - g_j) · (x_i - x_j)` which produces
+/// Hartree units (Ha/Å × Å = Ha). This is consistent because the B-matrix
+/// is used to solve for dimensionless interpolation coefficients that sum to 1.
 ///
 /// The step calculation `X_new = X_interp - G_interp` uses the gradient as a
 /// pseudo-step direction. The step limiting (`max_step_size` in Angstrom)
@@ -2121,7 +2114,7 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
         .sum();
     let history_grad_norm = history_grad_norm_sq.sqrt();
 
-    // CRITICAL: Scale threshold for Ha/bohr units (Rust) vs Ha/bohr (Python)
+    // CRITICAL: Scale threshold for Ha/Å units
     let threshold = config.thresholds.rms_g * 10.0;
     if history_grad_norm < threshold {
         step *= config.reduced_factor;
@@ -2210,9 +2203,9 @@ fn dynamic_gediis_weight(opt_state: &OptimizationState) -> f64 {
         let n_atoms = opt_state.geom_history[0].len() as f64 / 3.0;
         let sqrt_n = (3.0 * n_atoms).sqrt();
 
-        // If last 3 RMS displacements are all < 1e-5 Bohr
+        // If last 3 RMS displacements are all < 1e-5 Å
         // the optimizer is stuck and needs pure GDIIS to escape
-        let stuck_threshold_rms = 1e-5; // Bohr (RMS)
+        let stuck_threshold_rms = 1e-5; // Å (RMS)
 
         let all_tiny = recent_displacements
             .iter()
@@ -2220,7 +2213,7 @@ fn dynamic_gediis_weight(opt_state: &OptimizationState) -> f64 {
 
         if all_tiny {
             // Optimizer is stuck - force pure GDIIS to break the cycle
-            println!("DEBUG: Stuck optimizer detected (last 3 RMS displacements < 1e-5 Bohr), forcing pure GDIIS");
+            println!("DEBUG: Stuck optimizer detected (last 3 RMS displacements < 1e-5 Å), forcing pure GDIIS");
             return 0.0;
         }
     }
@@ -2370,15 +2363,15 @@ pub fn smart_hybrid_gediis_step(
             .cloned()
             .collect();
 
-        // If last 3 displacements are all < 1e-4 Bohr, optimizer is stuck
+        // If last 3 displacements are all < 1e-4 Å, optimizer is stuck
         // Increased from 1e-6 to 1e-4 to catch stagnation earlier
-        let stuck_threshold = 1e-4; // Bohr (absolute norm)
+        let stuck_threshold = 1e-4; // Å (absolute norm)
         let all_tiny = recent_displacements.iter().all(|&d| d < stuck_threshold);
 
         if all_tiny {
-            println!("DEBUG: Stuck optimizer detected (last 3 displacements < 1e-4 Bohr), forcing pure GDIIS");
+            println!("DEBUG: Stuck optimizer detected (last 3 displacements < 1e-4 Å), forcing pure GDIIS");
             println!(
-                "       Recent displacements: [{:.2e}, {:.2e}, {:.2e}] Bohr",
+                "       Recent displacements: [{:.2e}, {:.2e}, {:.2e}] Å",
                 recent_displacements[2], recent_displacements[1], recent_displacements[0]
             );
             return gdiis_step(opt_state, config);
@@ -2433,7 +2426,7 @@ pub fn smart_hybrid_gediis_step(
     }
 
     // Apply step reduction if gradient is small (same as other methods)
-    // CRITICAL: Scale threshold for Ha/bohr units (Rust) vs Ha/Angstrom (Python)
+    // CRITICAL: Scale threshold for Ha/Å units
     let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
     let threshold = config.thresholds.rms_g * 10.0;
     if last_grad_norm < threshold {
@@ -2452,10 +2445,9 @@ pub fn smart_hybrid_gediis_step(
     let effective_max_step = config.max_step_size * opt_state.step_size_multiplier;
 
     // CRITICAL: Check for stuck optimizer (step too small)
-    // Lowered threshold from 1e-10 to 1e-6 Bohr to catch stuck optimizer earlier
-    // 1e-6 Bohr ≈ 5e-7 Angstrom, which is effectively zero progress
+    // 1e-6 Å is effectively zero progress
     if step_norm < 1e-6 {
-        println!("WARNING: Smart Hybrid step size too small ({:.2e} Bohr), falling back to steepest descent", step_norm);
+        println!("WARNING: Smart Hybrid step size too small ({:.2e} Å), falling back to steepest descent", step_norm);
         // Fallback to steepest descent with small step
         let last_grad = opt_state.grad_history.back().unwrap();
         let grad_norm = last_grad.norm();

@@ -46,14 +46,14 @@ const RMIN2: f64 = 1e-12;
 ///
 /// # Arguments
 ///
-/// * `hessian` - Current Hessian matrix (Ha/Bohr²)
-/// * `delta_x` - Step vector (x_new - x_old) in Bohr
-/// * `delta_g` - Gradient difference (g_new - g_old) in Ha/Bohr
+/// * `hessian` - Current Hessian matrix (Ha/Ų)
+/// * `delta_x` - Step vector (x_new - x_old) in Angstrom
+/// * `delta_g` - Gradient difference (g_new - g_old) in Ha/Å
 /// * `method` - Update method to use
 ///
 /// # Returns
 ///
-/// Updated Hessian matrix in Ha/Bohr².
+/// Updated Hessian matrix in Ha/Ų.
 pub fn update_hessian_with_method(
     hessian: &DMatrix<f64>,
     delta_x: &DVector<f64>,

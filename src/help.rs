@@ -285,7 +285,7 @@ pub const KEYWORDS: &[Keyword] = &[
     Keyword {
         name: "max_g_thresh",
         category: KeywordCategory::Convergence,
-        description: "Maximum gradient component threshold for convergence (Hartree/Bohr)",
+        description: "Maximum gradient component threshold for convergence (Hartree/Angstrom)",
         default_value: Some("0.0007"),
         example: Some("max_g_thresh = 0.0007"),
         required: false,
@@ -293,7 +293,7 @@ pub const KEYWORDS: &[Keyword] = &[
     Keyword {
         name: "rms_g_thresh",
         category: KeywordCategory::Convergence,
-        description: "RMS gradient threshold for convergence (Hartree/Bohr)",
+        description: "RMS gradient threshold for convergence (Hartree/Angstrom)",
         default_value: Some("0.0005"),
         example: Some("rms_g_thresh = 0.0005"),
         required: false,

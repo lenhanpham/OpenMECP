@@ -186,7 +186,7 @@ impl GediisOptimizer {
     /// # Arguments
     ///
     /// * `coords` - History of coordinate vectors (Angstrom)
-    /// * `grads` - History of gradient vectors (Ha/Bohr)
+    /// * `grads` - History of gradient vectors (Ha/Å)
     /// * `energies` - History of energies (Ha)
     /// * `quad_steps` - History of quadratic steps (optional, for RFO-DIIS)
     ///

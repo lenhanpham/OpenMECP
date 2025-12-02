@@ -75,7 +75,7 @@ pub struct ScanSpec {
 /// # Units
 ///
 /// - **Displacement thresholds** (`rms`, `max_dis`): Angstrom (Å)
-/// - **Gradient thresholds** (`max_g`, `rms_g`): Hartree/Bohr (Ha/a₀)
+/// - **Gradient thresholds** (`max_g`, `rms_g`): Hartree/Angstrom (Ha/Å)
 /// - **Energy threshold** (`de`): Hartree (Ha)
 ///
 /// # Default Values
@@ -83,8 +83,8 @@ pub struct ScanSpec {
 /// - Energy difference (ΔE): 0.000050 Ha (~0.00136 eV)
 /// - RMS displacement: 0.0025 Å
 /// - Max displacement: 0.004 Å
-/// - Max gradient: 0.0007 Ha/Bohr
-/// - RMS gradient: 0.0005 Ha/Bohr
+/// - Max gradient: 0.0007 Ha/Å
+/// - RMS gradient: 0.0005 Ha/Å
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Thresholds {
     /// Energy difference threshold (ΔE < de) in Hartree.
@@ -93,9 +93,9 @@ pub struct Thresholds {
     pub rms: f64,
     /// Maximum displacement threshold in Angstrom (Å).
     pub max_dis: f64,
-    /// Maximum gradient threshold in Hartree/Bohr (Ha/a₀).
+    /// Maximum gradient threshold in Hartree/Angstrom (Ha/Å).
     pub max_g: f64,
-    /// RMS gradient threshold in Hartree/Bohr (Ha/a₀).
+    /// RMS gradient threshold in Hartree/Angstrom (Ha/Å).
     pub rms_g: f64,
 }
 
@@ -105,8 +105,8 @@ impl Default for Thresholds {
             de: 0.000050,
             rms: 0.0025,     // Angstrom (no conversion needed)
             max_dis: 0.004,  // Angstrom (no conversion needed)
-            max_g: 0.0007,   // Ha/Bohr (no conversion needed)
-            rms_g: 0.0005,   // Ha/Bohr (no conversion needed)
+            max_g: 0.0007,   // Ha/Angstrom (no conversion needed)
+            rms_g: 0.0005,   // Ha/Angstrom (no conversion needed)
         }
     }
 }
@@ -132,7 +132,7 @@ impl Default for Thresholds {
 ///
 /// Many optional parameters have sensible defaults:
 /// - `max_steps`: 100 optimization steps
-/// - `max_step_size`: 0.1 bohr
+/// - `max_step_size`: 0.1 Å
 /// - `thresholds`: Standard convergence criteria
 /// - `use_gediis`: false (uses GDIIS by default)
 ///

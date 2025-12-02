@@ -221,8 +221,8 @@ impl From<SerializableOptimizationState> for OptimizationState {
 /// - `x_old`: Previous geometry coordinates in Angstrom
 /// - `opt_state.geom_history`: Geometry history in Angstrom
 ///
-/// Gradients are stored in Hartree/Bohr (Ha/a₀):
-/// - `opt_state.grad_history`: Gradient history in Ha/Bohr
+/// Gradients are stored in Hartree/Angstrom (Ha/Å):
+/// - `opt_state.grad_history`: Gradient history in Ha/Å
 ///
 /// # Version History
 ///

@@ -9,7 +9,7 @@
 //! # Unit Conventions
 //!
 //! - **Coordinates**: Stored in Angstrom (Å) - the standard unit for molecular geometry
-//! - **Forces/Gradients**: Stored in Hartree/Bohr (Ha/a₀) - native QM program output
+//! - **Forces/Gradients**: Stored in Hartree/Angstrom (Ha/Å) - converted from native QM output
 //! - **Energy**: Stored in Hartree (Ha)
 
 use nalgebra::DVector;

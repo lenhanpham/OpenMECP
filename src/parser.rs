@@ -843,8 +843,7 @@ fn parse_bool(value: &str) -> bool {
 }
 
 /// Parses configuration from a string content.
-/// Users specify displacement thresholds in bohr,
-/// but internal coordinates are in Bohr, so we convert here.
+/// All thresholds and coordinates use Angstrom-based units internally.
 fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>) -> Result<()> {
     let parts: Vec<&str> = line.splitn(2, '=').collect();
     if parts.len() != 2 {
@@ -927,8 +926,8 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "mp2" => config.mp2 = parse_bool(value),
         "max_steps" => config.max_steps = value.parse().unwrap_or(100),
         "max_step_size" => {
-            // User specifies in Bohr directly
-            config.max_step_size = value.parse().unwrap_or(0.1 * crate::config::ANGSTROM_TO_BOHR);
+            // User specifies in Angstrom directly
+            config.max_step_size = value.parse().unwrap_or(0.1);
         }
         "max_history" => {
             config.max_history = value.parse().unwrap_or_else(|_| {
@@ -941,14 +940,14 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         }
         "fix_de" => config.fix_de = value.parse().unwrap_or(0.0),
         "de_thresh" => config.thresholds.de = value.parse().unwrap_or(0.000050),
-        // Displacement thresholds: users specify in bohr
+        // Displacement thresholds: users specify in Angstrom
         "rms_thresh" => {
             config.thresholds.rms = value.parse().unwrap_or(0.0025);
         }
         "max_dis_thresh" => {
             config.thresholds.max_dis = value.parse().unwrap_or(0.004);
         }
-        // Gradient thresholds: input in Ha/bohr
+        // Gradient thresholds: input in Ha/Å
         "max_g_thresh" => {
             config.thresholds.max_g = value.parse().unwrap_or(0.0007);
         }

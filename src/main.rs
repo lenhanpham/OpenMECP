@@ -43,7 +43,7 @@
 //! - `.log` - Gaussian output files (with final geometry)
 //! - `.gjf` - Gaussian input files
 
-use nalgebra::{DMatrix, DVector};
+use nalgebra::DMatrix;
 use omecp::config;
 use omecp::qm_interface::get_output_file_base;
 use omecp::*;
@@ -62,15 +62,15 @@ use std::process;
 /// # Units
 ///
 /// - **Energy difference**: Hartree (Ha)
-/// - **Gradients**: Hartree/Bohr (Ha/a₀)
+/// - **Gradients**: Hartree/Angstrom (Ha/Å)
 /// - **Displacements**: Angstrom (Å)
 ///
 /// # Arguments
 ///
 /// * `conv` - ConvergenceStatus struct with boolean flags for each criterion
 /// * `de` - Current energy difference (Hartree)
-/// * `rms_grad` - Current RMS gradient (Hartree/Bohr)
-/// * `max_grad` - Current max gradient (Hartree/Bohr)
+/// * `rms_grad` - Current RMS gradient (Hartree/Angstrom)
+/// * `max_grad` - Current max gradient (Hartree/Angstrom)
 /// * `rms_disp` - Current RMS displacement (Angstrom)
 /// * `max_disp` - Current max displacement (Angstrom)
 /// * `config` - Configuration with threshold values
@@ -640,7 +640,7 @@ fn print_configuration(
 
     println!("  Max Steps:                  {}", input_config.max_steps);
     println!(
-        "  Max Step Size (bohr):       {:.6}",
+        "  Max Step Size (A):          {:.6}",
         input_config.max_step_size
     );
     println!(
@@ -837,11 +837,11 @@ fn print_configuration(
         input_config.thresholds.de
     );
     println!(
-        "  RMS Gradient:               {:>12.8} hartree/bohr ",
+        "  RMS Gradient:               {:>12.8} hartree/A ",
         input_config.thresholds.rms_g
     );
     println!(
-        "  Max Gradient:               {:>12.8} hartree/bohr ",
+        "  Max Gradient:               {:>12.8} hartree/A ",
         input_config.thresholds.max_g
     );
     // Displacement thresholds: stored in Angstrom
@@ -1788,19 +1788,14 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Update inverse Hessian (BFGS formula for H^-1)
-        // Unit standardization: inverse Hessian is in Bohr²/Ha
-        // - sk (step) must be in Bohr
-        // - yk (gradient difference) must be in Ha/Bohr
-        let ang_to_bohr = config::ANGSTROM_TO_BOHR;
+        // Unit standardization: all internal units are now Angstrom-based
+        // - inverse Hessian is in Å²/Ha
+        // - sk (step) is in Å
+        // - yk (gradient difference) is in Ha/Å
+        let sk = &x_new - &x_old;
+        let yk = &grad_new - &grad;
         
-        // sk (step) in Bohr: coordinates are in Angstrom, convert to Bohr
-        let sk_angstrom = &x_new - &x_old;
-        let sk_bohr: DVector<f64> = sk_angstrom.map(|v| v * ang_to_bohr);
-        
-        // yk (gradient difference) in Ha/Bohr: gradients are already in Ha/Bohr
-        let yk_bohr = &grad_new - &grad;
-        
-        inv_hessian = optimizer::update_hessian_config_driven(&inv_hessian, &sk_bohr, &yk_bohr, &config);
+        inv_hessian = optimizer::update_hessian_config_driven(&inv_hessian, &sk, &yk, &config);
 
         // Add to history for GDIIS/GEDIIS
         // CRITICAL FIX: Use QM-verified geometry, not optimizer prediction
@@ -2812,19 +2807,14 @@ fn run_single_optimization(
         }
 
         // Update inverse Hessian (BFGS formula for H^-1)
-        // Unit standardization: inverse Hessian is in Bohr²/Ha
-        // - sk (step) must be in Bohr
-        // - yk (gradient difference) must be in Ha/Bohr
-        let ang_to_bohr = config::ANGSTROM_TO_BOHR;
+        // Unit standardization: all internal units are now Angstrom-based
+        // - inverse Hessian is in Å²/Ha
+        // - sk (step) is in Å
+        // - yk (gradient difference) is in Ha/Å
+        let sk = &x_new - &x_old;
+        let yk = &grad_new - &grad;
         
-        // sk (step) in Bohr: coordinates are in Angstrom, convert to Bohr
-        let sk_angstrom = &x_new - &x_old;
-        let sk_bohr: DVector<f64> = sk_angstrom.map(|v| v * ang_to_bohr);
-        
-        // yk (gradient difference) in Ha/Bohr: gradients are already in Ha/Bohr
-        let yk_bohr = &grad_new - &grad;
-        
-        inv_hessian = optimizer::update_hessian_config_driven(&inv_hessian, &sk_bohr, &yk_bohr, config);
+        inv_hessian = optimizer::update_hessian_config_driven(&inv_hessian, &sk, &yk, config);
         
         let energy_diff = state_a_new.energy - state_b_new.energy;
         opt_state.add_to_history(
@@ -3581,13 +3571,10 @@ fn geometry_to_json(elements: &[String], geometry: &geometry::Geometry) -> Strin
 
     for (i, elem) in elements.iter().enumerate().take(n) {
         let coords = geometry.get_atom_coords(i);
-        // Convert from Bohrs to Angstroms for JSON output
-        let angstrom_coords = geometry::bohr_to_angstrom(&nalgebra::DVector::from_vec(vec![
-            coords[0], coords[1], coords[2],
-        ]));
+        // Coordinates are already in Angstrom (internal unit system)
         result.push_str(&format!(
             "{{ \"atom\" : \"{}\", \"xyz\" : [ {:.6}, {:.6}, {:.6} ]}}",
-            elem, angstrom_coords[0], angstrom_coords[1], angstrom_coords[2]
+            elem, coords[0], coords[1], coords[2]
         ));
 
         // Add comma for all but the last atom

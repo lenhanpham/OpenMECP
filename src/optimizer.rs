@@ -606,29 +606,28 @@ pub fn compute_mecp_gradient(
     // Gradient difference vector
     let x = &g1 - &g2; // Ha/Å
     let x_norm = x.norm(); // |x| in Ha/Å
-    let x_norm_sq = x_norm * x_norm; // |x|² in Ha²/Å²
     
     // Avoid division by zero
     if x_norm < 1e-10 {
         return DVector::zeros(x.len());
     }
     
-    // Fortran scaling factors
-    let fac_pp = 140.0; // 140/Ha (empirical)
-    let fac_p = 1.0;    // dimensionless
+    // Normalized gradient difference direction (unit vector, dimensionless)
+    // x_hat = (g1 - g2) / |g1 - g2|
+    let x_hat = &x / x_norm;
     
-    // Parallel component (PerpG in Fortran) - along gradient difference
-    // This drives energy difference to zero
-    let parallel_term = &x * (de * fac_pp); // Ha × (1/Ha) × (Ha/Å) = Ha/Å
+    // f-vector (parallel component): Harvey et al. algorithm, Chem. Phys. Lett. 1994
+    // f_vec = (E1 - E2) * x_hat  [Ha]
+    // Drives energy difference to zero
+    let parallel_term = &x_hat * de;
     
-    // Perpendicular component (ParG in Fortran) - on the seam
-    // This minimizes energy while staying on seam
-    let dot = g1.dot(&x) / x_norm_sq; // Dimensionless
-    let perpendicular_term = &g1 - &x * dot; // Ha/Å
-    let perpendicular_term = perpendicular_term * fac_p; // Ha/Å
+    // g-vector (perpendicular component): minimizes energy on the seam
+    // g_vec = g1 - (x_hat · g1) * x_hat  [Ha/Å]
+    let dot = g1.dot(&x_hat); // (f1 · x_hat) in Ha/Å
+    let perpendicular_term = &g1 - &x_hat * dot; // Ha/Å
     
-    // Combined effective gradient
-    let mut g_eff = parallel_term + perpendicular_term; // Ha/Å
+    // Combined effective gradient (mixed units: Ha + Ha/Å, intentional in Harvey algorithm)
+    let mut g_eff = parallel_term + perpendicular_term;
     
     // Zero fixed atoms
     for &atom_idx in fixed_atoms {
@@ -822,17 +821,20 @@ pub fn bfgs_step(
         step *= stpmx / max_component;
     }
     
-    // Apply step to coordinates (both in Angstrom)
-    let x_new = x0 + &step;
+    // Apply rho scaling: matches Python MECP.py propagationBFGS (rho=15)
+    // Applied AFTER capping dk to 0.1 Å, BEFORE final max_step_size cap.
+    // Amplifies small Newton steps so the optimizer escapes flat PES regions.
+    step *= config.bfgs_rho;
     
     // Debug output
     let final_step_norm = step.norm();
     println!(
-        "BFGS: step = {:.6} Å, max_component = {:.6} Å",
-        final_step_norm, step.iter().map(|v| v.abs()).fold(0.0_f64, f64::max)
+        "BFGS: step = {:.6} Å (rho={:.1}), max_component = {:.6} Å",
+        final_step_norm, config.bfgs_rho,
+        step.iter().map(|v| v.abs()).fold(0.0_f64, f64::max)
     );
     
-    // Additional safety: apply config max_step_size (in Angstrom)
+    // Apply config max_step_size (in Angstrom) - caps the rho-amplified step
     if final_step_norm > config.max_step_size {
         let scale = config.max_step_size / final_step_norm;
         println!(
@@ -841,7 +843,7 @@ pub fn bfgs_step(
         );
         x0 + &step * scale
     } else {
-        x_new
+        x0 + &step
     }
 }
 
@@ -1451,13 +1453,19 @@ pub fn check_convergence(
     // Validates: Requirement 5.4
     let rms_grad = grad.norm() / (grad.len() as f64).sqrt();
     
-    // Max gradient: only X component of each atom (matching Python MECP.py)
-    // Python: for i in range(0, NUM_ATOM * 3, 3): g = abs(G1[i])
+    // Max gradient: 3D per-atom magnitude (more rigorous than X-component-only).
+    // Using the full 3D atomic gradient norm catches large Y/Z components that
+    // the Python X-only check would miss, preventing false convergence.
     let max_grad = grad
         .as_slice()
         .chunks(3)
-        .map(|chunk| chunk.get(0).unwrap_or(&0.0).abs())
-        .fold(0.0, f64::max);
+        .map(|chunk| {
+            let gx = chunk.get(0).unwrap_or(&0.0);
+            let gy = chunk.get(1).unwrap_or(&0.0);
+            let gz = chunk.get(2).unwrap_or(&0.0);
+            (gx * gx + gy * gy + gz * gz).sqrt()
+        })
+        .fold(0.0_f64, f64::max);
 
     // Compare against thresholds in matching units:
     // - de (Ha) vs thresholds.de (Ha)
@@ -1515,16 +1523,13 @@ fn compute_error_vectors(
     }
     h_mean /= n as f64;
 
-    // Compute error vectors using the mean Hessian for all gradients
+    // Compute error vectors using the mean Hessian for all gradients.
+    // NOTE: hess_history stores INVERSE Hessians (from BFGS update), so
+    // h_mean = mean(H_inv). The Newton step is H_inv * g, i.e. direct
+    // matrix-vector multiply — NOT lu().solve() which would double-invert.
     grads
         .iter()
-        .map(|grad| {
-            h_mean
-                .clone()
-                .lu()
-                .solve(grad)
-                .unwrap_or_else(|| grad.clone())
-        })
+        .map(|grad| &h_mean * grad)
         .collect()
 }
 
@@ -1737,11 +1742,10 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     }
     h_mean /= n as f64;
 
-    // 6. Compute correction using the interpolated gradient
-    let correction = h_mean
-        .lu()
-        .solve(&g_new_prime)
-        .unwrap_or_else(|| g_new_prime.clone());
+    // 6. Compute correction using the interpolated gradient.
+    // h_mean = mean(H_inv) since hess_history stores INVERSE Hessians.
+    // Newton correction = H_inv * g, so use direct multiply, not lu().solve().
+    let correction = &h_mean * &g_new_prime;
 
     // CRITICAL: Check for NaN in correction
     let correction = if correction.iter().any(|&x| x.is_nan() || x.is_infinite()) {
@@ -2097,10 +2101,11 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
         opt_state.lambda_de = Some(new_lambda_de);
     }
 
-    // 5. Calculate step: X_new = X_interp - G_interp
-    // This effectively performs a steepest descent step from the interpolated point
-    // using the interpolated gradient.
-    let mut x_new = x_new_prime - &g_new_prime;
+    // 5. Calculate step: X_new = X_interp + G_interp
+    // Matches Python propagationGEDIIS: XNew = XNew_prime + GNew_prime
+    // The MECP effective gradient encodes the seam direction; adding it
+    // provides a correction toward where G_eff = 0.
+    let mut x_new = x_new_prime + &g_new_prime;
 
     let last_geom = opt_state.geom_history.back().unwrap();
     let mut step = &x_new - last_geom;

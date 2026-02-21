@@ -411,7 +411,7 @@ impl Default for Config {
             drive_type: String::new(),
             drive_atoms: Vec::new(),
             use_gediis: false,
-            use_hybrid_gediis: true, // Match Python's hybrid behavior
+            use_hybrid_gediis: false, // Disabled until GEDIIS sign convention is validated
             switch_step: 3,          // Default to current behavior (BFGS for first 3 steps)
             bfgs_rho: 15.0,
             max_history: 4, // Match Python's history size (keeps max 4 gradients)

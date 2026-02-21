@@ -1745,12 +1745,17 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             })
             .fold(0.0, f64::max);
         let rms_grad = grad_new.norm() / (grad_new.len() as f64).sqrt();
-        // Max gradient: only X component of each atom (matching Python MECP.py)
+        // Max gradient: full 3D per-atom magnitude sqrt(gx^2+gy^2+gz^2)
         let max_grad = grad_new
             .as_slice()
             .chunks(3)
-            .map(|chunk| chunk.get(0).unwrap_or(&0.0).abs())
-            .fold(0.0, f64::max);
+            .map(|chunk| {
+                let gx = chunk.get(0).unwrap_or(&0.0);
+                let gy = chunk.get(1).unwrap_or(&0.0);
+                let gz = chunk.get(2).unwrap_or(&0.0);
+                (gx * gx + gy * gy + gz * gz).sqrt()
+            })
+            .fold(0.0_f64, f64::max);
 
         // Update stuck detection (adaptive step size)
         opt_state.update_stuck_detection(disp_norm);
@@ -2776,12 +2781,17 @@ fn run_single_optimization(
             })
             .fold(0.0, f64::max);
         let rms_grad = grad_new.norm() / (grad_new.len() as f64).sqrt();
-        // Max gradient: only X component of each atom (matching Python MECP.py)
+        // Max gradient: full 3D per-atom magnitude sqrt(gx^2+gy^2+gz^2)
         let max_grad = grad_new
             .as_slice()
             .chunks(3)
-            .map(|chunk| chunk.get(0).unwrap_or(&0.0).abs())
-            .fold(0.0, f64::max);
+            .map(|chunk| {
+                let gx = chunk.get(0).unwrap_or(&0.0);
+                let gy = chunk.get(1).unwrap_or(&0.0);
+                let gz = chunk.get(2).unwrap_or(&0.0);
+                (gx * gx + gy * gy + gz * gz).sqrt()
+            })
+            .fold(0.0_f64, f64::max);
 
         // Print convergence status
         print_convergence_status(&conv, de, rms_grad, max_grad, rms_disp, max_disp, config);
@@ -3911,12 +3921,17 @@ fn run_restart(
             })
             .fold(0.0, f64::max);
         let rms_grad = grad.norm() / (grad.len() as f64).sqrt();
-        // Max gradient: only X component of each atom (matching Python MECP.py)
+        // Max gradient: full 3D per-atom magnitude sqrt(gx^2+gy^2+gz^2)
         let max_grad = grad
             .as_slice()
             .chunks(3)
-            .map(|chunk| chunk.get(0).unwrap_or(&0.0).abs())
-            .fold(0.0, f64::max);
+            .map(|chunk| {
+                let gx = chunk.get(0).unwrap_or(&0.0);
+                let gy = chunk.get(1).unwrap_or(&0.0);
+                let gz = chunk.get(2).unwrap_or(&0.0);
+                (gx * gx + gy * gy + gz * gz).sqrt()
+            })
+            .fold(0.0_f64, f64::max);
 
         // Print energy and convergence status
         println!(

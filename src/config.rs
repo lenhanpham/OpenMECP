@@ -103,10 +103,18 @@ impl Default for Thresholds {
     fn default() -> Self {
         Self {
             de: 0.000050,
-            rms: 0.0025,     // Angstrom (no conversion needed)
-            max_dis: 0.004,  // Angstrom (no conversion needed)
-            max_g: 0.0007,   // Ha/Angstrom (no conversion needed)
-            rms_g: 0.0005,   // Ha/Angstrom (no conversion needed)
+            // Displacement thresholds: converted from Python MECP.py Bohr defaults to Angstrom.
+            // Formula: value_Å = value_Bohr × BOHR_TO_ANGSTROM (0.52918 Å/Bohr)
+            // Python THRESH_RMS     = 0.0025 Bohr → 0.0025 × 0.52918 = 0.001323 Å
+            rms: 0.001323,
+            // Python THRESH_MAX_DIS = 0.004  Bohr → 0.004  × 0.52918 = 0.002117 Å
+            max_dis: 0.002117,
+            // Gradient thresholds: converted from Python MECP.py Ha/Bohr defaults to Ha/Å.
+            // Formula: value_(Ha/Å) = value_(Ha/Bohr) × ANGSTROM_TO_BOHR (1.8897 Bohr/Å)
+            // Python THRESH_MAX_G   = 0.0007 Ha/Bohr → 0.0007 × 1.8897 = 0.001323 Ha/Å
+            max_g: 0.001323,
+            // Python THRESH_RMS_G   = 0.0005 Ha/Bohr → 0.0005 × 1.8897 = 0.000945 Ha/Å
+            rms_g: 0.000945,
         }
     }
 }
@@ -376,7 +384,8 @@ impl Default for Config {
         Self {
             thresholds: Thresholds::default(),
             max_steps: 100,
-            max_step_size: 0.1, // Angstrom (no conversion needed)
+            // Python MAX_STEP_SIZE = 0.1 Bohr → 0.1 × 0.52918 = 0.05292 Å
+            max_step_size: 0.05292,
             reduced_factor: 0.5,
             nprocs: 1,
             mem: "1GB".to_string(),

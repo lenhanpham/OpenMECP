@@ -1676,6 +1676,37 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     // Debug: print coefficients
     println!("[DEBUG] GDIIS coefficients: {:?}", coeffs.as_slice());
 
+    // Safeguard: large coefficients signal an ill-conditioned B matrix (error vectors are
+    // nearly colinear), which causes wildly oscillating extrapolation.  Fall back to a plain
+    // Newton step from the most recent point using the mean inverse Hessian.
+    let max_coeff = coeffs.iter().map(|c| c.abs()).fold(0.0_f64, f64::max);
+    if max_coeff > 3.0 {
+        println!(
+            "[DEBUG] GDIIS: max coefficient {:.2} > 3.0, B matrix ill-conditioned; \
+             falling back to last-point Newton step",
+            max_coeff
+        );
+        let last_geom = opt_state.geom_history.back().unwrap();
+        let last_grad = opt_state.grad_history.back().unwrap();
+        // Compute mean inverse Hessian (already the right matrix for H_inv * g)
+        let mut h_mean = DMatrix::zeros(
+            opt_state.hess_history[0].nrows(),
+            opt_state.hess_history[0].ncols(),
+        );
+        for hess in &opt_state.hess_history {
+            h_mean += hess;
+        }
+        h_mean /= n as f64;
+        let newton_step = -(&h_mean * last_grad);
+        let step_norm = newton_step.norm();
+        let step = if step_norm > config.max_step_size && step_norm > 1e-14 {
+            newton_step * (config.max_step_size / step_norm)
+        } else {
+            newton_step
+        };
+        return last_geom + step;
+    }
+
     // --- Start of Bug Fix ---
 
     // 1. Interpolate geometry to get x_new_prime

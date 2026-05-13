@@ -1679,7 +1679,7 @@ OpenMECP is licensed under the **MIT License**.
 
 ---
 
-**OpenMECP v0.0.1** - A Rust implementation of the MECP optimizer
+**OpenMECP v0.0.2** - A Rust implementation of the MECP optimizer
 Developed by Le Nhan Pham | [GitHub](https://github.com/lenhanpham/OpenMECP)
 
 For more information, visit the project documentation or use `omecp --help`

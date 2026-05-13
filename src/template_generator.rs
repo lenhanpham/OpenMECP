@@ -188,69 +188,122 @@ fn generate_template(_elements: Vec<String>, _coords: &Vec<f64>, geometry_path: 
         .unwrap_or("geometry.xyz");
 
     format!(
-        r#"#This subset is required. It controls your quantum chemistry tasks.
-nprocs = 30 #processors
-mem = 120GB # memory to be used. change this into the maxcore value if you want to use ORCA
-method = n scf(maxcycle=500,xqc) uwb97xd/def2svpp scrf=(smd,solvent=acetonitrile) # your keywords line. It will be presented in the job files. Don't write guess=mix or stable=opt; they will be added automatically.
-td_state_a =  # keywords for TD-DFT of state A (only for Gaussian; please write it in the tail part for ORCA). Can also use short form: td_a
-td_state_b = # keywords for TD-DFT of state B (only for Gaussian; please write it in the tail part for ORCA). Can also use short form: td_b
-mp2 = false #set true for MP2 or doubly hybrid calculation in Gaussian
-charge = 1
-mult_state_a = 3 # multiplicity of state A. Can also use short form: mult_a
-mult_state_b = 1 # multiplicity of state B. Can also use short form: mult_b
-mode = normal #normal; stable; read; inter_read; noread
+        r#"#===============================================================================
+# OpenMECP Input Template
+#===============================================================================
+# Generated from geometry: {geom_filename}
+#===============================================================================
 
-#This subset is optional. It controls the convergence threshols, and the details of the GDIIS algorithm. Shown here are the default values.
-dE_thresh = 0.000050
-rms_thresh = 0.0025
-max_dis_thresh = 0.004
-max_g_thresh = 0.0007
-rms_g_thresh = 0.0005
-max_steps = 300
-max_step_size = 0.1
-max_history = 4
+#===== Basic Settings (required) ==============================================
+nprocs = 30              # processors for QM program
+mem = 120GB              # memory (use maxcore value for ORCA)
+method = n b3lyp/6-31g** # QM method: n method/basis keywords ...
+td_state_a =             # TD-DFT keywords for state A (Gaussian). Short: td_a
+td_state_b =             # TD-DFT keywords for state B (Gaussian). Short: td_b
+mp2 = false              # true for MP2 or double-hybrid in Gaussian
+charge = 1               # molecular charge (same for both states unless charge2)
+mult_state_a = 3         # multiplicity of state A. Short: mult_a
+mult_state_b = 1         # multiplicity of state B. Short: mult_b
+mode = normal            # normal | read | noread | stable | inter_read
 
+#===== Convergence Thresholds =================================================
+dE_thresh = 0.000050     # energy difference convergence (hartree)
+rms_thresh = 0.0025      # RMS displacement convergence (angstrom)
+max_dis_thresh = 0.004   # max displacement convergence (angstrom)
+max_g_thresh = 0.0007    # max gradient convergence (hartree/bohr)
+rms_g_thresh = 0.0005    # RMS gradient convergence (hartree/bohr)
 
-reduced_factor = 0.5 # the gdiis stepsize will be reduced by this factor when rms_gradient is close to converge
+#===== Optimization Control ===================================================
+max_steps = 100          # maximum optimization steps
+max_step_size = 0.1      # maximum step size (angstrom)
+max_history = 4          # DIIS history length
+reduced_factor = 0.5     # step reduction factor near convergence
+bfgs_rho = 15            # BFGS step amplification factor (rho)
 
-# Optimization settings
-switch_step = 3
-use_gediis = false 
-use_hybrid_gediis = true  # only effective when use_gediis = true
-smart_history = false # experimental and false by default; smart_history may speed up convergence in several cases
+#===== Optimizer Selection ====================================================
+switch_step = 3          # switch from BFGS to DIIS after this many steps
+use_direct_hessian = true # true: direct Hessian + PSB (recommended)
+                         # false: inverse Hessian + BFGS (Fortran-style)
+use_gediis = false       # enable GEDIIS (energy-informed DIIS)
+use_hybrid_gediis = true # blend GDIIS+GEDIIS (only if use_gediis = true)
+smart_history = false    # experimental: remove worst DIIS point instead of oldest
 
-# This subset controls which program you are using, and how to call them
-program = gaussian  #gaussian, orca, xtb, bagel
-gau_comm = g16
-orca_comm = /apps/orca/6.0.1/orca
-xtb_comm = xtb
-bagel_comm = mpirun -np 36 /opt/bagel/bin/BAGEL
-bagel_model = model.inp
+#===== Advanced Optimizer Settings ============================================
+#use_robust_diis = false      # Fortran-ported DIIS with validation
+#gediis_variant = auto        # auto | rfo | energy | simultaneous
+#gdiis_cosine_check = standard # none | zero | standard | variable | strict
+#gdiis_coeff_check = regular  # none | regular | force_recent | combined
+#n_neg = 0                    # 0 = minimum, 1 = transition state
+#gediis_sim_switch = 0.0025   # RMS error threshold for variant switching
+#use_advanced_hessian_update = false  # Fortran-ported Hessian updates
+#hessian_update_method = bfgs  # bfgs | bofill | powell | bfgs_powell_mix
 
-#state_a = 0 #only set it for the multireference calculation using BAGEL
-#state_b = 1 #only set it for the multireference calculation using BAGEL
+#===== Program Settings =======================================================
+program = gaussian       # gaussian | orca | xtb | bagel
+gau_comm = g16           # Gaussian command
+orca_comm = orca          # ORCA command
+xtb_comm = xtb            # XTB command
+bagel_comm = bagel        # BAGEL command
+bagel_model = model.inp   # BAGEL model file
+#custom_interface_file = custom_qm.json  # custom QM program config
 
-#Between *geom and *, write the cartesian coordinate of your initial geometry (in angstrom)
+#===== Advanced Options =======================================================
+#restart = false              # restart from checkpoint file
+#print_checkpoint = true      # save checkpoint JSON at each step
+#fix_de = 0.0                 # eV: fix energy difference (FixDE mode)
+#state_a = 0                  # state index for BAGEL multireference
+#state_b = 1
+#basis =                      # basis set (for programs separating method/basis)
+#solvent =                    # solvent model
+#dispersion =                 # dispersion correction
+#charge2 =                    # separate charge for state B (default: same as charge)
+#fixedatoms = 1,3,5-7         # comma/hyphen ranges of fixed atoms (1-based)
+
+#===== ONIOM (QM/MM) =========================================================
+#isoniom = false
+#chargeandmultforoniom1 = 0 1
+#chargeandmultforoniom2 = 0 1
+
+#===== Coordinate Driving =====================================================
+#drive_type = bond            # bond | angle | dihedral
+#drive_atoms = 1,2            # atom indices (1-based)
+#drive_start = 1.0
+#drive_end = 2.0
+#drive_steps = 10
+
+#===============================================================================
+# Geometry section: Cartesian coordinates in Angstrom
+#===============================================================================
 *geom
 @{geom_filename}
 *
 
-#If you have anything to be put at the end of the input file, write it here. This part is especially useful for ORCA: you can add anything related to your keywords here.
+#===============================================================================
+# Tail sections: extra keywords appended to QM input files
+#===============================================================================
 *tail1
-#@/home/595/np9048/sources/BasisSetGaussian/def2tzvpd.gbs/N
-#6-31G(d)
-#****
-*
-*tail2
-#@/home/595/np9048/sources/BasisSetGaussian/def2tzvpd.gbs/N
+# Extra keywords for state A (e.g., SCF convergence, basis sets)
+# For Gaussian: TD(NStates=5,Root=1)
+# For ORCA: %tddft nroots 5 end
 *
 
-#This subset controls the constraints. R 1 2 1.0 means to fix distance between atom 1 and 2 (start from 1) to be 1.0 angstrom.
+*tail2
+# Extra keywords for state B (e.g., SCF convergence, basis sets)
+*
+
+#===============================================================================
+# Constraints section
+# Syntax: R atom1 atom2 target      (bond constraint, Angstrom)
+#         A a1 a2 a3 target         (angle constraint, degrees)
+#         S R a1 a2 start num step  (1D scan)
+#         S A a1 a2 a3 start num step (angle scan)
+#         S R a1 a2 start1 n1 s1  R a3 a4 start2 n2 s2 (2D scan)
+# Atom indices are 1-based.
+#===============================================================================
 *constr
-#R 1 2 1.0
-#A 1 2 3 100.0 # to fix angle 1-2-3 to be 100 degree
-#S R 1 2 1.0 10 0.1 # to run a scan of R(1,2) starting from 1.0 angstrom, with 10 steps of 0.1 angstrom
-#S R 2 3 1.5 10 0.1 # you can at most set a 2D-scan
+#R 1 2 1.0              # fix bond 1-2 at 1.0 Angstrom
+#A 1 2 3 100.0          # fix angle 1-2-3 at 100 degrees
+#S R 1 2 1.0 10 0.1     # scan bond 1-2 from 1.0, 10 steps of 0.1
 *
 
 "#,

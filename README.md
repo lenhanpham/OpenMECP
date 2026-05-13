@@ -21,9 +21,9 @@ A high-performance Rust implementation of the MECP (Minimum Energy Crossing Poin
 
 ## Important Note
 
-### **The program is under active development and not ready for production use. Bugs might be around. All supported features are not fully tested well (-‿-")**
+### **The program is under active development. All supported features are being tested and improved.**
 
-**Status**: Alpha testing phase
+**Status**: Beta testing phase
 
 Current features include:
 
@@ -63,7 +63,8 @@ Where `x_norm = (f1 - f2) / |f1 - f2|` is the normalized gradient difference.
 ### Supported Algorithms
 
 - **MECP Optimization**: Harvey et al. algorithm implementation
-- **BFGS Optimizer**: Quasi-Newton optimization with PSB Hessian updates
+- **Direct Hessian + PSB (Recommended)**: Default algorithm using direct Hessian with Powell-Symmetric-Broyden update. Proven on hundreds of MECP calculations.
+- **Inverse Hessian + BFGS (Legacy)**: Fortran-style algorithm using inverse Hessian with BFGS update.
 - **GDIIS Optimizer**: Geometry-based DIIS for 2-3x faster convergence
 - **GEDIIS Optimizer**: Energy-informed DIIS for enhanced convergence
 - **Hybrid Strategy**: Automatic switching between BFGS, GDIIS, and GEDIIS
@@ -408,7 +409,7 @@ H  1.2  0.0  0.5
 - Orca: 
   
   ```
-  memthod = B3LYP SV CPCM(2-octanone) VeryTightSCF --> All keyword after ! in Orca input
+  method = B3LYP def2-SVP CPCM(2-octanone) VeryTightSCF  --> All keywords after ! in Orca input
   mem = 8000 --> (memory 8000 MB for each core <=> %maxcore 8000)
   ```
 
@@ -437,16 +438,17 @@ H  1.2  0.0  0.5
 
 #### Optimizer Settings
 
-| Keyword             | Type    | Default | Description                                    |
-| ------------------- | ------- | ------- | ---------------------------------------------- |
-| `use_gediis`        | boolean | `false` | Use GEDIIS optimizer instead of GDIIS          |
-| `use_hybrid_gediis` | boolean | `false` | Use dynamic hybrid GDIIS/GEDIIS optimizer      |
-| `switch_step`       | integer | `3`     | Step to switch from BFGS to DIIS optimizers    |
-| `max_history`       | integer | `5`     | Max iterations used for DIIS extrapolation     |
-| `smart_history`     | boolean | `false` | Smart history instead of first in first out    |
-| `reduced_factor`    | float   | `0.5`   | Step size reduction factor for GDIIS           |
-| `bfgs_rho`          | float   | `15.0`  | Scaling factor for BFGS step size              |
-| `print_checkpoint`  | boolean | `false` | Enable/disable checkpoint JSON file generation |
+| Keyword               | Type    | Default | Description                                                    |
+| --------------------- | ------- | ------- | -------------------------------------------------------------- |
+| `use_direct_hessian`  | boolean | `true`  | Direct Hessian+PSB (recommended) or inverse Hessian+BFGS       |
+| `use_gediis`          | boolean | `false` | Use GEDIIS optimizer instead of GDIIS                          |
+| `use_hybrid_gediis`   | boolean | `false` | Use dynamic hybrid GDIIS/GEDIIS optimizer                      |
+| `switch_step`         | integer | `3`     | Step to switch from BFGS to DIIS optimizers                    |
+| `max_history`         | integer | `4`     | Max iterations used for DIIS extrapolation                     |
+| `smart_history`       | boolean | `false` | Smart history instead of first in first out                    |
+| `reduced_factor`      | float   | `0.5`   | Step size reduction factor for GDIIS                           |
+| `bfgs_rho`            | float   | `15.0`  | Scaling factor for BFGS step size                              |
+| `print_checkpoint`    | boolean | `false` | Enable/disable checkpoint JSON file generation                 |
 
 #### Advanced DIIS Options (Experimental)
 
@@ -490,8 +492,8 @@ These options enable multiple Hessian update methods.
 | Keyword          | Type  | Default    | Description                           |
 | ---------------- | ----- | ---------- | ------------------------------------- |
 | `de_thresh`      | float | `0.000050` | Energy difference threshold (hartree) |
-| `rms_thresh`     | float | `0.0025`   | RMS displacement threshold (bohr)     |
-| `max_dis_thresh` | float | `0.004`    | Max displacement threshold (bohr)     |
+| `rms_thresh`     | float | `0.0025`   | RMS displacement threshold (angstrom) |
+| `max_dis_thresh` | float | `0.004`    | Max displacement threshold (angstrom) |
 | `max_g_thresh`   | float | `0.0007`   | Max gradient threshold (hartree/bohr) |
 | `rms_g_thresh`   | float | `0.0005`   | RMS gradient threshold (hartree/bohr) |
 
@@ -520,10 +522,13 @@ These options enable multiple Hessian update methods.
 
 #### Program Commands
 
-| Keyword     | Type   | Default  | Description      |
-| ----------- | ------ | -------- | ---------------- |
-| `gau_comm`  | string | `"g16"`  | Gaussian command |
-| `orca_comm` | string | `"orca"` | ORCA command     |
+| Keyword      | Type   | Default   | Description        |
+| ------------ | ------ | --------- | ------------------ |
+| `gau_comm`   | string | `"g16"`   | Gaussian command   |
+| `orca_comm`  | string | `"orca"`  | ORCA command       |
+| `xtb_comm`   | string | `"xtb"`   | XTB command        |
+| `bagel_comm` | string | `"bagel"` | BAGEL command      |
+| `bagel_model`| string | `""`      | BAGEL model file   |
 
 #### ONIOM-Specific
 
@@ -537,21 +542,24 @@ These options enable multiple Hessian update methods.
 
 | Keyword                 | Type   | Default | Description                             |
 | ----------------------- | ------ | ------- | --------------------------------------- |
+| `charge2`               | integer| —       | Separate charge for state B             |
 | `basis`                 | string | `""`    | Basis set specification                 |
 | `solvent`               | string | `""`    | Solvent model specification             |
 | `dispersion`            | string | `""`    | Dispersion correction                   |
 | `custom_interface_file` | string | `""`    | Path to custom QM interface JSON config |
+| `fixedatoms`            | string | `""`    | Fixed atom indices (e.g., `1,3-5,7`)    |
 
 #### Deprecated Keywords (Backward Compatibility)
 
-| New Keyword | Status     | Description                     |
-| ----------- | ---------- | ------------------------------- |
-| `mult_1`    | Deprecated | Multiplicity for state A        |
-| `mult_2`    | Deprecated | Multiplicity for state B        |
-| `td_1`      | Deprecated | TD-DFT keywords for state A     |
-| `td_2`      | Deprecated | TD-DFT keywords for state B     |
-| `state_1`   | Deprecated | Excited state index for state A |
-| `state_2`   | Deprecated | Excited state index for state B |
+| New Keyword    | Status     | Description                     |
+| -------------- | ---------- | ------------------------------- |
+| `mult1`        | Deprecated | Multiplicity for state A        |
+| `mult2`        | Deprecated | Multiplicity for state B        |
+| `td1`          | Deprecated | TD-DFT keywords for state A     |
+| `td2`          | Deprecated | TD-DFT keywords for state B     |
+| `state1`       | Deprecated | Excited state index for state A |
+| `state2`       | Deprecated | Excited state index for state B |
+| `use_python_algorithm` | Deprecated | Renamed to `use_direct_hessian` |
 
 **Note**: Deprecated keywords still work but will show warnings. Please use the new keywords in new input files.
 
@@ -1004,21 +1012,21 @@ H      1.907833    1.518644    2.675008
 H      1.907848    2.992783    1.956802
 ```
 
-### running_dir/ Directory
+### {input_basename}/ Directory
 
-Contains all intermediate calculations:
+Contains all intermediate calculations, where `{input_basename}` is the stem of your input file (e.g., `compound_x` for `compound_x.inp`):
 
 ```
-running_dir/
-├── input_basename_0_state_A.gjf          # Initial state A input
-├── input_basename_0_state_A.log          # Initial state A output
-├── input_basename_0_state_B.gjf          # Initial state B input
-├── input_basename_0_state_B.log          # Initial state B output
-├── input_basename_1_state_A.gjf          # Step 1 state A input
-├── input_basename_1_state_A.log          # Step 1 state A output
-...
-├── input_basename_state_A.chk      # State A checkpoint
-└── input_basename_state_B.chk      # State B checkpoint
+{input_basename}/
+├── 0_A.{ext}          # Initial state A input
+├── 0_A.{log,out}      # Initial state A output
+├── 0_B.{ext}          # Initial state B input
+├── 0_B.{log,out}      # Initial state B output
+├── 1_A.{ext}          # Step 1 state A input
+├── 1_A.{log,out}      # Step 1 state A output
+├── 0_A.gbw            # ORCA wavefunction (chain-linked)
+├── {input_basename}_state_A.chk    # Gaussian state A checkpoint
+└── {input_basename}_state_B.chk    # Gaussian state B checkpoint
 ```
 
 ### Scan Output

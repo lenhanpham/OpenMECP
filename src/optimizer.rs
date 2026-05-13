@@ -640,6 +640,53 @@ pub fn compute_mecp_gradient(
     g_eff
 }
 
+/// Computes MECP gradient with forces in Ha/Bohr (matching Python MECP.py exactly).
+///
+/// State.forces from the QM interface are in Ha/Å (converted from native Ha/Bohr).
+/// This function converts back to Ha/Bohr so the direct Hessian algorithm
+/// (bfgs_step_python, update_hessian_psb, gdiis_step_python) operates on the
+/// same units as the Python reference implementation.
+///
+/// The Harvey algorithm mixes Ha (from f-vector) with force units (Ha/Bohr here),
+/// which is dimensionally inconsistent but required for Python numerical compatibility.
+pub fn compute_mecp_gradient_bohr(
+    state_a: &State,
+    state_b: &State,
+    fixed_atoms: &[usize],
+) -> DVector<f64> {
+    // State.forces are in Ha/Å (converted from native QM output at the interface boundary).
+    // Convert back to Ha/Bohr for Python algorithm compatibility.
+    // 1 Ha/Bohr = BOHR_TO_ANGSTROM Ha/Å  (0.5291772489)
+    let f1 = (-state_a.forces.clone()) * crate::config::BOHR_TO_ANGSTROM;
+    let f2 = (-state_b.forces.clone()) * crate::config::BOHR_TO_ANGSTROM;
+
+    let de = state_a.energy - state_b.energy;
+
+    let x = &f1 - &f2;
+    let x_norm = x.norm();
+
+    if x_norm < 1e-10 {
+        return DVector::zeros(x.len());
+    }
+
+    let x_hat = &x / x_norm;
+
+    let parallel_term = &x_hat * de;
+    let dot = f1.dot(&x_hat);
+    let perpendicular_term = &f1 - &x_hat * dot;
+
+    let mut g_eff = parallel_term + perpendicular_term;
+
+    for &atom_idx in fixed_atoms {
+        let start = atom_idx * 3;
+        g_eff[start] = 0.0;
+        g_eff[start + 1] = 0.0;
+        g_eff[start + 2] = 0.0;
+    }
+
+    g_eff
+}
+
 /// Performs a BFGS optimization step.
 ///
 /// BFGS (Broyden-Fletcher-Goldfarb-Shanno) is a quasi-Newton optimization method
@@ -2696,6 +2743,395 @@ pub fn update_hessian_config_driven(
         // Use legacy implementation
         update_hessian(h_inv, delta_x, delta_g)
     }
+}
+
+// ========================================================================
+// direct Hessian Algorithm Functions
+// ========================================================================
+// These functions implement the proven MECP.py (KST48) optimization strategy
+// directly in Rust. They are activated by `use_python_algorithm = true`.
+
+/// Initializes the direct Hessian matrix for direct Hessian BFGS optimization.
+///
+/// Matches Python MECP.py behavior: `Bk = numpy.eye(ncoord)` (identity matrix).
+/// The direct Hessian B has units Ha/Å² in the Angstrom-based system.
+///
+/// # Arguments
+///
+/// * `n` - Dimension of the matrix (3 × number of atoms)
+///
+/// # Returns
+///
+/// Returns an n×n identity matrix.
+///
+/// # Units
+///
+/// The Hessian diagonal is 1.0 Ha/Å² (identity matrix).
+/// Newton step: B⁻¹ × g = I × g = g, so initial step equals gradient.
+pub fn initialize_hessian_python(n: usize) -> DMatrix<f64> {
+    DMatrix::identity(n, n)
+}
+
+/// Updates the Hessian matrix using the PSB (Powell-Symmetric-Broyden) formula.
+///
+/// This is a direct port of Python MECP.py `HessianUpdator()` function.
+/// PSB is more appropriate than BFGS for MECP optimization because MECPs
+/// have saddle-point-like character on the difference PES.
+///
+/// # PSB Formula
+///
+/// ```text
+/// v = yk - B·sk
+/// B_new = B + (v·sk^T + sk·v^T) / (sk^T·sk)
+///       - (sk^T·v) · (sk·sk^T) / (sk^T·sk)²
+/// ```
+///
+/// where:
+/// - `sk` = x_new - x_old (step vector, in Å)
+/// - `yk` = g_new - g_old (gradient difference, in Ha/Å)
+///
+/// # Arguments
+///
+/// * `hessian` - Current Hessian approximation (Ha/Å²)
+/// * `sk` - Step vector (x_new - x_old) in Å
+/// * `yk` - Gradient difference (g_new - g_old) in Ha/Å
+///
+/// # Returns
+///
+/// Returns the updated Hessian matrix in Ha/Å².
+///
+/// # Unit Analysis
+///
+/// - `v = yk - B·sk` → Ha/Å - (Ha/Å²)(Å) = Ha/Å ✓
+/// - `v·sk^T` → (Ha/Å)(Å) = Ha (matrix outer product) → / Å² → Ha/Å² ✓
+/// - `sk^T·v` → Å·(Ha/Å) = Ha (scalar)
+/// - `sk·sk^T / (sk^T·sk)²` → Å²/Å⁴ = 1/Å² → × Ha → Ha/Å² ✓
+///
+/// # References
+///
+/// - Python MECP.py lines 954-979 (HessianUpdator function)
+/// - Powell, M.J.D., "A new algorithm for unconstrained optimization" (1970)
+pub fn update_hessian_psb(
+    hessian: &DMatrix<f64>,
+    sk: &DVector<f64>,
+    yk: &DVector<f64>,
+) -> DMatrix<f64> {
+    // Quick finite checks
+    if !sk.iter().all(|v| v.is_finite()) || !yk.iter().all(|v| v.is_finite()) {
+        println!("PSB update skipped: non-finite sk or yk");
+        return hessian.clone();
+    }
+
+    let sk_dot_sk = sk.dot(sk); // sk^T · sk
+
+    // Guard against near-zero step
+    if sk_dot_sk.abs() < 1e-14 {
+        println!("PSB update skipped: sk^T·sk too small ({:.2e})", sk_dot_sk);
+        return hessian.clone();
+    }
+
+    // v = yk - B·sk (residual vector)
+    let b_sk = hessian * sk;
+    let v = yk - &b_sk;
+
+    // Term 1: (v · sk^T + sk · v^T) / (sk^T · sk)
+    let term1 = (&v * sk.transpose() + sk * v.transpose()) / sk_dot_sk;
+
+    // Term 2: (sk^T · v) × (sk · sk^T) / (sk^T · sk)²
+    let sk_dot_v = sk.dot(&v);
+    let term2 = (sk * sk.transpose()) * (sk_dot_v / (sk_dot_sk * sk_dot_sk));
+
+    let mut b_new = hessian + term1 - term2;
+
+    // Symmetrize to prevent numerical drift
+    b_new = 0.5 * (&b_new + b_new.transpose());
+
+    // Clip non-finite entries
+    for val in b_new.iter_mut() {
+        if !val.is_finite() {
+            *val = 0.0;
+        }
+    }
+
+    b_new
+}
+
+/// Performs a BFGS step using a direct Hessian (matching Python MECP.py exactly).
+///
+/// This is a direct port of Python MECP.py `propagationBFGS()` + `MaxStep()`.
+///
+/// # Algorithm (Python MECP.py)
+///
+/// ```text
+/// 1. dk = solve(Bk, -Gk)              # Newton direction via LU decomposition
+/// 2. if ||dk|| > CAP: dk *= CAP/||dk||  # Cap direction magnitude
+/// 3. step = rho * dk                    # Amplify small Newton steps
+/// 4. if ||step|| > MAX: step *= MAX/||step||  # Final MaxStep cap
+/// 5. XNew = X0 + step
+/// ```
+///
+/// # Arguments
+///
+/// * `x0` - Current geometry coordinates in Å
+/// * `g0` - Current MECP gradient (mixed units: Ha + Ha/Å)
+/// * `hessian` - Current direct Hessian matrix (Ha/Å²)
+/// * `config` - Configuration with step size limits
+///
+/// # Returns
+///
+/// Returns the new geometry coordinates in Å.
+///
+/// # Units
+///
+/// - `dk = B⁻¹ × g`: (Ha/Å²)⁻¹ × (Ha/Å) = Å (step in Angstrom)
+/// - Cap: `0.1` (matching Python's 0.1 — NOT in Bohr, operates in mixed-unit Newton space)
+/// - rho: `15.0` (amplification factor, same as Python)
+/// - MaxStep: `config.max_step_size` in Å (default: 0.1 Å, matching Python)
+///
+/// # References
+///
+/// - Python MECP.py lines 857-870 (propagationBFGS)
+/// - Python MECP.py lines 802-815 (MaxStep)
+pub fn bfgs_step_python(
+    x0: &DVector<f64>,
+    g0: &DVector<f64>,
+    hessian: &DMatrix<f64>,
+    config: &Config,
+) -> DVector<f64> {
+    // Step 1: Newton direction dk = solve(B, -g)
+    let neg_g = -g0;
+    let mut dk = hessian.clone().lu().solve(&neg_g).unwrap_or_else(|| {
+        println!("BFGS: Hessian singular, falling back to steepest descent");
+        let g_norm = g0.norm();
+        if g_norm > 1e-14 {
+            -g0 / g_norm * 0.01 // Small steepest descent step
+        } else {
+            DVector::zeros(g0.len())
+        }
+    });
+
+    // Step 2: Cap dk magnitude
+    // Python: `if numpy.linalg.norm(dk) > 0.1: dk = dk * 0.1 / numpy.linalg.norm(dk)`
+    // The 0.1 is NOT in Bohr — it's the raw magnitude cap in Python's mixed-unit system.
+    // We use 0.1 here to match Python exactly.
+    let dk_cap = 0.1_f64;
+    let dk_norm = dk.norm();
+    if dk_norm > dk_cap {
+        println!(
+            "BFGS: dk norm {:.6} Å > cap {:.6} Å, scaling down",
+            dk_norm, dk_cap
+        );
+        dk *= dk_cap / dk_norm;
+    }
+
+    // Step 3: Apply rho amplification
+    // rho=15 amplifies small Newton steps (when dk << cap) to avoid
+    // getting stuck on flat PES regions. When dk is at the cap,
+    // MaxStep will clip back to max_step_size.
+    let mut step = dk * config.bfgs_rho;
+
+    // Step 4: MaxStep cap
+    let step_norm = step.norm();
+    if step_norm > config.max_step_size {
+        println!(
+            "BFGS: step {:.6} Å > max_step_size {:.6} Å, capping",
+            step_norm, config.max_step_size
+        );
+        step *= config.max_step_size / step_norm;
+    }
+
+    let final_norm = step.norm();
+    println!(
+        "BFGS: final step = {:.6} Å (rho={:.1})",
+        final_norm, config.bfgs_rho
+    );
+
+    x0 + step
+}
+
+/// Performs a simplified GDIIS step matching Python MECP.py exactly.
+///
+/// This is a clean, minimal implementation of GDIIS that matches the
+/// 40-line Python version without defensive fallbacks. The simplicity
+/// is intentional — the Python version converges reliably without
+/// coefficient checks, stuck detection, or cascading NaN guards.
+///
+/// # Algorithm (Python MECP.py `propagationGDIIS()`)
+///
+/// ```text
+/// 1. Compute mean Hessian: B_mean = mean(B_history)
+/// 2. Error vectors: e_i = solve(B_mean, g_i)  for each history point
+/// 3. B matrix: B_ij = e_i · e_j, with constraint row/col
+/// 4. Solve: B × c = [0,...,0,1]
+/// 5. Interpolate: X' = Σ c_i × X_i,  G' = Σ c_i × G_i
+/// 6. Correction: X_new = X' - solve(B_mean, G')
+/// 7. Apply MaxStep and step reduction
+/// ```
+///
+/// # Arguments
+///
+/// * `opt_state` - Optimization state with geometry/gradient/Hessian history
+/// * `config` - Configuration with step size limits
+///
+/// # Returns
+///
+/// Returns the new geometry coordinates in Å.
+///
+/// # Key Differences from Complex GDIIS
+///
+/// - No coefficient magnitude check (Python doesn't have one)
+/// - No stuck detection (handled at main loop level if needed)
+/// - No adaptive step size multiplier
+/// - No cascading NaN fallbacks (single final check only)
+/// - Uses direct Hessian solve (not inverse multiply)
+///
+/// # References
+///
+/// - Python MECP.py lines 872-913 (propagationGDIIS)
+pub fn gdiis_step_python(
+    opt_state: &mut OptimizationState,
+    config: &Config,
+) -> DVector<f64> {
+    let n = opt_state.geom_history.len();
+    let dim = opt_state.geom_history[0].len();
+
+    // Step 1: Compute mean Hessian from history
+    // NOTE: When use_python_algorithm is true, hess_history stores DIRECT Hessians
+    let mut h_mean = DMatrix::zeros(dim, dim);
+    for hess in &opt_state.hess_history {
+        h_mean += hess;
+    }
+    h_mean /= n as f64;
+
+    // Step 2: Compute error vectors: e_i = solve(B_mean, g_i)
+    let lu = h_mean.clone().lu();
+    let errors: Vec<DVector<f64>> = opt_state
+        .grad_history
+        .iter()
+        .map(|g| {
+            lu.solve(g).unwrap_or_else(|| {
+                println!("GDIIS: Hessian solve failed for error vector, using gradient");
+                g.clone()
+            })
+        })
+        .collect();
+
+    // Step 3: Build B matrix
+    let mut b_matrix = DMatrix::zeros(n + 1, n + 1);
+    for i in 0..n {
+        for j in 0..n {
+            b_matrix[(i, j)] = errors[i].dot(&errors[j]);
+        }
+    }
+    for i in 0..n {
+        b_matrix[(i, n)] = 1.0;
+        b_matrix[(n, i)] = 1.0;
+    }
+    b_matrix[(n, n)] = 0.0;
+
+    // Step 4: Solve B × c = [0,...,0,1]
+    let mut rhs = DVector::zeros(n + 1);
+    rhs[n] = 1.0;
+
+    let coeffs = b_matrix.clone().lu().solve(&rhs).unwrap_or_else(|| {
+        println!("GDIIS: B matrix solve failed, using uniform coefficients");
+        let mut fallback = DVector::zeros(n + 1);
+        for i in 0..n {
+            fallback[i] = 1.0 / (n as f64);
+        }
+        fallback
+    });
+
+    println!(
+        "GDIIS: coefficients: {:?}",
+        &coeffs.as_slice()[..n]
+    );
+
+    // Step 5: Interpolate geometry and gradient
+    let mut x_prime = DVector::zeros(dim);
+    let mut g_prime = DVector::zeros(dim);
+    for (i, (geom, grad)) in opt_state
+        .geom_history
+        .iter()
+        .zip(opt_state.grad_history.iter())
+        .enumerate()
+    {
+        x_prime += geom * coeffs[i];
+        g_prime += grad * coeffs[i];
+    }
+
+    // Step 5b: Interpolate Lagrange multipliers (for constraint support)
+    if !opt_state.lambda_history.is_empty() && !opt_state.lambda_history[0].is_empty() {
+        let n_lambdas = opt_state.lambda_history[0].len();
+        let mut new_lambdas = vec![0.0; n_lambdas];
+        for (i, lambdas) in opt_state.lambda_history.iter().enumerate() {
+            for (j, &val) in lambdas.iter().enumerate() {
+                new_lambdas[j] += val * coeffs[i];
+            }
+        }
+        opt_state.lambdas = new_lambdas;
+    }
+
+    // Step 5c: Interpolate Lambda DE
+    if !opt_state.lambda_de_history.is_empty() && opt_state.lambda_de_history[0].is_some() {
+        let mut new_lambda_de = 0.0;
+        for (i, lambda_de) in opt_state.lambda_de_history.iter().enumerate() {
+            if let Some(val) = lambda_de {
+                new_lambda_de += val * coeffs[i];
+            }
+        }
+        opt_state.lambda_de = Some(new_lambda_de);
+    }
+
+    // Step 6: Correction step: X_new = X' - solve(B_mean, G')
+    let correction = lu.solve(&g_prime).unwrap_or_else(|| {
+        println!("GDIIS: Hessian solve failed for correction, using gradient");
+        g_prime.clone()
+    });
+    let x_new = &x_prime - &correction;
+
+    // Step 7: Apply step reduction (Python: if norm(Gs) < THRESH_RMS_G * 10)
+    let last_geom = opt_state.geom_history.back().unwrap();
+    let mut step = &x_new - last_geom;
+
+    let history_grad_norm_sq: f64 = opt_state
+        .grad_history
+        .iter()
+        .map(|g| g.norm_squared())
+        .sum();
+    let history_grad_norm = history_grad_norm_sq.sqrt();
+
+    // CRITICAL: gradient history is in Ha/Bohr (direct Hessian), so threshold
+    // must be in Ha/Bohr too. Convert from Ha/Å threshold config value.
+    // Python THRESH_RMS_G = 0.0005 Ha/Bohr, threshold = 0.005 Ha/Bohr
+    let threshold = config.thresholds.rms_g * crate::config::BOHR_TO_ANGSTROM * 10.0;
+    if history_grad_norm < threshold {
+        println!(
+            "GDIIS: applying step reduction factor {:.2}",
+            config.reduced_factor
+        );
+        step *= config.reduced_factor;
+    }
+
+    // Step 7b: MaxStep cap
+    let step_norm = step.norm();
+    let gdiis_trial_norm = step_norm;
+    if step_norm > config.max_step_size {
+        println!(
+            "GDIIS: trial stepsize {:.10} reduced to max_size {:.6}",
+            gdiis_trial_norm, config.max_step_size
+        );
+        step *= config.max_step_size / step_norm;
+    }
+
+    // Final NaN check (single, not cascading)
+    let result = last_geom + step;
+    if result.iter().any(|&v| !v.is_finite()) {
+        println!("GDIIS: result contains NaN/Inf, returning last geometry");
+        return last_geom.clone();
+    }
+
+    result
 }
 
 #[cfg(test)]

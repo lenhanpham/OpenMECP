@@ -318,7 +318,7 @@ pub const KEYWORDS: &[Keyword] = &[
         name: "max_history",
         category: KeywordCategory::Convergence,
         description: "Maximum number of history entries for DIIS optimizers (GDIIS/GEDIIS). Controls how many previous iterations are retained for interpolation. Larger values can improve convergence but use more memory.",
-        default_value: Some("5"),
+        default_value: Some("4"),
         example: Some("max_history = 5"),
         required: false,
     },
@@ -328,6 +328,30 @@ pub const KEYWORDS: &[Keyword] = &[
         description: "Factor for reducing GDIIS step size when RMS gradient is near convergence",
         default_value: Some("0.5"),
         example: Some("reduced_factor = 0.5"),
+        required: false,
+    },
+    Keyword {
+        name: "use_direct_hessian",
+        category: KeywordCategory::Convergence,
+        description: "Use direct Hessian + PSB update (recommended) or inverse Hessian + BFGS (legacy)",
+        default_value: Some("true"),
+        example: Some("use_direct_hessian = true   # Direct Hessian + PSB (recommended)\nuse_direct_hessian = false  # Inverse Hessian + BFGS"),
+        required: false,
+    },
+    Keyword {
+        name: "bfgs_rho",
+        category: KeywordCategory::Convergence,
+        description: "Scaling factor for BFGS step (rho). Larger values amplify Newton steps on flat PES.",
+        default_value: Some("15.0"),
+        example: Some("bfgs_rho = 15.0"),
+        required: false,
+    },
+    Keyword {
+        name: "print_level",
+        category: KeywordCategory::Convergence,
+        description: "Output verbosity: 0=quiet, 1=normal (default), 2=verbose (DIIS debug internals)",
+        default_value: Some("1"),
+        example: Some("print_level = 0   # Quiet\nprint_level = 1   # Normal\nprint_level = 2   # Verbose debug"),
         required: false,
     },
     Keyword {
@@ -341,9 +365,9 @@ pub const KEYWORDS: &[Keyword] = &[
     Keyword {
         name: "use_hybrid_gediis",
         category: KeywordCategory::Convergence,
-        description: "Use hybrid GEDIIS (50% GDIIS + 50% GEDIIS) instead of pure GEDIIS. Matches Python MECP.py behavior.",
-        default_value: Some("true"),
-        example: Some("use_hybrid_gediis = true  # Hybrid mode\nuse_hybrid_gediis = false  # Pure GEDIIS"),
+        description: "Blend GDIIS and GEDIIS adaptively based on energy trend. More robust than pure GEDIIS.",
+        default_value: Some("false"),
+        example: Some("use_hybrid_gediis = true   # Adaptive blend\nuse_hybrid_gediis = false  # Pure GDIIS (default)"),
         required: false,
     },
     Keyword {
@@ -354,11 +378,11 @@ pub const KEYWORDS: &[Keyword] = &[
         example: Some("switch_step = 10  # BFGS for steps 1-10, then DIIS"),
         required: false,
     },
-    // Fortran-ported robust DIIS options
+    // Robust DIIS options
     Keyword {
         name: "use_robust_diis",
         category: KeywordCategory::Convergence,
-        description: "Use Fortran-ported DIIS implementations with SR1 updates and validation checks",
+        description: "Enable DIIS step validation: rejects bad extrapolations via cosine and coefficient checks. Prevents wild steps near convergence.",
         default_value: Some("false"),
         example: Some("use_robust_diis = true"),
         required: false,
@@ -407,7 +431,7 @@ pub const KEYWORDS: &[Keyword] = &[
     Keyword {
         name: "use_advanced_hessian_update",
         category: KeywordCategory::Convergence,
-        description: "Use Fortran-ported Hessian update methods (more options available)",
+        description: "Try alternative Hessian formulas (Bofill, Powell) when PSB curvature is poor near saddle-point crossings",
         default_value: Some("false"),
         example: Some("use_advanced_hessian_update = true"),
         required: false,
@@ -434,7 +458,7 @@ pub const KEYWORDS: &[Keyword] = &[
         name: "print_checkpoint",
         category: KeywordCategory::Advanced,
         description: "Enable or disable checkpoint JSON file generation (supports true/false, yes/no, 1/0)",
-        default_value: Some("true"),
+        default_value: Some("false"),
         example: Some("print_checkpoint = false"),
         required: false,
     },
@@ -538,6 +562,38 @@ pub const KEYWORDS: &[Keyword] = &[
         description: "JSON configuration file for custom QM program interface",
         default_value: None,
         example: Some("custom_interface_file = \"custom.json\""),
+        required: false,
+    },
+    Keyword {
+        name: "basis",
+        category: KeywordCategory::Advanced,
+        description: "Basis set specification (for programs that separate method and basis)",
+        default_value: None,
+        example: Some("basis = \"def2-TZVP\""),
+        required: false,
+    },
+    Keyword {
+        name: "solvent",
+        category: KeywordCategory::Advanced,
+        description: "Solvent model specification (e.g., PCM, SMD)",
+        default_value: None,
+        example: Some("solvent = \"smd=water\""),
+        required: false,
+    },
+    Keyword {
+        name: "dispersion",
+        category: KeywordCategory::Advanced,
+        description: "Dispersion correction specification",
+        default_value: None,
+        example: Some("dispersion = \"GD3BJ\""),
+        required: false,
+    },
+    Keyword {
+        name: "charge2",
+        category: KeywordCategory::Advanced,
+        description: "Separate molecular charge for state B (defaults to charge value)",
+        default_value: None,
+        example: Some("charge = 1\ncharge2 = -1  # State B has different charge"),
         required: false,
     },
 ];
@@ -778,7 +834,20 @@ pub const FEATURES: &[FeatureInfo] = &[
 
 /// Print global help
 pub fn print_global_help() {
-    println!("MECP - Minimum Energy Crossing Point Optimization Tool");
+    println!("OpenMECP: Minimum Energy Crossing Point Optimizer");
+    println!(
+        "              Version {}  Release date: 2026",
+        env!("CARGO_PKG_VERSION")
+    );
+    println!("               ****Developer Le Nhan Pham****             ");
+    println!("           https://github.com/lenhanpham/OpenMECP        \n");
+    println!(" Please cite this preprint if you use OpenMECP for your research:");
+    println!(" #-------------------------------------------------------------------------------#");
+    println!(" # L.N Pham, \"OpenMECP: A High-Performance Rust Implementation for               #");
+    println!(" # the Rigorous Location of Minimum Energy Crossing Points in Chemical Dynamics\" #");
+    println!(" # 2026, https://doi.org/10.13140/RG.2.2.21309.73443                             #");
+    println!(" #-------------------------------------------------------------------------------#");
+    println!();
     println!();
     println!("USAGE:");
     println!("    omecp [OPTIONS] <COMMAND>");

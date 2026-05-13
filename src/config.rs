@@ -283,6 +283,12 @@ pub struct Config {
     /// Set to true if you want to experiment with smart history management.
     pub smart_history: bool,
 
+    /// Verbosity level for output:
+    /// - `0`: quiet (only convergence info)
+    /// - `1`: normal (step details)
+    /// - `2`: verbose (debug messages including DIIS internals)
+    pub print_level: usize,
+
     // ========== New Fortran-ported DIIS Options ==========
 
     /// Use the new Fortran-ported DIIS implementations (more robust).
@@ -446,6 +452,7 @@ impl Default for Config {
             max_history: 4, // Match Python's history size (keeps max 4 gradients)
             print_checkpoint: false, // Default to saving checkpoints for backward compatibility
             smart_history: false, // Default to traditional FIFO history management
+            print_level: 1,      // Default: normal output level
             // New Fortran-ported DIIS options
             use_robust_diis: false,
             gediis_variant: "auto".to_string(),

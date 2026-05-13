@@ -548,7 +548,7 @@ pub fn solve_constrained_step(
 ///
 /// # Unit Analysis
 ///
-/// This implementation matches the Python MECP.py reference (adapted for Angstrom units):
+/// This implementation matches the reference (adapted for Angstrom units):
 ///
 /// - **Input forces** (`state_a.forces`, `state_b.forces`): Ha/Å (converted from native QM output)
 /// - **f1, f2** (negated forces = gradients): Ha/Å
@@ -575,7 +575,7 @@ pub fn solve_constrained_step(
 ///
 /// Returns the MECP effective gradient as a `DVector<f64>` with length 3 × num_atoms.
 /// The gradient has mixed units (f-vector in Ha, g-vector in Ha/Å) matching
-/// the Python MECP.py reference implementation.
+/// the reference implementation.
 ///
 /// # Requirements
 ///
@@ -640,22 +640,22 @@ pub fn compute_mecp_gradient(
     g_eff
 }
 
-/// Computes MECP gradient with forces in Ha/Bohr (matching Python MECP.py exactly).
+/// Computes MECP gradient with forces in Ha/Bohr (matching exactly).
 ///
 /// State.forces from the QM interface are in Ha/Å (converted from native Ha/Bohr).
 /// This function converts back to Ha/Bohr so the direct Hessian algorithm
-/// (bfgs_step_python, update_hessian_psb, gdiis_step_python) operates on the
-/// same units as the Python reference implementation.
+/// (bfgs_step_direct, update_hessian_psb, gdiis_step_direct) operates on the
+/// same units as the reference implementation.
 ///
 /// The Harvey algorithm mixes Ha (from f-vector) with force units (Ha/Bohr here),
-/// which is dimensionally inconsistent but required for Python numerical compatibility.
+/// which is dimensionally inconsistent but required for numerical compatibility.
 pub fn compute_mecp_gradient_bohr(
     state_a: &State,
     state_b: &State,
     fixed_atoms: &[usize],
 ) -> DVector<f64> {
     // State.forces are in Ha/Å (converted from native QM output at the interface boundary).
-    // Convert back to Ha/Bohr for Python algorithm compatibility.
+    // Convert back to Ha/Bohr for algorithm compatibility.
     // 1 Ha/Bohr = BOHR_TO_ANGSTROM Ha/Å  (0.5291772489)
     let f1 = (-state_a.forces.clone()) * crate::config::BOHR_TO_ANGSTROM;
     let f2 = (-state_b.forces.clone()) * crate::config::BOHR_TO_ANGSTROM;
@@ -731,7 +731,7 @@ pub fn compute_mecp_gradient_bohr(
 ///    config: &Config,
 ///    _adaptive_scale: f64, // Parameter kept for compatibility but not used for BFGS
 ///) -> DVector<f64> {
-///    // Exact Python MECP.py propagationBFGS implementation:
+///    // Exact propagationBFGS implementation:
 ///    // 1. dk = -H^-1 * g (Newton direction)
 ///    // 2. if ||dk|| > 0.1: dk = dk * 0.1 / ||dk||  (cap direction to 0.1 Angstrom)
 ///    // 3. XNew = X0 + rho * dk  (rho=15 for MECP)
@@ -745,7 +745,7 @@ pub fn compute_mecp_gradient_bohr(
 ///        -g0 / (g0.norm() + 1e-14)
 ///    });
 ///
-///    // Step 2: Cap dk to 0.1 Angstrom (Python's hardcoded limit)
+///    // Step 2: Cap dk to 0.1 Angstrom 
 ///    // Convert to Bohr since internal coordinates are in Bohr
 ///    let dk_cap = 0.1 * ANGSTROM_TO_BOHR; // 0.1 Angstrom in Bohr
 ///    let dk_norm = dk.norm();
@@ -790,7 +790,7 @@ pub fn compute_mecp_gradient_bohr(
 
 /// Performs a BFGS optimization step following the Fortran MECP implementation.
 ///
-/// This implementation is adapted from the original Harvey Fortran code (easymecp.py)
+/// This implementation is adapted from the original Harvey Fortran code (eas)
 /// but operates in Angstrom-based units:
 /// - Uses **inverse Hessian** (Ų/Ha) for Newton step
 /// - Works in **Angstrom** for the Newton step computation
@@ -868,7 +868,7 @@ pub fn bfgs_step(
         step *= stpmx / max_component;
     }
     
-    // Apply rho scaling: matches Python MECP.py propagationBFGS (rho=15)
+    // Apply rho scaling: matches propagationBFGS (rho=15)
     // Applied AFTER capping dk to 0.1 Å, BEFORE final max_step_size cap.
     // Amplifies small Newton steps so the optimizer escapes flat PES regions.
     step *= config.bfgs_rho;
@@ -1483,8 +1483,8 @@ pub fn check_convergence(
     // RMS displacement in Angstrom
     let rms_disp = disp.norm() / (disp.len() as f64).sqrt();
     
-    // Max displacement: per-atom 3D distance in Angstrom (matching Python MECP.py)
-    // Python computes sqrt(dx² + dy² + dz²) for each atom and finds max
+    // Max displacement: per-atom 3D distance in Angstrom (matching)
+    // computes sqrt(dx² + dy² + dz²) for each atom and finds max
     let max_disp = disp
         .as_slice()
         .chunks(3)
@@ -1502,7 +1502,7 @@ pub fn check_convergence(
     
     // Max gradient: 3D per-atom magnitude (more rigorous than X-component-only).
     // Using the full 3D atomic gradient norm catches large Y/Z components that
-    // the Python X-only check would miss, preventing false convergence.
+    // the X-only check would miss, preventing false convergence.
     let max_grad = grad
         .as_slice()
         .chunks(3)
@@ -1699,7 +1699,9 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     rhs[n] = 1.0;
 
     let solution = b_matrix.lu().solve(&rhs).unwrap_or_else(|| {
-        println!("[DEBUG] GDIIS: B matrix solve failed, using uniform coefficients");
+        if config.print_level >= 2 {
+            println!("[DEBUG] GDIIS: B matrix solve failed, using uniform coefficients");
+        }
         let mut fallback = DVector::zeros(n + 1);
         for i in 0..n {
             fallback[i] = 1.0 / (n as f64);
@@ -1710,7 +1712,9 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     // CRITICAL: Check for NaN in solution (ill-conditioned B matrix)
     let has_nan = solution.iter().any(|&x| x.is_nan() || x.is_infinite());
     let coeffs = if has_nan {
-        println!("[DEBUG] GDIIS: Solution contains NaN/Inf, falling back to uniform coefficients");
+        if config.print_level >= 2 {
+            println!("[DEBUG] GDIIS: Solution contains NaN/Inf, falling back to uniform coefficients");
+        }
         let mut fallback = DVector::zeros(n);
         for i in 0..n {
             fallback[i] = 1.0 / (n as f64);
@@ -1721,21 +1725,24 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     };
 
     // Debug: print coefficients
-    println!("[DEBUG] GDIIS coefficients: {:?}", coeffs.as_slice());
+    if config.print_level >= 2 {
+        println!("[DEBUG] GDIIS coefficients: {:?}", coeffs.as_slice());
+    }
 
     // Safeguard: large coefficients signal an ill-conditioned B matrix (error vectors are
     // nearly colinear), which causes wildly oscillating extrapolation.  Fall back to a plain
     // Newton step from the most recent point using the mean inverse Hessian.
     let max_coeff = coeffs.iter().map(|c| c.abs()).fold(0.0_f64, f64::max);
     if max_coeff > 3.0 {
-        println!(
-            "[DEBUG] GDIIS: max coefficient {:.2} > 3.0, B matrix ill-conditioned; \
-             falling back to last-point Newton step",
-            max_coeff
-        );
+        if config.print_level >= 2 {
+            println!(
+                "[DEBUG] GDIIS: max coefficient {:.2} > 3.0, B matrix ill-conditioned; \
+                 falling back to last-point Newton step",
+                max_coeff
+            );
+        }
         let last_geom = opt_state.geom_history.back().unwrap();
         let last_grad = opt_state.grad_history.back().unwrap();
-        // Compute mean inverse Hessian (already the right matrix for H_inv * g)
         let mut h_mean = DMatrix::zeros(
             opt_state.hess_history[0].nrows(),
             opt_state.hess_history[0].ncols(),
@@ -1764,7 +1771,9 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
 
     // CRITICAL: Check for NaN in interpolated geometry
     if x_new_prime.iter().any(|&x| x.is_nan() || x.is_infinite()) {
-        println!("[DEBUG] GDIIS: Interpolated geometry contains NaN, falling back to last geometry");
+        if config.print_level >= 2 {
+            println!("[DEBUG] GDIIS: Interpolated geometry contains NaN, falling back to last geometry");
+        }
         x_new_prime = opt_state.geom_history.back().unwrap().clone();
     }
 
@@ -1776,7 +1785,9 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
 
     // CRITICAL: Check for NaN in interpolated gradient
     if g_new_prime.iter().any(|&x| x.is_nan() || x.is_infinite()) {
-        println!("[DEBUG] GDIIS: Interpolated gradient contains NaN, falling back to last gradient");
+        if config.print_level >= 2 {
+            println!("[DEBUG] GDIIS: Interpolated gradient contains NaN, falling back to last gradient");
+        }
         g_new_prime = opt_state.grad_history.back().unwrap().clone();
     }
 
@@ -1827,7 +1838,9 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
 
     // CRITICAL: Check for NaN in correction
     let correction = if correction.iter().any(|&x| x.is_nan() || x.is_infinite()) {
-        println!("[DEBUG] GDIIS: Correction contains NaN, using zero correction");
+        if config.print_level >= 2 {
+            println!("[DEBUG] GDIIS: Correction contains NaN, using zero correction");
+        }
         DVector::zeros(correction.len())
     } else {
         correction
@@ -1838,7 +1851,9 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
 
     // CRITICAL: Final NaN check on x_new
     if x_new.iter().any(|&x| x.is_nan() || x.is_infinite()) {
-        println!("[DEBUG] GDIIS: Final geometry contains NaN, falling back to last geometry with small steepest descent step");
+        if config.print_level >= 2 {
+            println!("[DEBUG] GDIIS: Final geometry contains NaN, falling back to last geometry with small steepest descent step");
+        }
         let last_geom = opt_state.geom_history.back().unwrap();
         let last_grad = opt_state.grad_history.back().unwrap();
         let grad_norm = last_grad.norm();
@@ -1855,7 +1870,7 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     let last_geom = opt_state.geom_history.back().unwrap();
     let mut step = &x_new - last_geom;
 
-    // Python-inspired step reduction
+    // step reduction
     // CRITICAL FIX: Use norm of ENTIRE gradient history, not just the last one
     // Python: if numpy.linalg.norm(Gs) < THRESH_RMS_G * 10:
     let history_grad_norm_sq: f64 = opt_state
@@ -1865,34 +1880,42 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         .sum();
     let history_grad_norm = history_grad_norm_sq.sqrt();
 
-    // DEBUG: Print gradient history details
-    println!(
-        "[DEBUG] Gradient history size: {}",
-        opt_state.grad_history.len()
-    );
-    for (i, g) in opt_state.grad_history.iter().enumerate() {
-        println!("[DEBUG]   Gradient {}: norm = {:.8}", i, g.norm());
+    if config.print_level >= 2 {
+        println!(
+            "[DEBUG] Gradient history size: {}",
+            opt_state.grad_history.len()
+        );
+        for (i, g) in opt_state.grad_history.iter().enumerate() {
+            println!("[DEBUG]   Gradient {}: norm = {:.8}", i, g.norm());
+        }
+        println!(
+            "[DEBUG] Gradient history norm (total): {:.8}",
+            history_grad_norm
+        );
     }
-    println!(
-        "[DEBUG] Gradient history norm (total): {:.8}",
-        history_grad_norm
-    );
 
     // CRITICAL: Gradients in Rust are in Ha/Å
     let threshold = config.thresholds.rms_g * 10.0;
-    println!(
-        "[DEBUG] Step reduction threshold: {:.8} (scaled for Ha/Å units)",
-        threshold
-    );
+
+    if config.print_level >= 2 {
+        println!(
+            "[DEBUG] Step reduction threshold: {:.8} (scaled for Ha/Å units)",
+            threshold
+        );
+    }
 
     let step_reduction_factor = if history_grad_norm < threshold {
-        println!(
-            "[DEBUG] Applying step reduction (factor = {})",
-            config.reduced_factor
-        );
+        if config.print_level >= 2 {
+            println!(
+                "[DEBUG] Applying step reduction (factor = {})",
+                config.reduced_factor
+            );
+        }
         config.reduced_factor
     } else {
-        println!("[DEBUG] No step reduction applied (factor = 1.0)");
+        if config.print_level >= 2 {
+            println!("[DEBUG] No step reduction applied (factor = 1.0)");
+        }
         1.0
     };
 
@@ -1900,11 +1923,13 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     step *= step_reduction_factor;
     let step_norm_after = step.norm();
 
-    println!(
-        "[DEBUG] Step norm before reduction: {:.8}",
-        step_norm_before
-    );
-    println!("[DEBUG] Step norm after reduction: {:.8}", step_norm_after);
+    if config.print_level >= 2 {
+        println!(
+            "[DEBUG] Step norm before reduction: {:.8}",
+            step_norm_before
+        );
+        println!("[DEBUG] Step norm after reduction: {:.8}", step_norm_after);
+    }
 
     let step_norm = step.norm();
     let gdiis_trial_norm = step_norm;
@@ -2180,7 +2205,7 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
     }
 
     // 5. Calculate step: X_new = X_interp + G_interp
-    // Matches Python propagationGEDIIS: XNew = XNew_prime + GNew_prime
+    // Matches propagationGEDIIS: XNew = XNew_prime + GNew_prime
     // The MECP effective gradient encodes the seam direction; adding it
     // provides a correction toward where G_eff = 0.
     let mut x_new = x_new_prime + &g_new_prime;
@@ -2188,7 +2213,7 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
     let last_geom = opt_state.geom_history.back().unwrap();
     let mut step = &x_new - last_geom;
 
-    // Python-inspired step reduction
+    // step reduction
     // CRITICAL FIX: Use norm of ENTIRE gradient history, not just the last one
     let history_grad_norm_sq: f64 = opt_state
         .grad_history
@@ -2295,7 +2320,6 @@ fn dynamic_gediis_weight(opt_state: &OptimizationState) -> f64 {
             .all(|&d| (d / sqrt_n) < stuck_threshold_rms);
 
         if all_tiny {
-            // Optimizer is stuck - force pure GDIIS to break the cycle
             println!("DEBUG: Stuck optimizer detected (last 3 RMS displacements < 1e-5 Å), forcing pure GDIIS");
             return 0.0;
         }
@@ -2452,11 +2476,13 @@ pub fn smart_hybrid_gediis_step(
         let all_tiny = recent_displacements.iter().all(|&d| d < stuck_threshold);
 
         if all_tiny {
-            println!("DEBUG: Stuck optimizer detected (last 3 displacements < 1e-4 Å), forcing pure GDIIS");
-            println!(
-                "       Recent displacements: [{:.2e}, {:.2e}, {:.2e}] Å",
-                recent_displacements[2], recent_displacements[1], recent_displacements[0]
-            );
+            if config.print_level >= 2 {
+                println!("DEBUG: Stuck optimizer detected (last 3 displacements < 1e-4 Å), forcing pure GDIIS");
+                println!(
+                    "       Recent displacements: [{:.2e}, {:.2e}, {:.2e}] Å",
+                    recent_displacements[2], recent_displacements[1], recent_displacements[0]
+                );
+            }
             return gdiis_step(opt_state, config);
         }
     }
@@ -2588,14 +2614,14 @@ pub fn smart_hybrid_gediis_step(
 ///    let gdiis_result = gdiis_step(opt_state, config);
 ///    let gediis_result = gediis_step(opt_state, config);
 ///
-///    // Apply 50/50 averaging (Python MECP.py behavior)
+///    // Apply 50/50 averaging  behavior)
 ///    let n = gdiis_result.len();
 ///    let mut hybrid_result = DVector::zeros(n);
 ///    for i in 0..n {
 ///        hybrid_result[i] = 0.5 * gdiis_result[i] + 0.5 * gediis_result[i];
 ///    }
 ///
-///    // Python-inspired step reduction for hybrid final step
+///    // step reduction for hybrid final step
 ///    let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
 ///    if last_grad_norm < config.thresholds.rms_g * 10.0 {
 ///        let last_geom = opt_state.geom_history.back().unwrap().clone();
@@ -2748,12 +2774,12 @@ pub fn update_hessian_config_driven(
 // ========================================================================
 // direct Hessian Algorithm Functions
 // ========================================================================
-// These functions implement the proven MECP.py (KST48) optimization strategy
-// directly in Rust. They are activated by `use_python_algorithm = true`.
+// These functions implement the optimization strategy
+// directly in Rust. They are activated by `use_direct_hessian = true`.
 
 /// Initializes the direct Hessian matrix for direct Hessian BFGS optimization.
 ///
-/// Matches Python MECP.py behavior: `Bk = numpy.eye(ncoord)` (identity matrix).
+/// Matches behavior: `Bk = numpy.eye(ncoord)` (identity matrix).
 /// The direct Hessian B has units Ha/Å² in the Angstrom-based system.
 ///
 /// # Arguments
@@ -2768,13 +2794,13 @@ pub fn update_hessian_config_driven(
 ///
 /// The Hessian diagonal is 1.0 Ha/Å² (identity matrix).
 /// Newton step: B⁻¹ × g = I × g = g, so initial step equals gradient.
-pub fn initialize_hessian_python(n: usize) -> DMatrix<f64> {
+pub fn initialize_direct_hessian(n: usize) -> DMatrix<f64> {
     DMatrix::identity(n, n)
 }
 
 /// Updates the Hessian matrix using the PSB (Powell-Symmetric-Broyden) formula.
 ///
-/// This is a direct port of Python MECP.py `HessianUpdator()` function.
+/// This is a direct port of `HessianUpdator()` function.
 /// PSB is more appropriate than BFGS for MECP optimization because MECPs
 /// have saddle-point-like character on the difference PES.
 ///
@@ -2809,7 +2835,7 @@ pub fn initialize_hessian_python(n: usize) -> DMatrix<f64> {
 ///
 /// # References
 ///
-/// - Python MECP.py lines 954-979 (HessianUpdator function)
+/// - lines 954-979 (HessianUpdator function)
 /// - Powell, M.J.D., "A new algorithm for unconstrained optimization" (1970)
 pub fn update_hessian_psb(
     hessian: &DMatrix<f64>,
@@ -2856,11 +2882,11 @@ pub fn update_hessian_psb(
     b_new
 }
 
-/// Performs a BFGS step using a direct Hessian (matching Python MECP.py exactly).
+/// Performs a BFGS step using a direct Hessian (matching exactly).
 ///
-/// This is a direct port of Python MECP.py `propagationBFGS()` + `MaxStep()`.
+/// This is a direct port of `propagationBFGS()` + `MaxStep()`.
 ///
-/// # Algorithm (Python MECP.py)
+/// # Algorithm )
 ///
 /// ```text
 /// 1. dk = solve(Bk, -Gk)              # Newton direction via LU decomposition
@@ -2885,14 +2911,14 @@ pub fn update_hessian_psb(
 ///
 /// - `dk = B⁻¹ × g`: (Ha/Å²)⁻¹ × (Ha/Å) = Å (step in Angstrom)
 /// - Cap: `0.1` (matching Python's 0.1 — NOT in Bohr, operates in mixed-unit Newton space)
-/// - rho: `15.0` (amplification factor, same as Python)
-/// - MaxStep: `config.max_step_size` in Å (default: 0.1 Å, matching Python)
+/// - rho: `15.0` (amplification factor)
+/// - MaxStep: `config.max_step_size` in Å (default: 0.1 Å)
 ///
 /// # References
 ///
-/// - Python MECP.py lines 857-870 (propagationBFGS)
-/// - Python MECP.py lines 802-815 (MaxStep)
-pub fn bfgs_step_python(
+/// - lines 857-870 (propagationBFGS)
+/// - lines 802-815 (MaxStep)
+pub fn bfgs_step_direct(
     x0: &DVector<f64>,
     g0: &DVector<f64>,
     hessian: &DMatrix<f64>,
@@ -2949,14 +2975,14 @@ pub fn bfgs_step_python(
     x0 + step
 }
 
-/// Performs a simplified GDIIS step matching Python MECP.py exactly.
+/// Performs a simplified GDIIS step matching exactly.
 ///
 /// This is a clean, minimal implementation of GDIIS that matches the
 /// 40-line Python version without defensive fallbacks. The simplicity
 /// is intentional — the Python version converges reliably without
 /// coefficient checks, stuck detection, or cascading NaN guards.
 ///
-/// # Algorithm (Python MECP.py `propagationGDIIS()`)
+/// # Algorithm  `propagationGDIIS()`)
 ///
 /// ```text
 /// 1. Compute mean Hessian: B_mean = mean(B_history)
@@ -2979,7 +3005,7 @@ pub fn bfgs_step_python(
 ///
 /// # Key Differences from Complex GDIIS
 ///
-/// - No coefficient magnitude check (Python doesn't have one)
+/// - No coefficient magnitude check 
 /// - No stuck detection (handled at main loop level if needed)
 /// - No adaptive step size multiplier
 /// - No cascading NaN fallbacks (single final check only)
@@ -2987,8 +3013,8 @@ pub fn bfgs_step_python(
 ///
 /// # References
 ///
-/// - Python MECP.py lines 872-913 (propagationGDIIS)
-pub fn gdiis_step_python(
+/// - lines 872-913 (propagationGDIIS)
+pub fn gdiis_step_direct(
     opt_state: &mut OptimizationState,
     config: &Config,
 ) -> DVector<f64> {
@@ -2996,7 +3022,7 @@ pub fn gdiis_step_python(
     let dim = opt_state.geom_history[0].len();
 
     // Step 1: Compute mean Hessian from history
-    // NOTE: When use_python_algorithm is true, hess_history stores DIRECT Hessians
+    // NOTE: When use_direct_hessian is true, hess_history stores DIRECT Hessians
     let mut h_mean = DMatrix::zeros(dim, dim);
     for hess in &opt_state.hess_history {
         h_mean += hess;
@@ -3034,7 +3060,9 @@ pub fn gdiis_step_python(
     rhs[n] = 1.0;
 
     let coeffs = b_matrix.clone().lu().solve(&rhs).unwrap_or_else(|| {
-        println!("GDIIS: B matrix solve failed, using uniform coefficients");
+        if config.print_level >= 2 {
+            println!("GDIIS: B matrix solve failed, using uniform coefficients");
+        }
         let mut fallback = DVector::zeros(n + 1);
         for i in 0..n {
             fallback[i] = 1.0 / (n as f64);
@@ -3042,10 +3070,12 @@ pub fn gdiis_step_python(
         fallback
     });
 
-    println!(
-        "GDIIS: coefficients: {:?}",
-        &coeffs.as_slice()[..n]
-    );
+    if config.print_level >= 2 {
+        println!(
+            "GDIIS: coefficients: {:?}",
+            &coeffs.as_slice()[..n]
+        );
+    }
 
     // Step 5: Interpolate geometry and gradient
     let mut x_prime = DVector::zeros(dim);
@@ -3106,10 +3136,12 @@ pub fn gdiis_step_python(
     // Python THRESH_RMS_G = 0.0005 Ha/Bohr, threshold = 0.005 Ha/Bohr
     let threshold = config.thresholds.rms_g * crate::config::BOHR_TO_ANGSTROM * 10.0;
     if history_grad_norm < threshold {
-        println!(
-            "GDIIS: applying step reduction factor {:.2}",
-            config.reduced_factor
-        );
+        if config.print_level >= 2 {
+            println!(
+                "GDIIS: applying step reduction factor {:.2}",
+                config.reduced_factor
+            );
+        }
         step *= config.reduced_factor;
     }
 
@@ -3171,7 +3203,7 @@ mod tests {
         let gradient = compute_mecp_gradient(&state_a, &state_b, &[]);
 
         // Verify that forces were properly negated
-        // The gradient should reflect NEGATED forces (matching Python behavior)
+        // The gradient should reflect NEGATED forces 
         // If forces weren't negated, gradient direction would be wrong
 
         // Check that gradient has correct dimension

@@ -219,6 +219,7 @@ max_step_size = 0.1      # maximum step size (angstrom)
 max_history = 4          # DIIS history length
 reduced_factor = 0.5     # step reduction factor near convergence
 bfgs_rho = 15            # BFGS step amplification factor (rho)
+print_level = 1          # 0=quiet, 1=normal, 2=verbose (DIIS debug)
 
 #===== Optimizer Selection ====================================================
 switch_step = 3          # switch from BFGS to DIIS after this many steps

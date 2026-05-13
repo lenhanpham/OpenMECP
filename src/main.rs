@@ -1218,7 +1218,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             return Err("Pre-point calculations failed. Please check your QM program setup and input parameters.".into());
         }
 
-        println!("✓ Pre-point calculations completed successfully");
+        println!(" Pre-point calculations completed successfully");
 
         // Check checkpoint files exactly like Python MECP.py
         match input_data.config.program {
@@ -1230,7 +1230,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
                 if Path::new(&state_a_chk).exists() && Path::new(&state_b_chk).exists() {
                     println!(
-                        "✓ Gaussian checkpoint files found: {} and {}",
+                        " Gaussian checkpoint files found: {} and {}",
                         state_a_chk, state_b_chk
                     );
                 } else {
@@ -1263,7 +1263,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
                 if print_level >= 1 {
                     println!(
-                        "✓ ORCA wavefunction files found: {} and {}",
+                        " ORCA wavefunction files found: {} and {}",
                         pre_a_gbw, pre_b_gbw
                     );
                 }
@@ -1271,7 +1271,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             config::QMProgram::Xtb => {
                 println!("XTB pre-point calculations completed");
                 println!(
-                    "✓ XTB doesn't require checkpoint files - ready for main optimization loop"
+                    " XTB doesn't require checkpoint files - ready for main optimization loop"
                 );
             }
             _ => {
@@ -2567,7 +2567,7 @@ fn run_single_optimization(
                 // Also copy to root directory for compatibility
                 let _ = std::fs::copy(&a_chk, "a.chk");
                 let _ = std::fs::copy(&b_chk, "b.chk");
-                println!("✓ Gaussian checkpoint files ready for main optimization loop");
+                println!(" Gaussian checkpoint files ready for main optimization loop");
             }
             config::QMProgram::Orca => {
                 if print_level >= 1 {
@@ -2591,26 +2591,26 @@ fn run_single_optimization(
                 let _ = std::fs::copy(&b_gbw, "b.gbw");
 
                 if print_level >= 1 {
-                    println!("✓ ORCA wavefunction files ready for main optimization loop");
+                    println!(" ORCA wavefunction files ready for main optimization loop");
                 }
             }
             config::QMProgram::Xtb => {
                 println!("XTB pre-point calculations completed");
                 println!(
-                    "✓ XTB doesn't require checkpoint files - ready for main optimization loop"
+                    " XTB doesn't require checkpoint files - ready for main optimization loop"
                 );
                 // XTB doesn't use persistent checkpoint files like Gaussian/ORCA
                 // The pre-point calculations establish the initial geometry and energy
             }
             config::QMProgram::Bagel => {
                 println!("BAGEL pre-point calculations completed");
-                println!("✓ BAGEL uses model-based approach - ready for main optimization loop");
+                println!(" BAGEL uses model-based approach - ready for main optimization loop");
                 // BAGEL uses JSON model files rather than binary checkpoint files
                 // The pre-point calculations validate the model and establish initial state
             }
             config::QMProgram::Custom => {
                 println!("Custom program pre-point calculations completed");
-                println!("✓ Custom program checkpoint handling depends on implementation");
+                println!(" Custom program checkpoint handling depends on implementation");
                 // Custom programs may or may not use checkpoint files
                 // The behavior depends on the specific program's interface configuration
             }
@@ -2935,7 +2935,7 @@ fn run_lst_interpolation(
 
     // Validate geometries
     match lst::validate_geometries(&geometries) {
-        Ok(_) => println!("✓ All geometries validated successfully"),
+        Ok(_) => println!(" All geometries validated successfully"),
         Err(e) => {
             println!("✗ Geometry validation failed: {}", e);
             println!("Do you want to continue anyway? (y/n) [n]: ");
@@ -3022,7 +3022,7 @@ fn run_lst_interpolation(
                 ) {
                     Ok(state_a) => {
                         energies_a.push(state_a.energy);
-                        println!("✓ State A completed: E = {:.8} hartree", state_a.energy);
+                        println!(" State A completed: E = {:.8} hartree", state_a.energy);
                     }
                     Err(e) => {
                         println!("✗ Failed to read state A output: {}", e);
@@ -3049,7 +3049,7 @@ fn run_lst_interpolation(
                 ) {
                     Ok(state_b) => {
                         energies_b.push(state_b.energy);
-                        println!("✓ State B completed: E = {:.8} hartree", state_b.energy);
+                        println!(" State B completed: E = {:.8} hartree", state_b.energy);
                     }
                     Err(e) => {
                         println!("✗ Failed to read state B output: {}", e);

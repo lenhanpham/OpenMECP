@@ -229,14 +229,21 @@ use_hybrid_gediis = true # blend GDIIS+GEDIIS (only if use_gediis = true)
 smart_history = false    # experimental: remove worst DIIS point instead of oldest
 
 #===== Advanced Optimizer Settings ============================================
-#use_robust_diis = false      # Fortran-ported DIIS with validation
-#gediis_variant = auto        # auto | rfo | energy | simultaneous
-#gdiis_cosine_check = standard # none | zero | standard | variable | strict
-#gdiis_coeff_check = regular  # none | regular | force_recent | combined
-#n_neg = 0                    # 0 = minimum, 1 = transition state
-#gediis_sim_switch = 0.0025   # RMS error threshold for variant switching
-#use_advanced_hessian_update = false  # Fortran-ported Hessian updates
-#hessian_update_method = bfgs  # bfgs | bofill | powell | bfgs_powell_mix
+# ALL parameters below are commented out (= inactive). Their default values
+# (shown after the = sign) are used unless you uncomment and change them.
+#
+#use_robust_diis = false      # Activate DIIS step validation: rejects bad
+                              # extrapolations via cosine & coefficient checks.
+                              # Prevents wild steps near convergence.
+#gediis_variant = auto        # Only when use_robust_diis=true AND use_gediis=true
+#gdiis_cosine_check = standard # Only when use_robust_diis=true
+#gdiis_coeff_check = regular  # Only when use_robust_diis=true
+#n_neg = 0                    # 0 = minimum search, 1 = transition state
+#gediis_sim_switch = 0.0025   # Only when use_robust_diis=true
+#use_advanced_hessian_update = false  # Switch from default PSB to Bofill/
+                              # Powell formulas when PSB struggles near
+                              # saddle-point curvature.
+#hessian_update_method = bfgs # Only when use_advanced_hessian_update=true
 
 #===== Program Settings =======================================================
 program = gaussian       # gaussian | orca | xtb | bagel

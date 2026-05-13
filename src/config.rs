@@ -388,7 +388,6 @@ pub struct Config {
     /// - **Direct Hessian** (not inverse): Solves `B × dk = -g` via LU decomposition
     /// - **PSB update** (Powell-Symmetric-Broyden): Better for saddle-point-like MECP problems
     /// - **Two-stage step limiting**: cap dk, then apply rho, then MaxStep
-    /// - **Simplified GDIIS**: Clean interpolation matching the proven KST48 implementation
     ///
     /// This is the **recommended** setting for production MECP calculations.
     /// Validated on hundreds of MECP calculations across diverse chemical systems.

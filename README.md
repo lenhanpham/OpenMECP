@@ -64,7 +64,7 @@ Where `x_norm = (f1 - f2) / |f1 - f2|` is the normalized gradient difference.
 
 - **MECP Optimization**: Harvey et al. algorithm implementation
 - **Direct Hessian + PSB (Recommended)**: Default algorithm using direct Hessian with Powell-Symmetric-Broyden update. Proven on hundreds of MECP calculations.
-- **Inverse Hessian + BFGS (Legacy)**: Fortran-style algorithm using inverse Hessian with BFGS update.
+- **Inverse Hessian + BFGS**: Algorithm using inverse Hessian with BFGS update.
 - **GDIIS Optimizer**: Geometry-based DIIS for 2-3x faster convergence
 - **GEDIIS Optimizer**: Energy-informed DIIS for enhanced convergence
 - **Hybrid Strategy**: Automatic switching between BFGS, GDIIS, and GEDIIS
@@ -438,54 +438,78 @@ H  1.2  0.0  0.5
 
 #### Optimizer Settings
 
-| Keyword               | Type    | Default | Description                                                    |
-| --------------------- | ------- | ------- | -------------------------------------------------------------- |
-| `use_direct_hessian`  | boolean | `true`  | Direct Hessian+PSB (recommended) or inverse Hessian+BFGS       |
-| `use_gediis`          | boolean | `false` | Use GEDIIS optimizer instead of GDIIS                          |
-| `use_hybrid_gediis`   | boolean | `false` | Use dynamic hybrid GDIIS/GEDIIS optimizer                      |
-| `switch_step`         | integer | `3`     | Step to switch from BFGS to DIIS optimizers                    |
-| `max_history`         | integer | `4`     | Max iterations used for DIIS extrapolation                     |
-| `smart_history`       | boolean | `false` | Smart history instead of first in first out                    |
-| `reduced_factor`      | float   | `0.5`   | Step size reduction factor for GDIIS                           |
-| `bfgs_rho`            | float   | `15.0`  | Scaling factor for BFGS step size                              |
-| `print_checkpoint`    | boolean | `false` | Enable/disable checkpoint JSON file generation                 |
+| Keyword              | Type    | Default | Description                                              |
+| -------------------- | ------- | ------- | -------------------------------------------------------- |
+| `use_direct_hessian` | boolean | `true`  | Direct Hessian+PSB (recommended) or inverse Hessian+BFGS |
+| `use_gediis`         | boolean | `false` | Use GEDIIS optimizer instead of GDIIS                    |
+| `use_hybrid_gediis`  | boolean | `false` | Use dynamic hybrid GDIIS/GEDIIS optimizer                |
+| `switch_step`        | integer | `3`     | Step to switch from BFGS to DIIS optimizers              |
+| `max_history`        | integer | `4`     | Max iterations used for DIIS extrapolation               |
+| `smart_history`      | boolean | `false` | Smart history instead of first in first out              |
+| `reduced_factor`     | float   | `0.5`   | Step size reduction factor for GDIIS                     |
+| `bfgs_rho`           | float   | `15.0`  | Scaling factor for BFGS step size                        |
+| `print_checkpoint`   | boolean | `false` | Enable/disable checkpoint JSON file generation           |
 
-#### Advanced DIIS Options (Experimental)
+#### Advanced DIIS Options (Step Validation)
 
-These options enable the robust GDIIS/GEDIIS implementations, providing enhanced convergence and validation features.
+Standard GDIIS/GEDIIS can occasionally produce wild extrapolations when the DIIS matrix is ill-conditioned (e.g., near-convergence or redundant history). These options activate additional sanity checks that reject bad steps.
 
-| Keyword              | Type    | Default      | Description                                                      |
-| -------------------- | ------- | ------------ | ---------------------------------------------------------------- |
-| `use_robust_diis`    | boolean | `false`      | Enable experimental DIIS with SR1 updates & validation           |
-| `gediis_variant`     | string  | `"auto"`     | GEDIIS variant: `auto`, `rfo`, `energy`, `simultaneous`          |
-| `gdiis_cosine_check` | string  | `"standard"` | Cosine check: `none`, `zero`, `standard`, `variable`, `strict`   |
-| `gdiis_coeff_check`  | string  | `"regular"`  | Coefficient check: `none`, `regular`, `force_recent`, `combined` |
-| `n_neg`              | integer | `0`          | Negative eigenvalues (0=minimum, 1=TS search)                    |
-| `gediis_sim_switch`  | float   | `0.0025`     | RMS error threshold for GEDIIS variant switching                 |
+**How to use:** Uncomment these lines in your input file and set values as needed. All are inactive by default.
 
-**GEDIIS Variants:**
+**Dependency:** `use_robust_diis = true` is the master switch. The other options below only take effect when `use_robust_diis = true` is set. If `use_robust_diis` remains `false` (default), all the options below are ignored regardless of their values.
+
+| Keyword              | Type    | Default      | Activation                    | Description                                                          |
+| -------------------- | ------- | ------------ | ----------------------------- | -------------------------------------------------------------------- |
+| `use_robust_diis`    | boolean | `false`      | standalone                    | Enable DIIS step validation (master switch) |
+| `gediis_variant`     | string  | `"auto"`     | requires `use_robust_diis=true` AND `use_gediis=true` | `auto`, `rfo`, `energy`, `simultaneous` |
+| `gdiis_cosine_check` | string  | `"standard"` | requires `use_robust_diis=true` | Cosine threshold: `none`, `zero`, `standard` (≥0.71), `variable`, `strict` (≥0.866) |
+| `gdiis_coeff_check`  | string  | `"regular"`  | requires `use_robust_diis=true` | Coefficient bounds: `none`, `regular`, `force_recent`, `combined` |
+| `n_neg`              | integer | `0`          | requires `use_robust_diis=true` | `0` for minimum search, `1` for transition-state search |
+| `gediis_sim_switch`  | float   | `0.0025`     | requires `use_robust_diis=true` | RMS error threshold controlling GEDIIS variant switching |
+
+**GEDIIS Variants** (only active when `use_robust_diis=true` AND `use_gediis=true`):
 
 - `auto`: Automatically selects based on RMS error and energy trend
-- `rfo`: RFO-DIIS using quadratic step overlaps (good for minima)
-- `energy`: Energy-DIIS using gradient-coordinate products (good when far from minimum)
-- `simultaneous`: Combines Energy-DIIS with quadratic terms
+- `rfo`: RFO-DIIS using quadratic step overlaps (good near minima)
+- `energy`: Energy-DIIS using gradient-coordinate products (better far from minimum)
+- `simultaneous`: Combines Energy-DIIS with quadratic energy approximation
 
-#### Advanced Hessian Update Options (experimental)
+**Example — activating step validation:**
 
-These options enable multiple Hessian update methods.
+```
+use_robust_diis = true
+use_gediis = true
+gediis_variant = energy
+gdiis_cosine_check = standard
+```
 
-| Keyword                       | Type    | Default  | Description                                                        |
-| ----------------------------- | ------- | -------- | ------------------------------------------------------------------ |
-| `use_advanced_hessian_update` | boolean | `false`  | Enable experimental Hessian update methods                         |
-| `hessian_update_method`       | string  | `"bfgs"` | Method: `bfgs`, `bfgs_pure`, `powell`, `bofill`, `bfgs_powell_mix` |
+#### Advanced Hessian Update Options (Alternative Formulas)
 
-**Hessian Update Methods:**
+The default algorithm uses a **PSB** (Powell-Symmetric-Broyden) Hessian update, which works well for most MECP systems. When the potential energy surface has saddle-point character near the crossing seam, alternative update formulas may converge faster.
 
-- `bfgs`: Standard BFGS for minima (with curvature check) - **default**
-- `bfgs_pure`: BFGS without curvature check (more aggressive)
-- `powell`: Symmetric rank-one (SR1) update (handles negative curvature)
-- `bofill`: Weighted Powell/Murtagh-Sargent for saddle points - **recommended for TS-like crossings**
-- `bfgs_powell_mix`: Adaptive blend of BFGS and Powell
+**How to use:** Uncomment `use_advanced_hessian_update = true` and optionally choose a method. All are inactive by default.
+
+**Dependency:** `use_advanced_hessian_update = true` is the master switch. `hessian_update_method` is only checked when this is `true`. If `use_advanced_hessian_update` remains `false` (default), the default PSB update is always used.
+
+| Keyword                       | Type    | Default  | Activation                    | Description                                                              |
+| ----------------------------- | ------- | -------- | ----------------------------- | ------------------------------------------------------------------------ |
+| `use_advanced_hessian_update` | boolean | `false`  | standalone                    | Master switch for alternative Hessian formulas |
+| `hessian_update_method`       | string  | `"bfgs"` | requires `use_advanced_hessian_update=true` | `bfgs`, `bfgs_pure`, `powell`, `bofill`, `bfgs_powell_mix` |
+
+**Hessian Update Methods** (only active when `use_advanced_hessian_update=true`):
+
+- `bfgs`: Standard BFGS with positive-curvature check — **default for this mode**
+- `bfgs_pure`: BFGS without curvature check (more aggressive near saddle points)
+- `powell`: Symmetric rank-one (SR1) update, tolerates negative curvature
+- `bofill`: Weighted Powell/Murtagh-Sargent blend — **recommended for TS-like crossings**
+- `bfgs_powell_mix`: Adaptive blend switching between BFGS and Powell
+
+**Example — switching to Bofill:**
+
+```
+use_advanced_hessian_update = true
+hessian_update_method = bofill
+```
 
 #### Convergence Thresholds
 
@@ -522,13 +546,13 @@ These options enable multiple Hessian update methods.
 
 #### Program Commands
 
-| Keyword      | Type   | Default   | Description        |
-| ------------ | ------ | --------- | ------------------ |
-| `gau_comm`   | string | `"g16"`   | Gaussian command   |
-| `orca_comm`  | string | `"orca"`  | ORCA command       |
-| `xtb_comm`   | string | `"xtb"`   | XTB command        |
-| `bagel_comm` | string | `"bagel"` | BAGEL command      |
-| `bagel_model`| string | `""`      | BAGEL model file   |
+| Keyword       | Type   | Default   | Description      |
+| ------------- | ------ | --------- | ---------------- |
+| `gau_comm`    | string | `"g16"`   | Gaussian command |
+| `orca_comm`   | string | `"orca"`  | ORCA command     |
+| `xtb_comm`    | string | `"xtb"`   | XTB command      |
+| `bagel_comm`  | string | `"bagel"` | BAGEL command    |
+| `bagel_model` | string | `""`      | BAGEL model file |
 
 #### ONIOM-Specific
 
@@ -540,26 +564,25 @@ These options enable multiple Hessian update methods.
 
 #### Advanced Settings
 
-| Keyword                 | Type   | Default | Description                             |
-| ----------------------- | ------ | ------- | --------------------------------------- |
-| `charge2`               | integer| —       | Separate charge for state B             |
-| `basis`                 | string | `""`    | Basis set specification                 |
-| `solvent`               | string | `""`    | Solvent model specification             |
-| `dispersion`            | string | `""`    | Dispersion correction                   |
-| `custom_interface_file` | string | `""`    | Path to custom QM interface JSON config |
-| `fixedatoms`            | string | `""`    | Fixed atom indices (e.g., `1,3-5,7`)    |
+| Keyword                 | Type    | Default | Description                             |
+| ----------------------- | ------- | ------- | --------------------------------------- |
+| `charge2`               | integer | —       | Separate charge for state B             |
+| `basis`                 | string  | `""`    | Basis set specification                 |
+| `solvent`               | string  | `""`    | Solvent model specification             |
+| `dispersion`            | string  | `""`    | Dispersion correction                   |
+| `custom_interface_file` | string  | `""`    | Path to custom QM interface JSON config |
+| `fixedatoms`            | string  | `""`    | Fixed atom indices (e.g., `1,3-5,7`)    |
 
 #### Deprecated Keywords (Backward Compatibility)
 
-| New Keyword    | Status     | Description                     |
-| -------------- | ---------- | ------------------------------- |
-| `mult1`        | Deprecated | Multiplicity for state A        |
-| `mult2`        | Deprecated | Multiplicity for state B        |
-| `td1`          | Deprecated | TD-DFT keywords for state A     |
-| `td2`          | Deprecated | TD-DFT keywords for state B     |
-| `state1`       | Deprecated | Excited state index for state A |
-| `state2`       | Deprecated | Excited state index for state B |
-| `use_python_algorithm` | Deprecated | Renamed to `use_direct_hessian` |
+| New Keyword | Status     | Description                     |
+| ----------- | ---------- | ------------------------------- |
+| `mult1`     | Deprecated | Multiplicity for state A        |
+| `mult2`     | Deprecated | Multiplicity for state B        |
+| `td1`       | Deprecated | TD-DFT keywords for state A     |
+| `td2`       | Deprecated | TD-DFT keywords for state B     |
+| `state1`    | Deprecated | Excited state index for state A |
+| `state2`    | Deprecated | Excited state index for state B |
 
 **Note**: Deprecated keywords still work but will show warnings. Please use the new keywords in new input files.
 

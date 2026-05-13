@@ -663,6 +663,14 @@ fn print_configuration(
     println!();
     println!("  Optimizers:");
     println!(
+        "    Use Direct Hessian:       {}",
+        if input_config.use_direct_hessian {
+            "true (default)"
+        } else {
+            "false"
+        }
+    );
+    println!(
         "    Use GEDIIS:               {}",
         if input_config.use_gediis {
             "true"
@@ -1462,8 +1470,8 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let output_ext = get_output_file_base(config.program);
     let initial_a_output = naming.step_state_a(job_dir, 0, output_ext);
     let initial_b_output = naming.step_state_b(job_dir, 0, output_ext);
-    let state_a = qm.read_output(Path::new(&initial_a_output), &geometry, config.state_a)?;
-    let state_b = qm.read_output(Path::new(&initial_b_output), &geometry, config.state_b)?;
+    let mut state_a = qm.read_output(Path::new(&initial_a_output), &geometry, config.state_a)?;
+    let mut state_b = qm.read_output(Path::new(&initial_b_output), &geometry, config.state_b)?;
 
     // NOTE: geometry already contains the correct initial geometry from input_data.geometry
     // QM output geometry should match input geometry for single-point calculations
@@ -1471,8 +1479,17 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Initialize optimization
     let mut opt_state = optimizer::OptimizationState::new(config.max_history);
     let mut x_old = geometry.coords.clone();
-    // Initialize inverse Hessian with diagonal = 0.7 Ang²/Ha (matching Fortran MECP)
-    let mut inv_hessian = optimizer::initialize_inverse_hessian(geometry.coords.len());
+    // Initialize Hessian matrix
+    // NOTE: `inv_hessian` name is kept for minimal code changes, but when
+    // use_direct_hessian is true, this stores a DIRECT Hessian (identity matrix)
+    // matching Python MECP.py `Bk = numpy.eye(ncoord)`.
+    let mut inv_hessian = if config.use_direct_hessian {
+        println!("Using direct Hessian algorithm (PSB update)");
+        optimizer::initialize_hessian_python(geometry.coords.len())
+    } else {
+        // Initialize inverse Hessian with diagonal = 0.7 Å²/Ha (matching Fortran MECP)
+        optimizer::initialize_inverse_hessian(geometry.coords.len())
+    };
 
     // Track last convergence status for non-convergence reporting
     let mut last_conv = optimizer::ConvergenceStatus {
@@ -1520,7 +1537,12 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Compute MECP gradient
-        let mut grad = optimizer::compute_mecp_gradient(&state_a, &state_b, fixed_atoms);
+        // Python algorithm requires Ha/Bohr units; legacy uses Ha/Å
+        let mut grad = if config.use_direct_hessian {
+            optimizer::compute_mecp_gradient_bohr(&state_a, &state_b, fixed_atoms)
+        } else {
+            optimizer::compute_mecp_gradient(&state_a, &state_b, fixed_atoms)
+        };
 
         // Apply constraint forces if constraints are present
         if !constraints.is_empty() {
@@ -1573,9 +1595,13 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                     step, config.switch_step
                 );
             }
-            // BFGS uses inverse Hessian (matching Fortran MECP)
-            // Pass 1.0 as adaptive_scale parameter for compatibility but it won't be used
-            optimizer::bfgs_step(&x_old, &grad, &inv_hessian, &config, 1.0)
+            // BFGS step: direct Hessian or inverse Hessian depending on algorithm
+            if config.use_direct_hessian {
+                optimizer::bfgs_step_python(&x_old, &grad, &inv_hessian, &config)
+            } else {
+                // Legacy: inverse Hessian multiply
+                optimizer::bfgs_step(&x_old, &grad, &inv_hessian, &config, 1.0)
+            }
         } else if config.use_robust_diis {
             // Use new Experimental DIIS implementations
             if config.use_gediis {
@@ -1618,11 +1644,20 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 optimizer::gediis_step(&mut opt_state, &config)
             }
         } else {
-            println!(
-                "Using GDIIS optimizer (step {} >= switch point {})",
-                step, config.switch_step
-            );
-            optimizer::gdiis_step(&mut opt_state, &config)
+            // GDIIS step: Python-matching or legacy
+            if config.use_direct_hessian {
+                println!(
+                    "Using GDIIS optimizer (step {} >= switch point {})",
+                    step, config.switch_step
+                );
+                optimizer::gdiis_step_python(&mut opt_state, &config)
+            } else {
+                println!(
+                    "Using GDIIS optimizer (step {} >= switch point {})",
+                    step, config.switch_step
+                );
+                optimizer::gdiis_step(&mut opt_state, &config)
+            }
         };
 
         // Update geometry
@@ -1693,8 +1728,11 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         manage_orca_wavefunction_files(step, &config, &geometry, job_dir, &naming)?;
 
         // Compute new gradient for Hessian update
-        let mut grad_new =
-            optimizer::compute_mecp_gradient(&state_a_new, &state_b_new, fixed_atoms);
+        let mut grad_new = if config.use_direct_hessian {
+            optimizer::compute_mecp_gradient_bohr(&state_a_new, &state_b_new, fixed_atoms)
+        } else {
+            optimizer::compute_mecp_gradient(&state_a_new, &state_b_new, fixed_atoms)
+        };
 
         // Apply constraint forces to new gradient as well
         if !constraints.is_empty() {
@@ -1718,13 +1756,21 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        // For convergence check and display: ensure gradient is in Ha/Å (threshold units)
+        let grad_for_conv = if config.use_direct_hessian {
+            // Convert from Ha/Bohr back to Ha/Å for threshold comparison
+            &grad_new * crate::config::ANGSTROM_TO_BOHR
+        } else {
+            grad_new.clone()
+        };
+
         // Check convergence
         let conv = optimizer::check_convergence(
             state_a_new.energy,
             state_b_new.energy,
             &x_old,
             &x_new,
-            &grad_new,
+            &grad_for_conv,
             &config,
         );
 
@@ -1744,9 +1790,9 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 (dx * dx + dy * dy + dz * dz).sqrt()
             })
             .fold(0.0, f64::max);
-        let rms_grad = grad_new.norm() / (grad_new.len() as f64).sqrt();
+        let rms_grad = grad_for_conv.norm() / (grad_for_conv.len() as f64).sqrt();
         // Max gradient: full 3D per-atom magnitude sqrt(gx^2+gy^2+gz^2)
-        let max_grad = grad_new
+        let max_grad = grad_for_conv
             .as_slice()
             .chunks(3)
             .map(|chunk| {
@@ -1792,15 +1838,17 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
 
-        // Update inverse Hessian (BFGS formula for H^-1)
-        // Unit standardization: all internal units are now Angstrom-based
-        // - inverse Hessian is in Å²/Ha
-        // - sk (step) is in Å
-        // - yk (gradient difference) is in Ha/Å
+        // Update Hessian
+        // sk (step vector) and yk (gradient difference) for Hessian update
         let sk = &x_new - &x_old;
         let yk = &grad_new - &grad;
-        
-        inv_hessian = optimizer::update_hessian_config_driven(&inv_hessian, &sk, &yk, &config);
+        // When use_direct_hessian is true: direct Hessian with PSB update
+        // Otherwise: inverse Hessian with BFGS update
+        if config.use_direct_hessian {
+            inv_hessian = optimizer::update_hessian_psb(&inv_hessian, &sk, &yk);
+        } else {
+            inv_hessian = optimizer::update_hessian_config_driven(&inv_hessian, &sk, &yk, &config);
+        }
 
         // Add to history for GDIIS/GEDIIS
         // CRITICAL FIX: Use QM-verified geometry, not optimizer prediction
@@ -1846,6 +1894,9 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // CRITICAL FIX: Use QM-verified geometry for next iteration
         // This ensures x_old matches what's in history and avoids drift
         x_old = state_a_new.geometry.coords.clone();
+        // CRITICAL FIX: Update state for next iteration so grad uses the latest QM
+        state_a = state_a_new;
+        state_b = state_b_new;
     }
 
     // Report non-convergence status

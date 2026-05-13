@@ -1038,6 +1038,10 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         // Advanced Hessian update options
         "use_advanced_hessian_update" => config.use_advanced_hessian_update = parse_bool(value),
         "hessian_update_method" => config.hessian_update_method = value.to_lowercase(),
+        // Direct Hessian algorithm (renamed from use_python_algorithm)
+        "use_direct_hessian" | "use_python_algorithm" => {
+            config.use_direct_hessian = parse_bool(value);
+        }
         _ => {}
     }
     Ok(())

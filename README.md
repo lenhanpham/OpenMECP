@@ -1658,7 +1658,7 @@ Cite this project if you use OpenThermo for your research:
 ```bibtex
 @article{pham_omecp_2026,
     title = {OpenMECP: A High-Performance Rust Implementation for the Rigorous Location of Minimum Energy Crossing Points in Chemical Dynamics},
-    url = {https://www.researchgate.net/doi/10.13140/RG.2.2.22380.63363},
+    url = {https://doi.org/10.13140/RG.2.2.21309.73443},
     doi = {10.13140/RG.2.2.21309.73443},
     urldate = {2026},
     author = {Pham, Le Nhan},

@@ -81,7 +81,7 @@ Where `x_norm = (f1 - f2) / |f1 - f2|` is the normalized gradient difference.
 
 ### QM Program Support
 
-- **Gaussian**: DFT, TD-DFT, MP2, CASSCF
+- **Gaussian** (recommended): DFT, TD-DFT, MP2, CASSCF
 - **ORCA**: DFT, TD-DFT, CASSCF
 - **Custom**: User-defined via JSON configuration
 
@@ -438,17 +438,18 @@ H  1.2  0.0  0.5
 
 #### Optimizer Settings
 
-| Keyword              | Type    | Default | Description                                              |
-| -------------------- | ------- | ------- | -------------------------------------------------------- |
-| `use_direct_hessian` | boolean | `true`  | Direct Hessian+PSB (recommended) or inverse Hessian+BFGS |
-| `use_gediis`         | boolean | `false` | Use GEDIIS optimizer instead of GDIIS                    |
-| `use_hybrid_gediis`  | boolean | `false` | Use dynamic hybrid GDIIS/GEDIIS optimizer                |
-| `switch_step`        | integer | `3`     | Step to switch from BFGS to DIIS optimizers              |
-| `max_history`        | integer | `4`     | Max iterations used for DIIS extrapolation               |
-| `smart_history`      | boolean | `false` | Smart history instead of first in first out              |
-| `reduced_factor`     | float   | `0.5`   | Step size reduction factor for GDIIS                     |
-| `bfgs_rho`           | float   | `15.0`  | Scaling factor for BFGS step size                        |
-| `print_checkpoint`   | boolean | `false` | Enable/disable checkpoint JSON file generation           |
+| Keyword              | Type    | Default | Description                                                       |
+| -------------------- | ------- | ------- | ----------------------------------------------------------------- |
+| `use_direct_hessian` | boolean | `true`  | Direct Hessian+PSB (recommended) or inverse Hessian+BFGS          |
+| `use_gediis`         | boolean | `false` | Use GEDIIS optimizer instead of GDIIS                             |
+| `use_hybrid_gediis`  | boolean | `false` | Use dynamic hybrid GDIIS/GEDIIS optimizer                         |
+| `switch_step`        | integer | `3`     | Step to switch from BFGS to DIIS optimizers                       |
+| `max_history`        | integer | `4`     | Max iterations used for DIIS extrapolation                        |
+| `smart_history`      | boolean | `false` | Smart history instead of first in first out                       |
+| `reduced_factor`     | float   | `0.5`   | Step size reduction factor for GDIIS                              |
+| `bfgs_rho`           | float   | `15.0`  | Scaling factor for BFGS step size                                 |
+| `print_level`        | integer | `1`     | Output verbosity: `0`=quiet, `1`=normal, `2`=verbose (DIIS debug) |
+| `print_checkpoint`   | boolean | `false` | Enable/disable checkpoint JSON file generation                    |
 
 #### Advanced DIIS Options (Step Validation)
 
@@ -458,14 +459,14 @@ Standard GDIIS/GEDIIS can occasionally produce wild extrapolations when the DIIS
 
 **Dependency:** `use_robust_diis = true` is the master switch. The other options below only take effect when `use_robust_diis = true` is set. If `use_robust_diis` remains `false` (default), all the options below are ignored regardless of their values.
 
-| Keyword              | Type    | Default      | Activation                    | Description                                                          |
-| -------------------- | ------- | ------------ | ----------------------------- | -------------------------------------------------------------------- |
-| `use_robust_diis`    | boolean | `false`      | standalone                    | Enable DIIS step validation (master switch) |
-| `gediis_variant`     | string  | `"auto"`     | requires `use_robust_diis=true` AND `use_gediis=true` | `auto`, `rfo`, `energy`, `simultaneous` |
-| `gdiis_cosine_check` | string  | `"standard"` | requires `use_robust_diis=true` | Cosine threshold: `none`, `zero`, `standard` (≥0.71), `variable`, `strict` (≥0.866) |
-| `gdiis_coeff_check`  | string  | `"regular"`  | requires `use_robust_diis=true` | Coefficient bounds: `none`, `regular`, `force_recent`, `combined` |
-| `n_neg`              | integer | `0`          | requires `use_robust_diis=true` | `0` for minimum search, `1` for transition-state search |
-| `gediis_sim_switch`  | float   | `0.0025`     | requires `use_robust_diis=true` | RMS error threshold controlling GEDIIS variant switching |
+| Keyword              | Type    | Default      | Activation                                            | Description                                                                         |
+| -------------------- | ------- | ------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `use_robust_diis`    | boolean | `false`      | standalone                                            | Enable DIIS step validation (master switch)                                         |
+| `gediis_variant`     | string  | `"auto"`     | requires `use_robust_diis=true` AND `use_gediis=true` | `auto`, `rfo`, `energy`, `simultaneous`                                             |
+| `gdiis_cosine_check` | string  | `"standard"` | requires `use_robust_diis=true`                       | Cosine threshold: `none`, `zero`, `standard` (≥0.71), `variable`, `strict` (≥0.866) |
+| `gdiis_coeff_check`  | string  | `"regular"`  | requires `use_robust_diis=true`                       | Coefficient bounds: `none`, `regular`, `force_recent`, `combined`                   |
+| `n_neg`              | integer | `0`          | requires `use_robust_diis=true`                       | `0` for minimum search, `1` for transition-state search                             |
+| `gediis_sim_switch`  | float   | `0.0025`     | requires `use_robust_diis=true`                       | RMS error threshold controlling GEDIIS variant switching                            |
 
 **GEDIIS Variants** (only active when `use_robust_diis=true` AND `use_gediis=true`):
 
@@ -491,9 +492,9 @@ The default algorithm uses a **PSB** (Powell-Symmetric-Broyden) Hessian update, 
 
 **Dependency:** `use_advanced_hessian_update = true` is the master switch. `hessian_update_method` is only checked when this is `true`. If `use_advanced_hessian_update` remains `false` (default), the default PSB update is always used.
 
-| Keyword                       | Type    | Default  | Activation                    | Description                                                              |
-| ----------------------------- | ------- | -------- | ----------------------------- | ------------------------------------------------------------------------ |
-| `use_advanced_hessian_update` | boolean | `false`  | standalone                    | Master switch for alternative Hessian formulas |
+| Keyword                       | Type    | Default  | Activation                                  | Description                                                |
+| ----------------------------- | ------- | -------- | ------------------------------------------- | ---------------------------------------------------------- |
+| `use_advanced_hessian_update` | boolean | `false`  | standalone                                  | Master switch for alternative Hessian formulas             |
 | `hessian_update_method`       | string  | `"bfgs"` | requires `use_advanced_hessian_update=true` | `bfgs`, `bfgs_pure`, `powell`, `bofill`, `bfgs_powell_mix` |
 
 **Hessian Update Methods** (only active when `use_advanced_hessian_update=true`):
@@ -1649,6 +1650,22 @@ n_neg = 1
 **Symptoms**: Many optimization steps required
 
 **Solutions**: add more steps
+
+## Cite
+
+Cite this project if you use OpenThermo for your research:
+
+```bibtex
+@article{pham_omecp_2026,
+    title = {OpenMECP: A High-Performance Rust Implementation for the Rigorous Location of Minimum Energy Crossing Points in Chemical Dynamics},
+    url = {https://www.researchgate.net/doi/10.13140/RG.2.2.22380.63363},
+    doi = {10.13140/RG.2.2.21309.73443},
+    urldate = {2026},
+    author = {Pham, Le Nhan},
+    year = {2026},
+    note = {Publisher: Preprint},
+}
+```
 
 ## License
 

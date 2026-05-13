@@ -398,7 +398,7 @@ impl Error for ConstraintError {}
 
 /// Applies constraint forces using the Lagrange multiplier method.
 ///
-/// This function implements Python MECP.py compatible constraint handling by:
+/// This function implements compatible constraint handling by:
 /// 1. First step: Diagonal λ initialization: λ = - (c·g)/(c·c)
 /// 2. Subsequent steps: Reuse previous λ values
 /// 3. Apply constraint forces: F_new = F_old + C^T * λ
@@ -406,7 +406,7 @@ impl Error for ConstraintError {}
 ///
 /// # Python Compatibility
 ///
-/// Matches Python MECP.py `addConstLag` behavior exactly:
+/// Matches `addConstLag` behavior exactly:
 /// - Diagonal preconditioner instead of full C Cᵀ λ = -g(x) system
 /// - λ reuse prevents jumps and maintains constraint stability
 /// - Returns violations for extended gradient [F + Cᵀλ, violations]
@@ -459,12 +459,12 @@ pub fn add_constraint_lagrange(
     let jacobian = build_constraint_jacobian(geometry, constraints);
     let violations = evaluate_constraints(geometry, constraints);
 
-    // === FIRST STEP: Initialize λ using diagonal approximation (like Python) ===
+    // === FIRST STEP: Initialize λ using diagonal approximation ===
     // Check if all lambdas are zero (first step)
     let first_step = lambdas.iter().all(|&l| l == 0.0);
     if first_step {
         let g = -forces.clone(); // raw gradient
-        let total_constraints = n_constraints as f64; // Constraint count multiplier (Python compatibility)
+        let total_constraints = n_constraints as f64; // Constraint count multiplier 
         for i in 0..n_constraints {
             let c_i = jacobian.row(i);
             let c_vec = DVector::from_vec(c_i.iter().cloned().collect());

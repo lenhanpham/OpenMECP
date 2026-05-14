@@ -2219,8 +2219,20 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
         opt_state.lambda_de = Some(new_lambda_de);
     }
 
-    // 5. Calculate step: X_new = X_interp + combined_interp (option c)
-    let mut x_new = x_new_prime + &combined_prime;
+    // 5. Calculate step: X_new = X_interp - H⁻¹·combined_interp (Newton correction)
+    // The combined gradient has mixed units (Ha + Ha/Å) and cannot be added directly
+    // to coordinates. Use proper Newton correction via mean inverse Hessian, matching
+    // the standard GDIIS approach (Fortran: X_new = X_interp + UH · ΣCi·DQQi).
+    let mut h_mean = DMatrix::zeros(
+        opt_state.hess_history[0].nrows(),
+        opt_state.hess_history[0].ncols(),
+    );
+    for hess in &opt_state.hess_history {
+        h_mean += hess;
+    }
+    h_mean /= n as f64;
+    let correction = &h_mean * &combined_prime;
+    let mut x_new = x_new_prime - &correction;
 
     let last_geom = opt_state.geom_history.back().unwrap();
     let mut step = &x_new - last_geom;

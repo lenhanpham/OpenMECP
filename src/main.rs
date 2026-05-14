@@ -1547,26 +1547,31 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
-        // Compute MECP gradient (decomposed: f_vec in Ha, g_vec in Ha/Å)
-        let mut mecp_grad = optimizer::compute_mecp_gradient(&state_a, &state_b, fixed_atoms);
+        // Compute MECP gradient
+        // Algorithm requires Ha/Bohr units; legacy uses Ha/Å
+        let mut grad = if config.use_direct_hessian {
+            optimizer::compute_mecp_gradient_bohr(&state_a, &state_b, fixed_atoms)
+        } else {
+            optimizer::compute_mecp_gradient(&state_a, &state_b, fixed_atoms)
+        };
 
-        // Apply constraint forces to g_vec only (pure Ha/Å), f_vec left unchanged
+        // Apply constraint forces if constraints are present
         if !constraints.is_empty() {
             println!("Applying constraint forces using Lagrange multipliers");
             match constraints::add_constraint_lagrange(
                 &geometry,
-                mecp_grad.g_vec.clone(),
+                grad.clone(),
                 constraints,
                 &mut opt_state.lambdas,
             ) {
-                Ok((constrained_g_vec, violations)) => {
-                    // Rebuild combined from constrained g_vec + original f_vec
-                    mecp_grad = optimizer::MecpGradient::new(
-                        mecp_grad.f_vec.clone(),
-                        constrained_g_vec,
-                    );
+                Ok((constrained_grad, violations)) => {
+                    grad = constrained_grad;
+                    println!("Constraint forces applied successfully");
+
+                    // Store violations for extended gradient (Phase 3)
                     opt_state.constraint_violations = violations.clone();
 
+                    // Report constraint status
                     constraints::report_constraint_status(
                         &geometry,
                         constraints,
@@ -1579,12 +1584,6 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-
-        // Extract components for different consumers
-        // combined → optimizer step direction (option c, preserves mixed)
-        // g_vec → Hessian update, convergence check (pure Ha/Å)
-        // combined → optimizer step direction (option c)
-        // g_vec → Hessian update, convergence check (pure Ha/Å)
 
         // Choose optimizer based on switch_step configuration
         let use_bfgs = if config.switch_step >= config.max_steps {
@@ -1608,15 +1607,11 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
             // BFGS step: direct Hessian or inverse Hessian depending on algorithm
-            // For direct Hessian: use combined gradient (g_vec + f_vec) so the
-            // Newton direction includes the f-vector energy-driving component.
-            // For inverse Hessian: use g_vec only since H_inv (Ų/Ha) × f_vec (Ha)
-            // would produce Å², not Å.
             if config.use_direct_hessian {
-                optimizer::bfgs_step_direct(&x_old, &mecp_grad.combined, &inv_hessian, &config)
+                optimizer::bfgs_step_direct(&x_old, &grad, &inv_hessian, &config)
             } else {
-                // inverse Hessian multiply — pure Ha/Å only
-                optimizer::bfgs_step(&x_old, &mecp_grad.g_vec, &inv_hessian, &config, 1.0)
+                // Legacy: inverse Hessian multiply
+                optimizer::bfgs_step(&x_old, &grad, &inv_hessian, &config, 1.0)
             }
         } else if config.use_robust_diis {
             // Use new Experimental DIIS implementations
@@ -1743,22 +1738,24 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Manage ORCA wavefunction files 
         manage_orca_wavefunction_files(step, &config, &geometry, job_dir, &naming)?;
 
-        // Compute new gradient (decomposed: f_vec in Ha, g_vec in Ha/Å)
-        let mut mecp_grad_new = optimizer::compute_mecp_gradient(&state_a_new, &state_b_new, fixed_atoms);
+        // Compute new gradient for Hessian update
+        let mut grad_new = if config.use_direct_hessian {
+            optimizer::compute_mecp_gradient_bohr(&state_a_new, &state_b_new, fixed_atoms)
+        } else {
+            optimizer::compute_mecp_gradient(&state_a_new, &state_b_new, fixed_atoms)
+        };
 
-        // Apply constraint forces to g_vec only (pure Ha/Å)
+        // Apply constraint forces to new gradient as well
         if !constraints.is_empty() {
             match constraints::add_constraint_lagrange(
                 &geometry,
-                mecp_grad_new.g_vec.clone(),
+                grad_new.clone(),
                 constraints,
                 &mut opt_state.lambdas,
             ) {
-                Ok((constrained_g_vec_new, violations_new)) => {
-                    mecp_grad_new = optimizer::MecpGradient::new(
-                        mecp_grad_new.f_vec.clone(),
-                        constrained_g_vec_new,
-                    );
+                Ok((constrained_grad_new, violations_new)) => {
+                    grad_new = constrained_grad_new;
+                    // Store violations for extended gradient (Phase 3)
                     opt_state.constraint_violations = violations_new.clone();
                 }
                 Err(e) => {
@@ -1770,14 +1767,21 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // g_vec is pure Ha/Å — use directly for convergence check and display
+        // For convergence check and display: ensure gradient is in Ha/Å (threshold units)
+        let grad_for_conv = if config.use_direct_hessian {
+            // Convert from Ha/Bohr back to Ha/Å for threshold comparison
+            &grad_new * crate::config::ANGSTROM_TO_BOHR
+        } else {
+            grad_new.clone()
+        };
+
         // Check convergence
         let conv = optimizer::check_convergence(
             state_a_new.energy,
             state_b_new.energy,
             &x_old,
             &x_new,
-            &mecp_grad_new.g_vec,
+            &grad_for_conv,
             &config,
         );
 
@@ -1797,9 +1801,9 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 (dx * dx + dy * dy + dz * dz).sqrt()
             })
             .fold(0.0, f64::max);
-        let rms_grad = mecp_grad_new.g_vec.norm() / (mecp_grad_new.g_vec.len() as f64).sqrt();
+        let rms_grad = grad_for_conv.norm() / (grad_for_conv.len() as f64).sqrt();
         // Max gradient: full 3D per-atom magnitude sqrt(gx^2+gy^2+gz^2)
-        let max_grad = mecp_grad_new.g_vec
+        let max_grad = grad_for_conv
             .as_slice()
             .chunks(3)
             .map(|chunk| {
@@ -1821,8 +1825,8 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         last_rms_disp = rms_disp;
         last_max_disp = max_disp;
 
-        // Print total displacement norm in Angstrom
-        println!("Displacement norm = {:.15} Å", disp_norm);
+        // Print total displacement norm 
+        println!("{:.15}", disp_norm);
 
         // Print energy and convergence status
         println!(
@@ -1846,13 +1850,11 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Update Hessian
-        // sk (step vector in Å) and yk (combined gradient difference)
-        // Use the full combined gradient (g_vec + f_vec) so the Hessian captures
-        // the f-vector (energy-driving) curvature, not just the perpendicular component.
-        let combined = &mecp_grad.g_vec + &mecp_grad.f_vec;
-        let combined_new = &mecp_grad_new.g_vec + &mecp_grad_new.f_vec;
+        // sk (step vector) and yk (gradient difference) for Hessian update
         let sk = &x_new - &x_old;
-        let yk = &combined_new - &combined;
+        let yk = &grad_new - &grad;
+        // When use_direct_hessian is true: direct Hessian with PSB update
+        // Otherwise: inverse Hessian with BFGS update
         if config.use_direct_hessian {
             inv_hessian = optimizer::update_hessian_psb(&inv_hessian, &sk, &yk);
         } else {
@@ -1860,11 +1862,13 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Add to history for GDIIS/GEDIIS
+        // CRITICAL FIX: Use QM-verified geometry, not optimizer prediction
+        // Even though single-point calcs don't optimize geometry, using state_a_new.geometry.coords
+        // ensures consistency and avoids any potential numerical drift
         let energy_diff = state_a_new.energy - state_b_new.energy;
         opt_state.add_to_history(
             state_a_new.geometry.coords.clone(),
-            mecp_grad_new.g_vec.clone(),   // g_vec in Ha/Å — pure gradient for DIIS
-            mecp_grad_new.f_vec.clone(),   // f_vec in Ha — for combined reconstruction
+            grad_new.clone(),
             inv_hessian.clone(),
             energy_diff,
             opt_state.lambdas.clone(),
@@ -2667,8 +2671,7 @@ fn run_single_optimization(
             config.state_b,
         )?;
 
-        let mecp_grad = optimizer::compute_mecp_gradient(&state_a, &state_b, fixed_atoms);
-        let grad = &mecp_grad.combined;  // use combined for step direction (option c)
+        let grad = optimizer::compute_mecp_gradient(&state_a, &state_b, fixed_atoms);
 
         let x_new = if !constraints.is_empty() {
             println!("Using Lagrange multiplier constrained optimization");
@@ -2807,14 +2810,14 @@ fn run_single_optimization(
             &geometry,
             config.state_b,
         )?;
-        let mecp_grad_new = optimizer::compute_mecp_gradient(&state_a_new, &state_b_new, fixed_atoms);
+        let grad_new = optimizer::compute_mecp_gradient(&state_a_new, &state_b_new, fixed_atoms);
 
         let conv = optimizer::check_convergence(
             state_a_new.energy,
             state_b_new.energy,
             &x_old,
             &x_new,
-            &mecp_grad_new.g_vec,
+            &grad_new,
             config,
         );
 
@@ -2833,9 +2836,9 @@ fn run_single_optimization(
                 (dx * dx + dy * dy + dz * dz).sqrt()
             })
             .fold(0.0, f64::max);
-        let rms_grad = mecp_grad_new.g_vec.norm() / (mecp_grad_new.g_vec.len() as f64).sqrt();
+        let rms_grad = grad_new.norm() / (grad_new.len() as f64).sqrt();
         // Max gradient: full 3D per-atom magnitude sqrt(gx^2+gy^2+gz^2)
-        let max_grad = mecp_grad_new.g_vec
+        let max_grad = grad_new
             .as_slice()
             .chunks(3)
             .map(|chunk| {
@@ -2870,19 +2873,19 @@ fn run_single_optimization(
         }
 
         // Update inverse Hessian (BFGS formula for H^-1)
+        // Unit standardization: all internal units are now Angstrom-based
         // - inverse Hessian is in Å²/Ha
         // - sk (step) is in Å
-        // - yk (gradient difference) is pure Ha/Å from g_vec
+        // - yk (gradient difference) is in Ha/Å
         let sk = &x_new - &x_old;
-        let yk = &mecp_grad_new.g_vec - &mecp_grad.g_vec;
+        let yk = &grad_new - &grad;
         
         inv_hessian = optimizer::update_hessian_config_driven(&inv_hessian, &sk, &yk, config);
         
         let energy_diff = state_a_new.energy - state_b_new.energy;
         opt_state.add_to_history(
             state_a_new.geometry.coords.clone(),
-            mecp_grad_new.g_vec.clone(),
-            mecp_grad_new.f_vec.clone(),
+            grad_new.clone(),
             inv_hessian.clone(),
             energy_diff,
             opt_state.lambdas.clone(),
@@ -3831,8 +3834,7 @@ fn run_restart(
         )?;
 
         // Compute MECP gradient
-        let mecp_grad = optimizer::compute_mecp_gradient(&state_a, &state_b, fixed_atoms);
-        let grad = &mecp_grad.combined;  // combined for step direction (option c)
+        let grad = optimizer::compute_mecp_gradient(&state_a, &state_b, fixed_atoms);
 
         // Choose optimizer
         let x_new = if !constraints.is_empty() {

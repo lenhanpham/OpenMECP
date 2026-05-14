@@ -59,6 +59,40 @@ pub use crate::gediis::{
 };
 pub use crate::hessian_update::HessianUpdateMethod;
 
+/// Holds the decomposed MECP effective gradient.
+///
+/// The Harvey algorithm combines two physically distinct components:
+/// - `f_vec`: drives the energy difference to zero (pure Hartree)
+/// - `g_vec`: minimizes energy on the crossing seam (pure Ha/Å)
+///
+/// The `combined` field is `f_vec + g_vec` used only for the step direction.
+/// Downstream consumers that expect pure Ha/Å (Hessian update, DIIS error
+/// vectors, convergence check) should use `g_vec`.
+#[derive(Debug, Clone)]
+pub struct MecpGradient {
+    /// f-vector: (E1 - E2) * x_hat — pure Hartree (Ha)
+    pub f_vec: DVector<f64>,
+    /// g-vector: g1 - (x_hat·g1) * x_hat — pure Hartree/Angstrom (Ha/Å)
+    pub g_vec: DVector<f64>,
+    /// Combined: f_vec + g_vec — mixed units, used for step direction only
+    pub combined: DVector<f64>,
+}
+
+impl MecpGradient {
+    /// Creates a new `MecpGradient` from its two components.
+    ///
+    /// # Arguments
+    ///
+    /// * `f_vec` - Energy-difference drive term in Hartree (Ha)
+    /// * `g_vec` - Perpendicular gradient in Hartree/Angstrom (Ha/Å)
+    ///
+    /// `combined` is automatically computed as `f_vec + g_vec`.
+    pub fn new(f_vec: DVector<f64>, g_vec: DVector<f64>) -> Self {
+        let combined = &f_vec + &g_vec;
+        Self { f_vec, g_vec, combined }
+    }
+}
+
 /// Tracks optimization state and history for adaptive optimization algorithms.
 ///
 /// This struct maintains the history of geometries, gradients, Hessians, and energies
@@ -101,13 +135,16 @@ pub struct OptimizationState {
     ///
     /// Validates: Requirement 7.1
     pub geom_history: VecDeque<DVector<f64>>,
-    /// History of MECP gradients in Hartree/Angstrom (Ha/Å) for DIIS methods.
+    /// History of MECP g-vectors (perpendicular component) in Ha/Å for DIIS.
     ///
-    /// Each entry is the effective MECP gradient computed at a previous step.
-    /// Units: Hartree/Angstrom (Ha/Å) - converted from native QM output for internal consistency.
-    ///
-    /// Validates: Requirement 7.2
+    /// This stores only the pure gradient component (g_vec), NOT the mixed
+    /// combined gradient. Units: Hartree/Angstrom (Ha/Å).
     pub grad_history: VecDeque<DVector<f64>>,
+    /// History of f-vectors (energy difference drive term) in Hartree (Ha).
+    ///
+    /// Used alongside grad_history in GDIIS to reconstruct the combined
+    /// step direction. Units: Hartree (Ha).
+    pub f_vec_history: VecDeque<DVector<f64>>,
     /// History of approximate inverse Hessian matrices in Ų/Ha for BFGS updates.
     ///
     /// Each entry is the inverse Hessian approximation at a previous step.
@@ -166,6 +203,7 @@ impl OptimizationState {
             constraint_violations: DVector::zeros(0),
             geom_history: VecDeque::with_capacity(max_history),
             grad_history: VecDeque::with_capacity(max_history),
+            f_vec_history: VecDeque::with_capacity(max_history),
             hess_history: VecDeque::with_capacity(max_history),
             energy_history: VecDeque::with_capacity(max_history),
             displacement_history: VecDeque::with_capacity(max_history),
@@ -256,6 +294,7 @@ impl OptimizationState {
         &mut self,
         geom: DVector<f64>,
         grad: DVector<f64>,
+        f_vec: DVector<f64>,
         hess: DMatrix<f64>,
         energy: f64,
         lambdas: Vec<f64>,
@@ -263,36 +302,32 @@ impl OptimizationState {
         use_smart_history: bool,
     ) {
         if use_smart_history {
-            // Smart history management: remove worst point
-            self.add_to_history_smart(geom, grad, hess, energy, lambdas, lambda_de);
+            self.add_to_history_smart(geom, grad, f_vec, hess, energy, lambdas, lambda_de);
         } else {
-            // Traditional FIFO: remove oldest point
-            self.add_to_history_fifo(geom, grad, hess, energy, lambdas, lambda_de);
+            self.add_to_history_fifo(geom, grad, f_vec, hess, energy, lambdas, lambda_de);
         }
     }
 
-    /// Traditional FIFO history management (removes oldest point).
-    ///
-    /// This is the default and recommended approach for most calculations.
     fn add_to_history_fifo(
         &mut self,
         geom: DVector<f64>,
         grad: DVector<f64>,
+        f_vec: DVector<f64>,
         hess: DMatrix<f64>,
         energy: f64,
         lambdas: Vec<f64>,
         lambda_de: Option<f64>,
     ) {
-        // Calculate displacement from previous geometry
         let displacement = if let Some(last_geom) = self.geom_history.back() {
             (&geom - last_geom).norm()
         } else {
-            0.0 // First step has no previous geometry
+            0.0
         };
 
         if self.geom_history.len() >= self.max_history {
             self.geom_history.pop_front();
             self.grad_history.pop_front();
+            self.f_vec_history.pop_front();
             self.hess_history.pop_front();
             self.energy_history.pop_front();
             self.displacement_history.pop_front();
@@ -301,6 +336,7 @@ impl OptimizationState {
         }
         self.geom_history.push_back(geom);
         self.grad_history.push_back(grad);
+        self.f_vec_history.push_back(f_vec);
         self.hess_history.push_back(hess);
         self.energy_history.push_back(energy);
         self.displacement_history.push_back(displacement);
@@ -308,17 +344,11 @@ impl OptimizationState {
         self.lambda_de_history.push_back(lambda_de);
     }
 
-    /// Smart history management (removes worst point based on scoring).
-    ///
-    /// **CRITICAL FOR MECP**: energy_history stores the gap |E1 - E2|.
-    /// We must PROTECT points near the crossing seam (small gap) and
-    /// REMOVE points far from degeneracy (large gap).
-    ///
-    /// Experimental feature that may improve convergence in some cases.
     fn add_to_history_smart(
         &mut self,
         geom: DVector<f64>,
         grad: DVector<f64>,
+        f_vec: DVector<f64>,
         hess: DMatrix<f64>,
         energy: f64,
         lambdas: Vec<f64>,
@@ -334,6 +364,7 @@ impl OptimizationState {
         // Always add the new point first
         self.geom_history.push_back(geom);
         self.grad_history.push_back(grad);
+        self.f_vec_history.push_back(f_vec);
         self.hess_history.push_back(hess);
         self.energy_history.push_back(energy);
         self.displacement_history.push_back(displacement);
@@ -429,6 +460,7 @@ impl OptimizationState {
         // Remove the worst point (preserves order)
         self.geom_history.remove(worst_idx);
         self.grad_history.remove(worst_idx);
+        self.f_vec_history.remove(worst_idx);
         self.hess_history.remove(worst_idx);
         self.energy_history.remove(worst_idx);
         self.displacement_history.remove(worst_idx);
@@ -594,7 +626,7 @@ pub fn compute_mecp_gradient(
     state_a: &State,
     state_b: &State,
     fixed_atoms: &[usize],
-) -> DVector<f64> {
+) -> MecpGradient {
     // Forces are in Ha/Å (converted from native QM output in qm_interface)
     // gradient = -force
     
@@ -609,82 +641,34 @@ pub fn compute_mecp_gradient(
     
     // Avoid division by zero
     if x_norm < 1e-10 {
-        return DVector::zeros(x.len());
+        let zero = DVector::zeros(x.len());
+        return MecpGradient::new(zero.clone(), zero);
     }
     
     // Normalized gradient difference direction (unit vector, dimensionless)
-    // x_hat = (g1 - g2) / |g1 - g2|
     let x_hat = &x / x_norm;
     
-    // f-vector (parallel component): Harvey et al. algorithm, Chem. Phys. Lett. 1994
-    // f_vec = (E1 - E2) * x_hat  [Ha]
-    // Drives energy difference to zero
-    let parallel_term = &x_hat * de;
+    // f-vector (parallel component): Harvey et al. algorithm
+    // f_vec = (E1 - E2) * x_hat  [Ha]  — drives energy difference to zero
+    let mut f_vec = &x_hat * de;
     
     // g-vector (perpendicular component): minimizes energy on the seam
     // g_vec = g1 - (x_hat · g1) * x_hat  [Ha/Å]
-    let dot = g1.dot(&x_hat); // (f1 · x_hat) in Ha/Å
-    let perpendicular_term = &g1 - &x_hat * dot; // Ha/Å
+    let dot = g1.dot(&x_hat); // (g1 · x_hat) in Ha/Å
+    let mut g_vec = &g1 - &x_hat * dot; // Ha/Å
     
-    // Combined effective gradient (mixed units: Ha + Ha/Å, intentional in Harvey algorithm)
-    let mut g_eff = parallel_term + perpendicular_term;
-    
-    // Zero fixed atoms
+    // Zero fixed atoms in both components
     for &atom_idx in fixed_atoms {
         let start = atom_idx * 3;
-        g_eff[start] = 0.0;
-        g_eff[start + 1] = 0.0;
-        g_eff[start + 2] = 0.0;
+        f_vec[start] = 0.0;
+        f_vec[start + 1] = 0.0;
+        f_vec[start + 2] = 0.0;
+        g_vec[start] = 0.0;
+        g_vec[start + 1] = 0.0;
+        g_vec[start + 2] = 0.0;
     }
     
-    g_eff
-}
-
-/// Computes MECP gradient with forces in Ha/Bohr (matching exactly).
-///
-/// State.forces from the QM interface are in Ha/Å (converted from native Ha/Bohr).
-/// This function converts back to Ha/Bohr so the direct Hessian algorithm
-/// (bfgs_step_direct, update_hessian_psb, gdiis_step_direct) operates on the
-/// same units as the reference implementation.
-///
-/// The Harvey algorithm mixes Ha (from f-vector) with force units (Ha/Bohr here),
-/// which is dimensionally inconsistent but required for numerical compatibility.
-pub fn compute_mecp_gradient_bohr(
-    state_a: &State,
-    state_b: &State,
-    fixed_atoms: &[usize],
-) -> DVector<f64> {
-    // State.forces are in Ha/Å (converted from native QM output at the interface boundary).
-    // Convert back to Ha/Bohr for algorithm compatibility.
-    // 1 Ha/Bohr = BOHR_TO_ANGSTROM Ha/Å  (0.5291772489)
-    let f1 = (-state_a.forces.clone()) * crate::config::BOHR_TO_ANGSTROM;
-    let f2 = (-state_b.forces.clone()) * crate::config::BOHR_TO_ANGSTROM;
-
-    let de = state_a.energy - state_b.energy;
-
-    let x = &f1 - &f2;
-    let x_norm = x.norm();
-
-    if x_norm < 1e-10 {
-        return DVector::zeros(x.len());
-    }
-
-    let x_hat = &x / x_norm;
-
-    let parallel_term = &x_hat * de;
-    let dot = f1.dot(&x_hat);
-    let perpendicular_term = &f1 - &x_hat * dot;
-
-    let mut g_eff = parallel_term + perpendicular_term;
-
-    for &atom_idx in fixed_atoms {
-        let start = atom_idx * 3;
-        g_eff[start] = 0.0;
-        g_eff[start + 1] = 0.0;
-        g_eff[start + 2] = 0.0;
-    }
-
-    g_eff
+    MecpGradient::new(f_vec, g_vec)
 }
 
 /// Performs a BFGS optimization step.
@@ -1219,16 +1203,17 @@ pub fn robust_gdiis_step(
     optimizer.cosine_check = cosine_mode.unwrap_or(CosineCheckMode::Standard);
     optimizer.coeff_check = coeff_mode.unwrap_or(CoeffCheckMode::Regular);
 
-    // Compute error vectors (Newton steps)
+    // Compute error vectors (Newton steps) using combined gradient
     let errors: VecDeque<DVector<f64>> = opt_state
-        .grad_history
+        .geom_history
         .iter()
-        .zip(opt_state.hess_history.iter())
-        .map(|(g, h)| {
-            h.clone()
+        .enumerate()
+        .map(|(i, _)| {
+            let combined = &opt_state.grad_history[i] + &opt_state.f_vec_history[i];
+            opt_state.hess_history[i].clone()
                 .lu()
-                .solve(g)
-                .unwrap_or_else(|| g.clone())
+                .solve(&combined)
+                .unwrap_or_else(|| combined)
         })
         .collect();
 
@@ -1291,9 +1276,16 @@ pub fn robust_gediis_step(
     let cfg = gediis_config.unwrap_or_default();
     let mut optimizer = GediisOptimizer::with_config(cfg);
 
-    // Compute quadratic steps (H^-1 * g)
-    let quad_steps: VecDeque<DVector<f64>> = opt_state
-        .grad_history
+    // Build combined gradient history (g_vec + f_vec) for B-matrix and interpolation
+    let combined_grads: VecDeque<DVector<f64>> = opt_state
+        .geom_history
+        .iter()
+        .enumerate()
+        .map(|(i, _)| &opt_state.grad_history[i] + &opt_state.f_vec_history[i])
+        .collect();
+
+    // Compute quadratic steps (H^-1 * combined) using combined gradient
+    let quad_steps: VecDeque<DVector<f64>> = combined_grads
         .iter()
         .zip(opt_state.hess_history.iter())
         .map(|(g, h)| {
@@ -1306,7 +1298,7 @@ pub fn robust_gediis_step(
 
     match optimizer.compute_step(
         &opt_state.geom_history,
-        &opt_state.grad_history,
+        &combined_grads,
         &opt_state.energy_history,
         Some(&quad_steps),
     ) {
@@ -1556,6 +1548,7 @@ pub fn check_convergence(
 /// If the Hessian is singular, falls back to using the gradient directly.
 fn compute_error_vectors(
     grads: &VecDeque<DVector<f64>>,
+    f_vecs: &VecDeque<DVector<f64>>,
     hessians: &VecDeque<DMatrix<f64>>,
 ) -> Vec<DVector<f64>> {
     let n = grads.len();
@@ -1574,9 +1567,12 @@ fn compute_error_vectors(
     // NOTE: hess_history stores INVERSE Hessians (from BFGS update), so
     // h_mean = mean(H_inv). The Newton step is H_inv * g, i.e. direct
     // matrix-vector multiply — NOT lu().solve() which would double-invert.
+    // Use combined gradient (g_vec + f_vec) so the error subspace matches
+    // the correction step, which also uses the combined gradient.
     grads
         .iter()
-        .map(|grad| &h_mean * grad)
+        .zip(f_vecs.iter())
+        .map(|(g, f)| &h_mean * (g + f))
         .collect()
 }
 
@@ -1691,8 +1687,8 @@ fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
 pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector<f64> {
     let n = opt_state.geom_history.len();
 
-    // Error vectors are now correctly computed with the mean Hessian inside this function
-    let errors = compute_error_vectors(&opt_state.grad_history, &opt_state.hess_history);
+    // Error vectors use combined gradient (g_vec + f_vec) to match correction step
+    let errors = compute_error_vectors(&opt_state.grad_history, &opt_state.f_vec_history, &opt_state.hess_history);
     let b_matrix = build_b_matrix(&errors);
 
     let mut rhs = DVector::zeros(n + 1);
@@ -1743,6 +1739,8 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         }
         let last_geom = opt_state.geom_history.back().unwrap();
         let last_grad = opt_state.grad_history.back().unwrap();
+        let last_f = opt_state.f_vec_history.back().unwrap();
+        let combined_last = last_grad + last_f;
         let mut h_mean = DMatrix::zeros(
             opt_state.hess_history[0].nrows(),
             opt_state.hess_history[0].ncols(),
@@ -1751,7 +1749,7 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
             h_mean += hess;
         }
         h_mean /= n as f64;
-        let newton_step = -(&h_mean * last_grad);
+        let newton_step = -(&h_mean * &combined_last);
         let step_norm = newton_step.norm();
         let step = if step_norm > config.max_step_size && step_norm > 1e-14 {
             newton_step * (config.max_step_size / step_norm)
@@ -1777,18 +1775,25 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         x_new_prime = opt_state.geom_history.back().unwrap().clone();
     }
 
-    // 2. Interpolate gradient to get g_new_prime (THE CORRECT WAY)
-    let mut g_new_prime = DVector::zeros(opt_state.grad_history[0].len());
-    for (i, grad) in opt_state.grad_history.iter().enumerate() {
-        g_new_prime += grad * coeffs[i];
+    // 2. Interpolate combined gradient for correction (option c)
+    // grad_history stores g_vec (Ha/Å), f_vec_history stores f_vec (Ha).
+    let mut combined_prime = DVector::zeros(opt_state.grad_history[0].len());
+    for (i, (g_vec, f_vec)) in opt_state
+        .grad_history
+        .iter()
+        .zip(opt_state.f_vec_history.iter())
+        .enumerate()
+    {
+        combined_prime += (g_vec + f_vec) * coeffs[i];
     }
 
-    // CRITICAL: Check for NaN in interpolated gradient
-    if g_new_prime.iter().any(|&x| x.is_nan() || x.is_infinite()) {
+    if combined_prime.iter().any(|&x| x.is_nan() || x.is_infinite()) {
         if config.print_level >= 2 {
-            println!("[DEBUG] GDIIS: Interpolated gradient contains NaN, falling back to last gradient");
+            println!("[DEBUG] GDIIS: Interpolated combined gradient contains NaN, falling back to last gradient");
         }
-        g_new_prime = opt_state.grad_history.back().unwrap().clone();
+        let last_g = opt_state.grad_history.back().unwrap();
+        let last_f = opt_state.f_vec_history.back().unwrap();
+        combined_prime = last_g + last_f;
     }
 
     // 3. Interpolate Lagrange multipliers (CRITICAL FIX)
@@ -1831,10 +1836,9 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     }
     h_mean /= n as f64;
 
-    // 6. Compute correction using the interpolated gradient.
+    // 6. Compute correction using the interpolated combined gradient (option c).
     // h_mean = mean(H_inv) since hess_history stores INVERSE Hessians.
-    // Newton correction = H_inv * g, so use direct multiply, not lu().solve().
-    let correction = &h_mean * &g_new_prime;
+    let correction = &h_mean * &combined_prime;
 
     // CRITICAL: Check for NaN in correction
     let correction = if correction.iter().any(|&x| x.is_nan() || x.is_infinite()) {
@@ -1871,30 +1875,36 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     let mut step = &x_new - last_geom;
 
     // step reduction
-    // CRITICAL FIX: Use norm of ENTIRE gradient history, not just the last one
-    // Python: if numpy.linalg.norm(Gs) < THRESH_RMS_G * 10:
-    let history_grad_norm_sq: f64 = opt_state
-        .grad_history
+    // Use norm of ENTIRE combined gradient history (g_vec + f_vec), not just g_vec,
+    // so the step reduction behavior matches the old code where grad_history
+    // stored the full combined gradient.
+    let history_combined_norm_sq: f64 = opt_state
+        .geom_history
         .iter()
-        .map(|g| g.norm_squared())
+        .enumerate()
+        .map(|(i, _)| {
+            let combined = &opt_state.grad_history[i] + &opt_state.f_vec_history[i];
+            combined.norm_squared()
+        })
         .sum();
-    let history_grad_norm = history_grad_norm_sq.sqrt();
+    let history_combined_norm = history_combined_norm_sq.sqrt();
 
     if config.print_level >= 2 {
         println!(
             "[DEBUG] Gradient history size: {}",
             opt_state.grad_history.len()
         );
-        for (i, g) in opt_state.grad_history.iter().enumerate() {
-            println!("[DEBUG]   Gradient {}: norm = {:.8}", i, g.norm());
+        for (i, (g, f)) in opt_state.grad_history.iter().zip(opt_state.f_vec_history.iter()).enumerate() {
+            let combined = g + f;
+            println!("[DEBUG]   Combined gradient {}: norm = {:.8}", i, combined.norm());
         }
         println!(
-            "[DEBUG] Gradient history norm (total): {:.8}",
-            history_grad_norm
+            "[DEBUG] Combined gradient history norm (total): {:.8}",
+            history_combined_norm
         );
     }
 
-    // CRITICAL: Gradients in Rust are in Ha/Å
+    // CRITICAL: Combined gradients are in Ha/Å (g_vec) + Ha (f_vec)
     let threshold = config.thresholds.rms_g * 10.0;
 
     if config.print_level >= 2 {
@@ -1904,18 +1914,13 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         );
     }
 
-    let step_reduction_factor = if history_grad_norm < threshold {
-        if config.print_level >= 2 {
-            println!(
-                "[DEBUG] Applying step reduction (factor = {})",
-                config.reduced_factor
-            );
-        }
+    let step_reduction_factor = if history_combined_norm < threshold {
+        println!(
+            "Applying step reduction (factor = {})",
+            config.reduced_factor
+        );
         config.reduced_factor
     } else {
-        if config.print_level >= 2 {
-            println!("[DEBUG] No step reduction applied (factor = 1.0)");
-        }
         1.0
     };
 
@@ -2039,6 +2044,7 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
 /// Returns the (n+1) × (n+1) B matrix for DIIS coefficient determination.
 fn build_gediis_b_matrix(
     grads: &VecDeque<DVector<f64>>,
+    f_vecs: &VecDeque<DVector<f64>>,
     geoms: &VecDeque<DVector<f64>>,
 ) -> DMatrix<f64> {
     let n = grads.len();
@@ -2046,7 +2052,11 @@ fn build_gediis_b_matrix(
 
     for i in 0..n {
         for j in 0..n {
-            let g_diff = &grads[i] - &grads[j];
+            // Use combined gradient (g_vec + f_vec) so the B-matrix metric
+            // matches the interpolation step which also uses combined.
+            let combined_i = &grads[i] + &f_vecs[i];
+            let combined_j = &grads[j] + &f_vecs[j];
+            let g_diff = &combined_i - &combined_j;
             let x_diff = &geoms[i] - &geoms[j];
             // Formula: -(g_i - g_j) · (x_i - x_j)
             b[(i, j)] = -g_diff.dot(&x_diff);
@@ -2146,8 +2156,8 @@ fn build_gediis_b_matrix(
 pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector<f64> {
     let n = opt_state.geom_history.len();
 
-    // Standard GEDIIS B-matrix: B[i,j] = -(g_i - g_j) · (x_i - x_j)
-    let b_matrix = build_gediis_b_matrix(&opt_state.grad_history, &opt_state.geom_history);
+    // Standard GEDIIS B-matrix: B[i,j] = -(combined_i - combined_j) · (x_i - x_j)
+    let b_matrix = build_gediis_b_matrix(&opt_state.grad_history, &opt_state.f_vec_history, &opt_state.geom_history);
 
     // RHS vector: [-E_1, -E_2, ..., -E_n, 1]
     // Note: We use energy_history which stores energy differences (Delta E)
@@ -2174,10 +2184,15 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
         x_new_prime += geom * coeffs[i];
     }
 
-    // 2. Interpolate gradient
-    let mut g_new_prime = DVector::zeros(opt_state.grad_history[0].len());
-    for (i, grad) in opt_state.grad_history.iter().enumerate() {
-        g_new_prime += grad * coeffs[i];
+    // 2. Interpolate combined gradient (option c: use g_vec + f_vec)
+    let mut combined_prime = DVector::zeros(opt_state.grad_history[0].len());
+    for (i, (g_vec, f_vec)) in opt_state
+        .grad_history
+        .iter()
+        .zip(opt_state.f_vec_history.iter())
+        .enumerate()
+    {
+        combined_prime += (g_vec + f_vec) * coeffs[i];
     }
 
     // 3. Interpolate Lagrange multipliers (CRITICAL for MECP)
@@ -2204,27 +2219,44 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
         opt_state.lambda_de = Some(new_lambda_de);
     }
 
-    // 5. Calculate step: X_new = X_interp + G_interp
-    // Matches propagationGEDIIS: XNew = XNew_prime + GNew_prime
-    // The MECP effective gradient encodes the seam direction; adding it
-    // provides a correction toward where G_eff = 0.
-    let mut x_new = x_new_prime + &g_new_prime;
+    // 5. Calculate step: X_new = X_interp - H⁻¹·combined_interp (Newton correction)
+    // The combined gradient has mixed units (Ha + Ha/Å) and cannot be added directly
+    // to coordinates. Use proper Newton correction via mean inverse Hessian, matching
+    // the standard GDIIS approach (Fortran: X_new = X_interp + UH · ΣCi·DQQi).
+    let mut h_mean = DMatrix::zeros(
+        opt_state.hess_history[0].nrows(),
+        opt_state.hess_history[0].ncols(),
+    );
+    for hess in &opt_state.hess_history {
+        h_mean += hess;
+    }
+    h_mean /= n as f64;
+    let correction = &h_mean * &combined_prime;
+    let mut x_new = x_new_prime - &correction;
 
     let last_geom = opt_state.geom_history.back().unwrap();
     let mut step = &x_new - last_geom;
 
     // step reduction
-    // CRITICAL FIX: Use norm of ENTIRE gradient history, not just the last one
-    let history_grad_norm_sq: f64 = opt_state
-        .grad_history
+    // Use norm of ENTIRE combined gradient history (g_vec + f_vec)
+    let history_combined_norm_sq: f64 = opt_state
+        .geom_history
         .iter()
-        .map(|g| g.norm_squared())
+        .enumerate()
+        .map(|(i, _)| {
+            let combined = &opt_state.grad_history[i] + &opt_state.f_vec_history[i];
+            combined.norm_squared()
+        })
         .sum();
-    let history_grad_norm = history_grad_norm_sq.sqrt();
+    let history_combined_norm = history_combined_norm_sq.sqrt();
 
     // CRITICAL: Scale threshold for Ha/Å units
     let threshold = config.thresholds.rms_g * 10.0;
-    if history_grad_norm < threshold {
+    if history_combined_norm < threshold {
+        println!(
+            "GEDIIS: applying step reduction factor {:.2}",
+            config.reduced_factor
+        );
         step *= config.reduced_factor;
     }
 
@@ -2238,9 +2270,11 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
             step_norm
         );
         let last_grad = opt_state.grad_history.back().unwrap();
-        let grad_norm = last_grad.norm();
+        let last_f = opt_state.f_vec_history.back().unwrap();
+        let combined_last = last_grad + last_f;
+        let grad_norm = combined_last.norm();
         if grad_norm > 1e-10 {
-            let descent_step = -last_grad / grad_norm * 0.01;
+            let descent_step = -&combined_last / grad_norm * 0.01;
             x_new = last_geom + descent_step;
         } else {
             println!("ERROR: Both step and gradient are zero - optimizer is stuck!");
@@ -2536,9 +2570,15 @@ pub fn smart_hybrid_gediis_step(
 
     // Apply step reduction if gradient is small (same as other methods)
     // CRITICAL: Scale threshold for Ha/Å units
-    let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
+    let last_combined = opt_state.grad_history.back().unwrap()
+        + opt_state.f_vec_history.back().unwrap();
+    let last_combined_norm = last_combined.norm();
     let threshold = config.thresholds.rms_g * 10.0;
-    if last_grad_norm < threshold {
+    if last_combined_norm < threshold {
+        println!(
+            "Smart Hybrid GEDIIS: applying step reduction factor {:.2}",
+            config.reduced_factor
+        );
         let last_geom = opt_state.geom_history.back().unwrap();
         let mut step = &x_new - last_geom;
         step *= config.reduced_factor;
@@ -3029,15 +3069,19 @@ pub fn gdiis_step_direct(
     }
     h_mean /= n as f64;
 
-    // Step 2: Compute error vectors: e_i = solve(B_mean, g_i)
+    // Step 2: Compute error vectors: e_i = solve(B_mean, combined_i)
+    // Use combined gradient (g_vec + f_vec) so the error subspace matches
+    // the correction step, which also uses the combined gradient.
     let lu = h_mean.clone().lu();
     let errors: Vec<DVector<f64>> = opt_state
-        .grad_history
+        .geom_history
         .iter()
-        .map(|g| {
-            lu.solve(g).unwrap_or_else(|| {
+        .enumerate()
+        .map(|(i, _)| {
+            let combined = &opt_state.grad_history[i] + &opt_state.f_vec_history[i];
+            lu.solve(&combined).unwrap_or_else(|| {
                 println!("GDIIS: Hessian solve failed for error vector, using gradient");
-                g.clone()
+                combined
             })
         })
         .collect();
@@ -3077,17 +3121,21 @@ pub fn gdiis_step_direct(
         );
     }
 
-    // Step 5: Interpolate geometry and gradient
+    // Step 5: Interpolate geometry and combined gradient
+    // grad_history stores g_vec (pure Ha/Å); f_vec_history stores f_vec (Ha).
+    // Combined = g_vec + f_vec is used for correction (option c).
     let mut x_prime = DVector::zeros(dim);
-    let mut g_prime = DVector::zeros(dim);
-    for (i, (geom, grad)) in opt_state
+    let mut combined_prime = DVector::zeros(dim);
+    for (i, (((geom, g_vec), f_vec), _hess)) in opt_state
         .geom_history
         .iter()
         .zip(opt_state.grad_history.iter())
+        .zip(opt_state.f_vec_history.iter())
+        .zip(opt_state.hess_history.iter())
         .enumerate()
     {
         x_prime += geom * coeffs[i];
-        g_prime += grad * coeffs[i];
+        combined_prime += (g_vec + f_vec) * coeffs[i];
     }
 
     // Step 5b: Interpolate Lagrange multipliers (for constraint support)
@@ -3113,35 +3161,37 @@ pub fn gdiis_step_direct(
         opt_state.lambda_de = Some(new_lambda_de);
     }
 
-    // Step 6: Correction step: X_new = X' - solve(B_mean, G')
-    let correction = lu.solve(&g_prime).unwrap_or_else(|| {
+    // Step 6: Correction step: X_new = X' - solve(B_mean, combined')
+    // Using combined gradient for the correction preserves Python's mixed-unit
+    // step behavior (option c).
+    let correction = lu.solve(&combined_prime).unwrap_or_else(|| {
         println!("GDIIS: Hessian solve failed for correction, using gradient");
-        g_prime.clone()
+        combined_prime.clone()
     });
     let x_new = &x_prime - &correction;
 
-    // Step 7: Apply step reduction (Python: if norm(Gs) < THRESH_RMS_G * 10)
+    // Step 7: Apply step reduction — use combined gradient norm (g_vec + f_vec)
     let last_geom = opt_state.geom_history.back().unwrap();
     let mut step = &x_new - last_geom;
 
-    let history_grad_norm_sq: f64 = opt_state
-        .grad_history
+    let history_combined_norm_sq: f64 = opt_state
+        .geom_history
         .iter()
-        .map(|g| g.norm_squared())
+        .enumerate()
+        .map(|(i, _)| {
+            let combined = &opt_state.grad_history[i] + &opt_state.f_vec_history[i];
+            combined.norm_squared()
+        })
         .sum();
-    let history_grad_norm = history_grad_norm_sq.sqrt();
+    let history_combined_norm = history_combined_norm_sq.sqrt();
 
-    // CRITICAL: gradient history is in Ha/Bohr (direct Hessian), so threshold
-    // must be in Ha/Bohr too. Convert from Ha/Å threshold config value.
-    // Python THRESH_RMS_G = 0.0005 Ha/Bohr, threshold = 0.005 Ha/Bohr
-    let threshold = config.thresholds.rms_g * crate::config::BOHR_TO_ANGSTROM * 10.0;
-    if history_grad_norm < threshold {
-        if config.print_level >= 2 {
-            println!(
-                "GDIIS: applying step reduction factor {:.2}",
-                config.reduced_factor
-            );
-        }
+    // Combined gradient norm includes f_vec (Ha) + g_vec (Ha/Å)
+    let threshold = config.thresholds.rms_g * 10.0;
+    if history_combined_norm < threshold {
+        println!(
+            "GDIIS: applying step reduction factor {:.2}",
+            config.reduced_factor
+        );
         step *= config.reduced_factor;
     }
 
@@ -3207,14 +3257,14 @@ mod tests {
         // If forces weren't negated, gradient direction would be wrong
 
         // Check that gradient has correct dimension
-        assert_eq!(gradient.len(), 6);
+        assert_eq!(gradient.combined.len(), 6);
 
         // Check that gradient is not zero (forces should have effect)
-        assert!(gradient.norm() > 1e-10);
+        assert!(gradient.combined.norm() > 1e-10);
 
         // Manual verification: compute expected gradient with negated forces
-        let expected_f1 = -state_a.forces; // Python negates forces
-        let expected_f2 = -state_b.forces; // Python negates forces
+        let expected_f1 = -state_a.forces; // Ha/Å
+        let expected_f2 = -state_b.forces; // Ha/Å
 
         let x_vec = &expected_f1 - &expected_f2;
         let x_norm = if x_vec.norm().abs() < 1e-10 {
@@ -3228,16 +3278,16 @@ mod tests {
         let expected_f_vec = x_norm.clone() * de;
         let dot = expected_f1.dot(&x_norm);
         let expected_g_vec = &expected_f1 - &x_norm * dot;
-        let expected_gradient = expected_f_vec + expected_g_vec;
+        let expected_combined = expected_f_vec + expected_g_vec;
 
         // Compare computed gradient with expected (allowing for numerical precision)
-        for i in 0..gradient.len() {
+        for i in 0..gradient.combined.len() {
             assert!(
-                (gradient[i] - expected_gradient[i]).abs() < 1e-10,
+                (gradient.combined[i] - expected_combined[i]).abs() < 1e-10,
                 "Gradient component {} mismatch: {} vs {}",
                 i,
-                gradient[i],
-                expected_gradient[i]
+                gradient.combined[i],
+                expected_combined[i]
             );
         }
     }
@@ -3268,9 +3318,9 @@ mod tests {
 
         // With zero forces and same energies, gradient should be zero
         assert!(
-            gradient.norm() < 1e-10,
+            gradient.combined.norm() < 1e-10,
             "Expected zero gradient with zero forces, got {}",
-            gradient.norm()
+            gradient.combined.norm()
         );
     }
 }

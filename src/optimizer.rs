@@ -1276,9 +1276,16 @@ pub fn robust_gediis_step(
     let cfg = gediis_config.unwrap_or_default();
     let mut optimizer = GediisOptimizer::with_config(cfg);
 
-    // Compute quadratic steps (H^-1 * g)
-    let quad_steps: VecDeque<DVector<f64>> = opt_state
-        .grad_history
+    // Build combined gradient history (g_vec + f_vec) for B-matrix and interpolation
+    let combined_grads: VecDeque<DVector<f64>> = opt_state
+        .geom_history
+        .iter()
+        .enumerate()
+        .map(|(i, _)| &opt_state.grad_history[i] + &opt_state.f_vec_history[i])
+        .collect();
+
+    // Compute quadratic steps (H^-1 * combined) using combined gradient
+    let quad_steps: VecDeque<DVector<f64>> = combined_grads
         .iter()
         .zip(opt_state.hess_history.iter())
         .map(|(g, h)| {
@@ -1291,7 +1298,7 @@ pub fn robust_gediis_step(
 
     match optimizer.compute_step(
         &opt_state.geom_history,
-        &opt_state.grad_history,
+        &combined_grads,
         &opt_state.energy_history,
         Some(&quad_steps),
     ) {

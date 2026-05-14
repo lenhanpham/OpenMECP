@@ -210,8 +210,8 @@ mode = normal            # normal | read | noread | stable | inter_read
 dE_thresh = 0.000050     # energy difference convergence (hartree)
 rms_thresh = 0.0025      # RMS displacement convergence (angstrom)
 max_dis_thresh = 0.004   # max displacement convergence (angstrom)
-max_g_thresh = 0.001323  # max gradient convergence (hartree/angstrom)
-rms_g_thresh = 0.000945  # RMS gradient convergence (hartree/angstrom)
+max_g_thresh = 0.0007    # max gradient convergence (hartree/bohr)
+rms_g_thresh = 0.0005    # RMS gradient convergence (hartree/bohr)
 
 #===== Optimization Control ===================================================
 max_steps = 100          # maximum optimization steps

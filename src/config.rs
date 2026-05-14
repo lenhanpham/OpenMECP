@@ -83,8 +83,8 @@ pub struct ScanSpec {
 /// - Energy difference (ΔE): 0.000050 Ha (~0.00136 eV)
 /// - RMS displacement: 0.0025 Å
 /// - Max displacement: 0.004 Å
-/// - Max gradient: 0.001323 Ha/Å
-/// - RMS gradient: 0.000945 Ha/Å
+/// - Max gradient: 0.0007 Ha/Å
+/// - RMS gradient: 0.0005 Ha/Å
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Thresholds {
     /// Energy difference threshold (ΔE < de) in Hartree.
@@ -103,12 +103,18 @@ impl Default for Thresholds {
     fn default() -> Self {
         Self {
             de: 0.000050,
+            // Displacement thresholds: Python values are ALREADY in Angstrom.
+            // Python computes RMS = ||X0-X1|| / sqrt(3N) where X is in Angstrom.
+            // Python THRESH_RMS     = 0.0025 Å (NOT Bohr!)
             rms: 0.0025,
+            // Python THRESH_MAX_DIS = 0.004 Å (NOT Bohr!)
             max_dis: 0.004,
-            // All gradients are in Ha/Å (standardized internal unit).
-            // Python KST48 reference uses Ha/Bohr (0.0007 / 0.0005).
-            // Converted: 0.0007 × 1.8897 = 0.001323, 0.0005 × 1.8897 = 0.000945
+            // Gradient thresholds: converted from Python Ha/Bohr to Ha/Å.
+            // Rust gradients are in Ha/Å (converted at QM interface boundary).
+            // Formula: value_(Ha/Å) = value_(Ha/Bohr) × ANGSTROM_TO_BOHR (1.8897)
+            // Python THRESH_MAX_G   = 0.0007 Ha/Bohr → 0.0007 × 1.8897 = 0.001323 Ha/Å
             max_g: 0.001323,
+            // Python THRESH_RMS_G   = 0.0005 Ha/Bohr → 0.0005 × 1.8897 = 0.000945 Ha/Å
             rms_g: 0.000945,
         }
     }
@@ -288,7 +294,7 @@ pub struct Config {
     /// Use the new Fortran-ported DIIS implementations (more robust).
     ///
     /// When enabled, uses `GdiisOptimizer` and `GediisOptimizer` classes
-    /// which include:
+    /// ported from Gaussian's l103.F, which include:
     /// - SR1 inverse matrix updates for GDIIS
     /// - Multiple GEDIIS variants (RFO, Energy, Simultaneous)
     /// - Cosine and coefficient validation

@@ -288,7 +288,7 @@ pub struct Config {
     /// Use the new Fortran-ported DIIS implementations (more robust).
     ///
     /// When enabled, uses `GdiisOptimizer` and `GediisOptimizer` classes
-    /// ported from Gaussian's l103.F, which include:
+    /// which include:
     /// - SR1 inverse matrix updates for GDIIS
     /// - Multiple GEDIIS variants (RFO, Energy, Simultaneous)
     /// - Cosine and coefficient validation

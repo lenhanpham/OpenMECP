@@ -1608,11 +1608,15 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
             // BFGS step: direct Hessian or inverse Hessian depending on algorithm
+            // For direct Hessian: use combined gradient (g_vec + f_vec) so the
+            // Newton direction includes the f-vector energy-driving component.
+            // For inverse Hessian: use g_vec only since H_inv (Ų/Ha) × f_vec (Ha)
+            // would produce Å², not Å.
             if config.use_direct_hessian {
                 optimizer::bfgs_step_direct(&x_old, &mecp_grad.combined, &inv_hessian, &config)
             } else {
-                // Legacy: inverse Hessian multiply
-                optimizer::bfgs_step(&x_old, &mecp_grad.combined, &inv_hessian, &config, 1.0)
+                // inverse Hessian multiply — pure Ha/Å only
+                optimizer::bfgs_step(&x_old, &mecp_grad.g_vec, &inv_hessian, &config, 1.0)
             }
         } else if config.use_robust_diis {
             // Use new Experimental DIIS implementations
@@ -1842,9 +1846,13 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Update Hessian
-        // sk (step vector in Å) and yk (gradient difference from g_vec, pure Ha/Å)
+        // sk (step vector in Å) and yk (combined gradient difference)
+        // Use the full combined gradient (g_vec + f_vec) so the Hessian captures
+        // the f-vector (energy-driving) curvature, not just the perpendicular component.
+        let combined = &mecp_grad.g_vec + &mecp_grad.f_vec;
+        let combined_new = &mecp_grad_new.g_vec + &mecp_grad_new.f_vec;
         let sk = &x_new - &x_old;
-        let yk = &mecp_grad_new.g_vec - &mecp_grad.g_vec;
+        let yk = &combined_new - &combined;
         if config.use_direct_hessian {
             inv_hessian = optimizer::update_hessian_psb(&inv_hessian, &sk, &yk);
         } else {

@@ -1203,16 +1203,17 @@ pub fn robust_gdiis_step(
     optimizer.cosine_check = cosine_mode.unwrap_or(CosineCheckMode::Standard);
     optimizer.coeff_check = coeff_mode.unwrap_or(CoeffCheckMode::Regular);
 
-    // Compute error vectors (Newton steps)
+    // Compute error vectors (Newton steps) using combined gradient
     let errors: VecDeque<DVector<f64>> = opt_state
-        .grad_history
+        .geom_history
         .iter()
-        .zip(opt_state.hess_history.iter())
-        .map(|(g, h)| {
-            h.clone()
+        .enumerate()
+        .map(|(i, _)| {
+            let combined = &opt_state.grad_history[i] + &opt_state.f_vec_history[i];
+            opt_state.hess_history[i].clone()
                 .lu()
-                .solve(g)
-                .unwrap_or_else(|| g.clone())
+                .solve(&combined)
+                .unwrap_or_else(|| combined)
         })
         .collect();
 
@@ -1540,6 +1541,7 @@ pub fn check_convergence(
 /// If the Hessian is singular, falls back to using the gradient directly.
 fn compute_error_vectors(
     grads: &VecDeque<DVector<f64>>,
+    f_vecs: &VecDeque<DVector<f64>>,
     hessians: &VecDeque<DMatrix<f64>>,
 ) -> Vec<DVector<f64>> {
     let n = grads.len();
@@ -1558,9 +1560,12 @@ fn compute_error_vectors(
     // NOTE: hess_history stores INVERSE Hessians (from BFGS update), so
     // h_mean = mean(H_inv). The Newton step is H_inv * g, i.e. direct
     // matrix-vector multiply — NOT lu().solve() which would double-invert.
+    // Use combined gradient (g_vec + f_vec) so the error subspace matches
+    // the correction step, which also uses the combined gradient.
     grads
         .iter()
-        .map(|grad| &h_mean * grad)
+        .zip(f_vecs.iter())
+        .map(|(g, f)| &h_mean * (g + f))
         .collect()
 }
 
@@ -1675,8 +1680,8 @@ fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
 pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector<f64> {
     let n = opt_state.geom_history.len();
 
-    // Error vectors are now correctly computed with the mean Hessian inside this function
-    let errors = compute_error_vectors(&opt_state.grad_history, &opt_state.hess_history);
+    // Error vectors use combined gradient (g_vec + f_vec) to match correction step
+    let errors = compute_error_vectors(&opt_state.grad_history, &opt_state.f_vec_history, &opt_state.hess_history);
     let b_matrix = build_b_matrix(&errors);
 
     let mut rhs = DVector::zeros(n + 1);
@@ -1727,6 +1732,8 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         }
         let last_geom = opt_state.geom_history.back().unwrap();
         let last_grad = opt_state.grad_history.back().unwrap();
+        let last_f = opt_state.f_vec_history.back().unwrap();
+        let combined_last = last_grad + last_f;
         let mut h_mean = DMatrix::zeros(
             opt_state.hess_history[0].nrows(),
             opt_state.hess_history[0].ncols(),
@@ -1735,7 +1742,7 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
             h_mean += hess;
         }
         h_mean /= n as f64;
-        let newton_step = -(&h_mean * last_grad);
+        let newton_step = -(&h_mean * &combined_last);
         let step_norm = newton_step.norm();
         let step = if step_norm > config.max_step_size && step_norm > 1e-14 {
             newton_step * (config.max_step_size / step_norm)
@@ -1861,30 +1868,36 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     let mut step = &x_new - last_geom;
 
     // step reduction
-    // CRITICAL FIX: Use norm of ENTIRE gradient history, not just the last one
-    // Python: if numpy.linalg.norm(Gs) < THRESH_RMS_G * 10:
-    let history_grad_norm_sq: f64 = opt_state
-        .grad_history
+    // Use norm of ENTIRE combined gradient history (g_vec + f_vec), not just g_vec,
+    // so the step reduction behavior matches the old code where grad_history
+    // stored the full combined gradient.
+    let history_combined_norm_sq: f64 = opt_state
+        .geom_history
         .iter()
-        .map(|g| g.norm_squared())
+        .enumerate()
+        .map(|(i, _)| {
+            let combined = &opt_state.grad_history[i] + &opt_state.f_vec_history[i];
+            combined.norm_squared()
+        })
         .sum();
-    let history_grad_norm = history_grad_norm_sq.sqrt();
+    let history_combined_norm = history_combined_norm_sq.sqrt();
 
     if config.print_level >= 2 {
         println!(
             "[DEBUG] Gradient history size: {}",
             opt_state.grad_history.len()
         );
-        for (i, g) in opt_state.grad_history.iter().enumerate() {
-            println!("[DEBUG]   Gradient {}: norm = {:.8}", i, g.norm());
+        for (i, (g, f)) in opt_state.grad_history.iter().zip(opt_state.f_vec_history.iter()).enumerate() {
+            let combined = g + f;
+            println!("[DEBUG]   Combined gradient {}: norm = {:.8}", i, combined.norm());
         }
         println!(
-            "[DEBUG] Gradient history norm (total): {:.8}",
-            history_grad_norm
+            "[DEBUG] Combined gradient history norm (total): {:.8}",
+            history_combined_norm
         );
     }
 
-    // CRITICAL: Gradients in Rust are in Ha/Å
+    // CRITICAL: Combined gradients are in Ha/Å (g_vec) + Ha (f_vec)
     let threshold = config.thresholds.rms_g * 10.0;
 
     if config.print_level >= 2 {
@@ -1894,18 +1907,13 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         );
     }
 
-    let step_reduction_factor = if history_grad_norm < threshold {
-        if config.print_level >= 2 {
-            println!(
-                "[DEBUG] Applying step reduction (factor = {})",
-                config.reduced_factor
-            );
-        }
+    let step_reduction_factor = if history_combined_norm < threshold {
+        println!(
+            "Applying step reduction (factor = {})",
+            config.reduced_factor
+        );
         config.reduced_factor
     } else {
-        if config.print_level >= 2 {
-            println!("[DEBUG] No step reduction applied (factor = 1.0)");
-        }
         1.0
     };
 
@@ -2029,6 +2037,7 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
 /// Returns the (n+1) × (n+1) B matrix for DIIS coefficient determination.
 fn build_gediis_b_matrix(
     grads: &VecDeque<DVector<f64>>,
+    f_vecs: &VecDeque<DVector<f64>>,
     geoms: &VecDeque<DVector<f64>>,
 ) -> DMatrix<f64> {
     let n = grads.len();
@@ -2036,7 +2045,11 @@ fn build_gediis_b_matrix(
 
     for i in 0..n {
         for j in 0..n {
-            let g_diff = &grads[i] - &grads[j];
+            // Use combined gradient (g_vec + f_vec) so the B-matrix metric
+            // matches the interpolation step which also uses combined.
+            let combined_i = &grads[i] + &f_vecs[i];
+            let combined_j = &grads[j] + &f_vecs[j];
+            let g_diff = &combined_i - &combined_j;
             let x_diff = &geoms[i] - &geoms[j];
             // Formula: -(g_i - g_j) · (x_i - x_j)
             b[(i, j)] = -g_diff.dot(&x_diff);
@@ -2136,8 +2149,8 @@ fn build_gediis_b_matrix(
 pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector<f64> {
     let n = opt_state.geom_history.len();
 
-    // Standard GEDIIS B-matrix: B[i,j] = -(g_i - g_j) · (x_i - x_j)
-    let b_matrix = build_gediis_b_matrix(&opt_state.grad_history, &opt_state.geom_history);
+    // Standard GEDIIS B-matrix: B[i,j] = -(combined_i - combined_j) · (x_i - x_j)
+    let b_matrix = build_gediis_b_matrix(&opt_state.grad_history, &opt_state.f_vec_history, &opt_state.geom_history);
 
     // RHS vector: [-E_1, -E_2, ..., -E_n, 1]
     // Note: We use energy_history which stores energy differences (Delta E)
@@ -2206,17 +2219,25 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
     let mut step = &x_new - last_geom;
 
     // step reduction
-    // CRITICAL FIX: Use norm of ENTIRE gradient history, not just the last one
-    let history_grad_norm_sq: f64 = opt_state
-        .grad_history
+    // Use norm of ENTIRE combined gradient history (g_vec + f_vec)
+    let history_combined_norm_sq: f64 = opt_state
+        .geom_history
         .iter()
-        .map(|g| g.norm_squared())
+        .enumerate()
+        .map(|(i, _)| {
+            let combined = &opt_state.grad_history[i] + &opt_state.f_vec_history[i];
+            combined.norm_squared()
+        })
         .sum();
-    let history_grad_norm = history_grad_norm_sq.sqrt();
+    let history_combined_norm = history_combined_norm_sq.sqrt();
 
     // CRITICAL: Scale threshold for Ha/Å units
     let threshold = config.thresholds.rms_g * 10.0;
-    if history_grad_norm < threshold {
+    if history_combined_norm < threshold {
+        println!(
+            "GEDIIS: applying step reduction factor {:.2}",
+            config.reduced_factor
+        );
         step *= config.reduced_factor;
     }
 
@@ -2230,9 +2251,11 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
             step_norm
         );
         let last_grad = opt_state.grad_history.back().unwrap();
-        let grad_norm = last_grad.norm();
+        let last_f = opt_state.f_vec_history.back().unwrap();
+        let combined_last = last_grad + last_f;
+        let grad_norm = combined_last.norm();
         if grad_norm > 1e-10 {
-            let descent_step = -last_grad / grad_norm * 0.01;
+            let descent_step = -&combined_last / grad_norm * 0.01;
             x_new = last_geom + descent_step;
         } else {
             println!("ERROR: Both step and gradient are zero - optimizer is stuck!");
@@ -2528,9 +2551,15 @@ pub fn smart_hybrid_gediis_step(
 
     // Apply step reduction if gradient is small (same as other methods)
     // CRITICAL: Scale threshold for Ha/Å units
-    let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
+    let last_combined = opt_state.grad_history.back().unwrap()
+        + opt_state.f_vec_history.back().unwrap();
+    let last_combined_norm = last_combined.norm();
     let threshold = config.thresholds.rms_g * 10.0;
-    if last_grad_norm < threshold {
+    if last_combined_norm < threshold {
+        println!(
+            "Smart Hybrid GEDIIS: applying step reduction factor {:.2}",
+            config.reduced_factor
+        );
         let last_geom = opt_state.geom_history.back().unwrap();
         let mut step = &x_new - last_geom;
         step *= config.reduced_factor;
@@ -3021,15 +3050,19 @@ pub fn gdiis_step_direct(
     }
     h_mean /= n as f64;
 
-    // Step 2: Compute error vectors: e_i = solve(B_mean, g_i)
+    // Step 2: Compute error vectors: e_i = solve(B_mean, combined_i)
+    // Use combined gradient (g_vec + f_vec) so the error subspace matches
+    // the correction step, which also uses the combined gradient.
     let lu = h_mean.clone().lu();
     let errors: Vec<DVector<f64>> = opt_state
-        .grad_history
+        .geom_history
         .iter()
-        .map(|g| {
-            lu.solve(g).unwrap_or_else(|| {
+        .enumerate()
+        .map(|(i, _)| {
+            let combined = &opt_state.grad_history[i] + &opt_state.f_vec_history[i];
+            lu.solve(&combined).unwrap_or_else(|| {
                 println!("GDIIS: Hessian solve failed for error vector, using gradient");
-                g.clone()
+                combined
             })
         })
         .collect();
@@ -3118,26 +3151,28 @@ pub fn gdiis_step_direct(
     });
     let x_new = &x_prime - &correction;
 
-    // Step 7: Apply step reduction — use g_vec norm only (pure Ha/Å)
+    // Step 7: Apply step reduction — use combined gradient norm (g_vec + f_vec)
     let last_geom = opt_state.geom_history.back().unwrap();
     let mut step = &x_new - last_geom;
 
-    let history_g_vec_norm_sq: f64 = opt_state
-        .grad_history
+    let history_combined_norm_sq: f64 = opt_state
+        .geom_history
         .iter()
-        .map(|g| g.norm_squared())
+        .enumerate()
+        .map(|(i, _)| {
+            let combined = &opt_state.grad_history[i] + &opt_state.f_vec_history[i];
+            combined.norm_squared()
+        })
         .sum();
-    let history_g_vec_norm = history_g_vec_norm_sq.sqrt();
+    let history_combined_norm = history_combined_norm_sq.sqrt();
 
-    // grad_history stores g_vec in Ha/Å, threshold is also in Ha/Å
+    // Combined gradient norm includes f_vec (Ha) + g_vec (Ha/Å)
     let threshold = config.thresholds.rms_g * 10.0;
-    if history_g_vec_norm < threshold {
-        if config.print_level >= 2 {
-            println!(
-                "GDIIS: applying step reduction factor {:.2}",
-                config.reduced_factor
-            );
-        }
+    if history_combined_norm < threshold {
+        println!(
+            "GDIIS: applying step reduction factor {:.2}",
+            config.reduced_factor
+        );
         step *= config.reduced_factor;
     }
 

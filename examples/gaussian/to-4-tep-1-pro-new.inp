@@ -1,13 +1,13 @@
 #===============================================================================
 # OpenMECP Input Template
 #===============================================================================
-# Generated from geometry: new-test.xyz
+# Generated from geometry: to-4-tep-1-pro-new.xyz
 #===============================================================================
 
 #===== Basic Settings (required) ==============================================
-nprocs = 10              # processors for QM program
-mem = 40GB              # memory (use maxcore value for ORCA)
-method = n b3lyp/6-31g** # QM method: n method/basis keywords ...
+nprocs = 48              # processors for QM program
+mem = 190GB              # memory (use maxcore value for ORCA)
+method = n scf(maxcycle=500,xqc) uwb97xd/def2svpp scrf(smd,solvent=benzene) # QM method: n method/basis keywords ...
 td_state_a =             # TD-DFT keywords for state A (Gaussian). Short: td_a
 td_state_b =             # TD-DFT keywords for state B (Gaussian). Short: td_b
 mp2 = false              # true for MP2 or double-hybrid in Gaussian
@@ -93,7 +93,7 @@ bagel_model = model.inp   # BAGEL model file
 # Geometry section: Cartesian coordinates in Angstrom
 #===============================================================================
 *geom
-@new-test.xyz
+@to-4-tep-1-pro-new.xyz
 *
 
 #===============================================================================

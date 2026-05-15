@@ -306,9 +306,32 @@ fn main() {
     }
 }
 
-/// Check for help flags and print appropriate help
+/// Print version and citation information
+fn print_version() {
+    println!("**** OpenMECP: Minimum Energy Crossing Point Optimizer****");
+    println!(
+        "              Version {}  Release date: 2026",
+        env!("CARGO_PKG_VERSION")
+    );
+    println!("               ****Developer Le Nhan Pham****             ");
+    println!("           https://github.com/lenhanpham/OpenMECP        \n");
+    println!(" Please cite this preprint if you use OpenMECP for your research:");
+    println!(" #-------------------------------------------------------------------------------#");
+    println!(" # L.N Pham, \"OpenMECP: A High-Performance Rust Implementation for               #");
+    println!(" # the Rigorous Location of Minimum Energy Crossing Points in Chemical Dynamics\" #");
+    println!(" # 2026, https://doi.org/10.13140/RG.2.2.21309.73443                             #");
+    println!(" #-------------------------------------------------------------------------------#");
+}
+
+/// Check for help/version flags and print appropriate output
 fn check_help_flags(args: &[String]) {
     use omecp::help::*;
+
+    // Check for version flag (omecp --version or omecp -V)
+    if args.len() == 2 && (args[1] == "--version" || args[1] == "-v") {
+        print_version();
+        process::exit(0);
+    }
 
     // Check for global help flags
     if args.len() >= 3 && (args[1] == "--help" || args[1] == "-h") {
@@ -958,19 +981,7 @@ fn print_configuration(
 }
 
 fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    println!("**** OpenMECP: Minimum Energy Crossing Point Optimizer****");
-    println!(
-        "              Version {}  Release date: 2026",
-        env!("CARGO_PKG_VERSION")
-    );
-    println!("               ****Developer Le Nhan Pham****             ");
-    println!("           https://github.com/lenhanpham/OpenMECP        \n");
-    println!(" Please cite this preprint if you use OpenMECP for your research:");
-    println!(" #-------------------------------------------------------------------------------#");
-    println!(" # L.N Pham, \"OpenMECP: A High-Performance Rust Implementation for               #");
-    println!(" # the Rigorous Location of Minimum Energy Crossing Points in Chemical Dynamics\" #");
-    println!(" # 2026, https://doi.org/10.13140/RG.2.2.21309.73443                             #");
-    println!(" #-------------------------------------------------------------------------------#");
+    print_version();
     println!();
 
     // Parse input

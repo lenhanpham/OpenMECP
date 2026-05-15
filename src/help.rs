@@ -357,7 +357,7 @@ pub const KEYWORDS: &[Keyword] = &[
     Keyword {
         name: "use_gediis",
         category: KeywordCategory::Convergence,
-        description: "Enable GEDIIS (energy-weighted DIIS) optimizer instead of GDIIS",
+        description: "Enable GEDIIS (energy-weighted DIIS) optimizer. Default: false (uses GDIIS).",
         default_value: Some("false"),
         example: Some("use_gediis = true"),
         required: false,
@@ -365,9 +365,25 @@ pub const KEYWORDS: &[Keyword] = &[
     Keyword {
         name: "use_hybrid_gediis",
         category: KeywordCategory::Convergence,
-        description: "Blend GDIIS and GEDIIS adaptively based on energy trend. More robust than pure GEDIIS.",
+        description: "Sequential hybrid GEDIIS/GDIIS (Li & Frisch JCTC 2006). Only active when use_gediis=true.",
         default_value: Some("false"),
-        example: Some("use_hybrid_gediis = true   # Adaptive blend\nuse_hybrid_gediis = false  # Pure GDIIS (default)"),
+        example: Some("use_hybrid_gediis = true   # Sequential hybrid\nuse_hybrid_gediis = false  # Pure GEDIIS (default for GEDIIS)"),
+        required: false,
+    },
+    Keyword {
+        name: "gediis_switch_rms",
+        category: KeywordCategory::Convergence,
+        description: "RMS gradient threshold for GDIIS→GEDIIS switch. Paper: 10⁻² au ≈ 0.005 Ha/Å.",
+        default_value: Some("0.005"),
+        example: Some("gediis_switch_rms = 0.005"),
+        required: false,
+    },
+    Keyword {
+        name: "gediis_switch_step",
+        category: KeywordCategory::Convergence,
+        description: "RMS displacement threshold for GEDIIS→GDIIS switch. Paper: 2.5×10⁻³ au ≈ 0.001 Å.",
+        default_value: Some("0.001"),
+        example: Some("gediis_switch_step = 0.001"),
         required: false,
     },
     Keyword {
@@ -766,9 +782,15 @@ pub const FEATURES: &[FeatureInfo] = &[
     },
     FeatureInfo {
         name: "GEDIIS Optimizer",
-        description: "Energy-weighted DIIS for improved convergence",
+        description: "Energy-informed DIIS with diagonal energy coupling (Li & Frisch JCTC 2006)",
         usage: "use_gediis = true",
         example: Some("use_gediis = true  # Enables GEDIIS"),
+    },
+    FeatureInfo {
+        name: "Sequential Hybrid GEDIIS",
+        description: "3-phase switching: GDIIS → GEDIIS → GDIIS (Li & Frisch JCTC 2006)",
+        usage: "use_gediis = true + use_hybrid_gediis = true",
+        example: Some("use_hybrid_gediis = true  # Sequential hybrid"),
     },
     FeatureInfo {
         name: "Flexible Optimizer Switching",
@@ -909,11 +931,17 @@ pub fn print_ci_help() {
     println!("                        - .log: Gaussian output file");
     println!();
     println!("    [output_file]        Output template file (optional)");
-    println!("                        Default: <geometry_stem>.inp");
+    println!("                        Default naming:");
+    println!("                        - .xyz/.gjf files: <name>.inp");
+    println!("                        - .log/.out/.json files: <name>_omecp.inp");
+    println!("                        (suffix prevents overwriting QM output)");
     println!();
     println!("EXAMPLES:");
     println!("    omecp ci molecule.xyz");
     println!("                        Creates 'molecule.inp' with '@molecule.xyz' reference");
+    println!();
+    println!("    omecp ci calc.log");
+    println!("                        Creates 'calc_omecp.inp' (prevents overwriting calc.log)");
     println!();
     println!("    omecp ci calc.log custom.inp");
     println!("                        Creates 'custom.inp' with '@calc.log' reference");
@@ -962,6 +990,11 @@ pub fn print_keyword_help() {
 pub fn print_method_help() {
     println!("METHOD REFERENCE");
     println!("═══════════════════════════════════════════════════════════════════════");
+    println!();
+    println!("OpenMECP supports all quantum chemistry methods available in the");
+    println!("underlying QM program (Gaussian, ORCA, xTB, BAGEL). The methods listed");
+    println!("below are typical examples — any functional, basis set, and method");
+    println!("combination supported by your QM program can be used.");
     println!();
 
     let methods = get_methods();
@@ -1060,13 +1093,23 @@ pub fn print_feature_help() {
     println!("    Broyden-Fletcher-Goldfarb-Shanno quasi-Newton method. Used for the");
     println!("    first 3 optimization steps when Hessian is not available.");
     println!();
-    println!("GDIIS");
-    println!("    Geometry Direct Inversion of Iterative Subspace. Used for later");
-    println!("    steps when history is available. Improves convergence.");
+    println!("GDIIS (default)");
+    println!("    Geometry Direct Inversion of Iterative Subspace. Robust convergence");
+    println!("    for MECP using Newton-step error vectors. Default optimizer.");
     println!();
     println!("GEDIIS");
-    println!("    Energy-weighted DIIS. Alternative to GDIIS that weights each");
-    println!("    previous step by its energy. Enable with 'use_gediis = true'.");
+    println!("    Energy-informed DIIS (Li & Frisch JCTC 2006). Uses GDIIS-compatible");
+    println!("    error vectors (e_i = H⁻¹·(g_vec+f_vec)) with a diagonal energy coupling");
+    println!("    B[i,i] += α·E_i² that biases interpolation toward low-gap points.");
+    println!("    Enforces interpolation (c_i > 0) for stability. Enable: 'use_gediis = true'.");
+    println!();
+    println!("Sequential Hybrid");
+    println!("    3-phase switching strategy (Li & Frisch JCTC 2006 Sec II.B):");
+    println!("    Phase 1: GDIIS (pre-optimizer)");
+    println!("    Phase 2: GEDIIS when RMS gradient < gediis_switch_rms (default 0.005 Ha/Å)");
+    println!("    Phase 3: GDIIS when RMS step < gediis_switch_step (default 0.001 Å)");
+    println!("    Enable: 'use_gediis = true' + 'use_hybrid_gediis = true'.");
+    println!("    Configurable thresholds: gediis_switch_rms, gediis_switch_step.");
     println!();
     println!("OPTIMIZER SWITCHING");
     println!("    Control when to switch from BFGS to DIIS with 'switch_step = N':");

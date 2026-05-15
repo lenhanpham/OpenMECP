@@ -225,14 +225,16 @@ print_level = 1          # 0=quiet, 1=normal, 2=verbose (DIIS debug)
 switch_step = 3          # switch from BFGS to DIIS after this many steps
 use_direct_hessian = true # true: direct Hessian + PSB (recommended)
                          # false: inverse Hessian + BFGS (Fortran-style)
-use_gediis = false       # enable GEDIIS (energy-informed DIIS)
-use_hybrid_gediis = true # blend GDIIS+GEDIIS (only if use_gediis = true)
+use_gediis = false       # enable GEDIIS (energy-informed DIIS). Default: false (GDIIS)
+use_hybrid_gediis = false # sequential hybrid GEDIIS/GDIIS (Li & Frisch JCTC 2006)
 smart_history = false    # experimental: remove worst DIIS point instead of oldest
 
 #===== Advanced Optimizer Settings ============================================
 # ALL parameters below are commented out (= inactive). Their default values
 # (shown after the = sign) are used unless you uncomment and change them.
 #
+#gediis_switch_rms = 0.005    # Phase 1→2 switch: RMS gradient for GDIIS→GEDIIS (paper: 10⁻² au)
+#gediis_switch_step = 0.001   # Phase 2→3 switch: RMS displacement for GEDIIS→GDIIS (paper: 2.5×10⁻³ au)
 #use_robust_diis = false      # Activate DIIS step validation: rejects bad
                               # extrapolations via cosine & coefficient checks.
                               # Prevents wild steps near convergence.
@@ -336,6 +338,18 @@ pub fn write_template_to_file<P: AsRef<Path>>(
 }
 
 /// Get default output filename based on input geometry file
+///
+/// This function generates a default `.inp` filename from the source geometry file.
+/// To prevent overwriting QM output files when creating templates from them,
+/// it adds a `_omecp` suffix when the source file has an extension that matches
+/// common QM output formats (`.log`, `.out`, `.json`).
+///
+/// # Examples
+///
+/// - `abc.xyz` → `abc.inp` (no conflict)
+/// - `abc.log` → `abc_omecp.inp` (prevents overwriting `abc.log` when run)
+/// - `calc.out` → `calc_omecp.inp` (prevents overwriting `calc.out` when run)
+/// - `result.json` → `result_omecp.inp` (prevents overwriting `result.json` when run)
 pub fn get_default_output_path<P: AsRef<Path>>(geometry_file: P) -> PathBuf {
     let geometry_file = geometry_file.as_ref();
     let stem = geometry_file
@@ -343,7 +357,25 @@ pub fn get_default_output_path<P: AsRef<Path>>(geometry_file: P) -> PathBuf {
         .and_then(|s| s.to_str())
         .unwrap_or("template");
 
-    PathBuf::from(format!("{}.inp", stem))
+    // Check if the source file has an extension that matches QM output formats
+    let source_ext = geometry_file
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_lowercase());
+
+    let is_qm_output = match source_ext.as_deref() {
+        Some("log") | Some("out") | Some("json") => true,
+        _ => false,
+    };
+
+    // If source is a QM output file, add suffix to prevent overwriting
+    let output_stem = if is_qm_output {
+        format!("{}_omecp", stem)
+    } else {
+        stem.to_string()
+    };
+
+    PathBuf::from(format!("{}.inp", output_stem))
 }
 
 /// Interactive prompt for user input
@@ -379,10 +411,31 @@ mod tests {
 
     #[test]
     fn test_get_default_output_path() {
+        // Regular geometry files - no suffix added
         let path = get_default_output_path(Path::new("molecule.xyz"));
         assert_eq!(path.to_str().unwrap(), "molecule.inp");
 
         let path = get_default_output_path(Path::new("/path/to/molecule.xyz"));
         assert_eq!(path.to_str().unwrap(), "molecule.inp");
+
+        let path = get_default_output_path(Path::new("test.gjf"));
+        assert_eq!(path.to_str().unwrap(), "test.inp");
+
+        // QM output files - suffix added to prevent overwriting
+        let path = get_default_output_path(Path::new("abc.log"));
+        assert_eq!(path.to_str().unwrap(), "abc_omecp.inp");
+
+        let path = get_default_output_path(Path::new("calc.out"));
+        assert_eq!(path.to_str().unwrap(), "calc_omecp.inp");
+
+        let path = get_default_output_path(Path::new("result.json"));
+        assert_eq!(path.to_str().unwrap(), "result_omecp.inp");
+
+        // Case insensitive extension check
+        let path = get_default_output_path(Path::new("test.LOG"));
+        assert_eq!(path.to_str().unwrap(), "test_omecp.inp");
+
+        let path = get_default_output_path(Path::new("test.OUT"));
+        assert_eq!(path.to_str().unwrap(), "test_omecp.inp");
     }
 }

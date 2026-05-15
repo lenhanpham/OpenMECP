@@ -1,0 +1,436 @@
+**** OpenMECP: Minimum Energy Crossing Point Optimizer****
+              Version 0.0.2  Release date: 2026
+               ****Developer Le Nhan Pham****             
+           https://github.com/lenhanpham/OpenMECP        
+
+ Please cite this preprint if you use OpenMECP for your research:
+ #-------------------------------------------------------------------------------#
+ # L.N Pham, "OpenMECP: A High-Performance Rust Implementation for               #
+ # the Rigorous Location of Minimum Energy Crossing Points in Chemical Dynamics" #
+ # 2026, https://doi.org/10.13140/RG.2.2.21309.73443                             #
+ #-------------------------------------------------------------------------------#
+
+[2026-05-14T13:28:55.770Z INFO  omecp::settings] Configuration loaded from: built-in defaults
+============================================================================
+CONFIGURATION AND SETTINGS
+============================================================================
+
+Settings Configuration:
+  Source: built-in defaults
+
+Input File Parameters:
+  Program:                    Gaussian
+  Method:                     n uwb97xd/def2svpp
+  Memory:                     190GB
+  Processors:                 48
+  Charge of system:           1
+  Multiplicity (State A):     3
+  Multiplicity (State B):     1
+  Run Mode:                   Normal
+  Max Steps:                  100
+  Max Step Size (A):          0.100000
+  Max History:                4 
+  Smart History:              false (default)
+
+  Optimizers:
+    Use Direct Hessian:       true (default)
+    Use GEDIIS:               false (default)
+    Use Hybrid GEDIIS:        true (default)
+    Use Robust DIIS:          false (default)
+    Advanced Hessian Update:  false (default)
+    Switch Step:              3
+    BFGS Rho:                 15
+    Reduced Factor:           0.5
+    Print Level:              1
+    Print Checkpoint:         false
+  BAGEL Model:                model.inp
+
+Advanced Parameters:
+  MP2 Method:               false (default)
+  Fix dE (eV):              0.0 (default)
+  Program Commands:         4 custom commands
+
+File Management:
+  Checkpoint File:          <job_name>.json (auto-generated from input filename)
+  Restart Mode:             false (default)
+
+Scanning:
+  Number of Scans:          0 (default)
+Convergence Thresholds:
+  Energy Difference (dE):       0.00005000 hartree 
+  RMS Gradient:                 0.00094500 hartree/A 
+  Max Gradient:                 0.00132300 hartree/A 
+  RMS Displacement:             0.00250000 angstrom 
+  Max Displacement:             0.00400000 angstrom 
+Configuration File Settings (omecp_config.cfg):
+  Output File Extensions:
+    Gaussian:                  log
+    ORCA:                      out
+  General Settings:
+    Max Memory:                4GB
+    Default Processors:        4
+    Print Level:               0
+  Cleanup Settings:
+    Enabled:                   true
+    Verbose:                   1
+    Cleanup Frequency:         5 steps 
+  Logging Settings:
+    Level:                     info
+    File Logging Enabled:      false
+
+================================================================================
+
+Parsed 29 atoms
+Program: Gaussian, Mode: Normal
+
+
+****Configuration Guidance****
+Normal Mode: Balanced speed and robustness with checkpoint reading
+****End Configuration Guidance****
+
+****Normal Mode: Phase 1 - Pre-point calculations to generate checkpoint files****
+Pre-point headers (raw, no modifications):
+State A: %mem=190GB
+State B: %mem=190GB
+Running pre-point calculation for state B...
+Running pre-point calculation for state A...
+ Pre-point calculations completed successfully
+Checking Gaussian checkpoint files...
+ Gaussian checkpoint files found: to-4-tep-1-pro_state_A.chk and to-4-tep-1-pro_state_B.chk
+****Normal Mode: Phase 2 - Main optimization loop with checkpoint reading****
+****Mode Transition: Normal -> Read****
+Reason: Pre-point calculations completed successfully, switching to read mode for main optimization
+****Mode Transition Complete****
+
+Headers rebuilt for read mode with force and guess=read
+
+****Running initial calculations****
+Using direct Hessian algorithm (PSB update)
+
+****Step 1****
+Using BFGS optimizer (step 1 < switch point 3)
+BFGS: step 0.418937 Å > max_step_size 0.100000 Å, capping
+BFGS: final step = 0.100000 Å (rho=15.0)
+Displacement norm = 0.100000000000000 Å
+E1 = -2106.23851071, E2 = -2106.24406929, dE = 0.00555858
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00555858        0.00005000       NO    
+  2. RMS gradient                    0.01460285        0.00094500       NO    
+  3. Max gradient                    0.06852367        0.00132300       NO    
+  4. RMS displacement                0.01072113        0.00250000       NO    
+  5. Max displacement                0.05459875        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 2****
+Using BFGS optimizer (step 2 < switch point 3)
+BFGS: step 1.209281 Å > max_step_size 0.100000 Å, capping
+BFGS: final step = 0.100000 Å (rho=15.0)
+Displacement norm = 0.100000000000000 Å
+E1 = -2106.23848341, E2 = -2106.24054428, dE = 0.00206087
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00206087        0.00005000       NO    
+  2. RMS gradient                    0.01452434        0.00094500       NO    
+  3. Max gradient                    0.04877112        0.00132300       NO    
+  4. RMS displacement                0.01072113        0.00250000       NO    
+  5. Max displacement                0.03768717        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 3****
+Using BFGS optimizer (step 3 < switch point 3)
+BFGS: dk norm 0.252131 Å > cap 0.100000 Å, scaling down
+BFGS: step 1.500000 Å > max_step_size 0.100000 Å, capping
+BFGS: final step = 0.100000 Å (rho=15.0)
+Displacement norm = 0.100000000000000 Å
+E1 = -2106.23605449, E2 = -2106.23209997, dE = 0.00395452
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00395452        0.00005000       NO    
+  2. RMS gradient                    0.01145122        0.00094500       NO    
+  3. Max gradient                    0.05901166        0.00132300       NO    
+  4. RMS displacement                0.01072113        0.00250000       NO    
+  5. Max displacement                0.05596208        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 4****
+Using GDIIS optimizer (step 4 >= switch point 3)
+Displacement norm = 0.094967905533939 Å
+E1 = -2106.24229043, E2 = -2106.24363904, dE = 0.00134861
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00134861        0.00005000       NO    
+  2. RMS gradient                    0.00302435        0.00094500       NO    
+  3. Max gradient                    0.01470847        0.00132300       NO    
+  4. RMS displacement                0.01018163        0.00250000       NO    
+  5. Max displacement                0.04007579        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 5****
+Using GDIIS optimizer (step 5 >= switch point 3)
+Displacement norm = 0.014955640068266 Å
+E1 = -2106.24264782, E2 = -2106.24442276, dE = 0.00177494
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00177494        0.00005000       NO    
+  2. RMS gradient                    0.00167085        0.00094500       NO    
+  3. Max gradient                    0.00639075        0.00132300       NO    
+  4. RMS displacement                0.00160341        0.00250000       YES   
+  5. Max displacement                0.00662452        0.00400000       NO    
+----------------------------------------------------------------------------
+
+Performing periodic cleanup (every 5 steps)...
+
+****Step 6****
+Using GDIIS optimizer (step 6 >= switch point 3)
+Displacement norm = 0.025647925945317 Å
+E1 = -2106.24293018, E2 = -2106.24523423, dE = 0.00230405
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00230405        0.00005000       NO    
+  2. RMS gradient                    0.00156906        0.00094500       NO    
+  3. Max gradient                    0.00535246        0.00132300       NO    
+  4. RMS displacement                0.00274975        0.00250000       NO    
+  5. Max displacement                0.01034519        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 7****
+Using GDIIS optimizer (step 7 >= switch point 3)
+Displacement norm = 0.010475810860219 Å
+E1 = -2106.24300025, E2 = -2106.24588225, dE = 0.00288200
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00288200        0.00005000       NO    
+  2. RMS gradient                    0.00139259        0.00094500       NO    
+  3. Max gradient                    0.00456133        0.00132300       NO    
+  4. RMS displacement                0.00112312        0.00250000       YES   
+  5. Max displacement                0.00504841        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 8****
+Using GDIIS optimizer (step 8 >= switch point 3)
+Displacement norm = 0.018168845175122 Å
+E1 = -2106.24284135, E2 = -2106.24625454, dE = 0.00341319
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00341319        0.00005000       NO    
+  2. RMS gradient                    0.00406401        0.00094500       NO    
+  3. Max gradient                    0.01701553        0.00132300       NO    
+  4. RMS displacement                0.00194790        0.00250000       YES   
+  5. Max displacement                0.00619818        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 9****
+Using GDIIS optimizer (step 9 >= switch point 3)
+Displacement norm = 0.012985701575055 Å
+E1 = -2106.24275141, E2 = -2106.24688682, dE = 0.00413541
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00413541        0.00005000       NO    
+  2. RMS gradient                    0.00490242        0.00094500       NO    
+  3. Max gradient                    0.02061642        0.00132300       NO    
+  4. RMS displacement                0.00139221        0.00250000       YES   
+  5. Max displacement                0.00730811        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 10****
+Using GDIIS optimizer (step 10 >= switch point 3)
+Displacement norm = 0.041142213753998 Å
+E1 = -2106.24290751, E2 = -2106.24464789, dE = 0.00174038
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00174038        0.00005000       NO    
+  2. RMS gradient                    0.00230935        0.00094500       NO    
+  3. Max gradient                    0.00889812        0.00132300       NO    
+  4. RMS displacement                0.00441091        0.00250000       NO    
+  5. Max displacement                0.02548510        0.00400000       NO    
+----------------------------------------------------------------------------
+
+Performing periodic cleanup (every 5 steps)...
+
+****Step 11****
+Using GDIIS optimizer (step 11 >= switch point 3)
+Displacement norm = 0.027565082983623 Å
+E1 = -2106.24281856, E2 = -2106.24304667, dE = 0.00022811
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00022811        0.00005000       NO    
+  2. RMS gradient                    0.00153052        0.00094500       NO    
+  3. Max gradient                    0.00714635        0.00132300       NO    
+  4. RMS displacement                0.00295529        0.00250000       NO    
+  5. Max displacement                0.01553709        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 12****
+Using GDIIS optimizer (step 12 >= switch point 3)
+Displacement norm = 0.005769743950461 Å
+E1 = -2106.24282692, E2 = -2106.24286005, dE = 0.00003313
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00003313        0.00005000       YES   
+  2. RMS gradient                    0.00104031        0.00094500       NO    
+  3. Max gradient                    0.00487138        0.00132300       NO    
+  4. RMS displacement                0.00061858        0.00250000       YES   
+  5. Max displacement                0.00219332        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 13****
+Using GDIIS optimizer (step 13 >= switch point 3)
+Displacement norm = 0.010580746333025 Å
+E1 = -2106.24279624, E2 = -2106.24244914, dE = 0.00034710
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00034710        0.00005000       NO    
+  2. RMS gradient                    0.00125238        0.00094500       NO    
+  3. Max gradient                    0.00520085        0.00132300       NO    
+  4. RMS displacement                0.00113438        0.00250000       YES   
+  5. Max displacement                0.00445134        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 14****
+Using GDIIS optimizer (step 14 >= switch point 3)
+Displacement norm = 0.020553273569070 Å
+E1 = -2106.24280395, E2 = -2106.24202797, dE = 0.00077598
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00077598        0.00005000       NO    
+  2. RMS gradient                    0.00071219        0.00094500       YES   
+  3. Max gradient                    0.00250083        0.00132300       NO    
+  4. RMS displacement                0.00220354        0.00250000       YES   
+  5. Max displacement                0.00863587        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 15****
+Using GDIIS optimizer (step 15 >= switch point 3)
+Displacement norm = 0.007943806311123 Å
+E1 = -2106.24279900, E2 = -2106.24185506, dE = 0.00094394
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00094394        0.00005000       NO    
+  2. RMS gradient                    0.00047554        0.00094500       YES   
+  3. Max gradient                    0.00157695        0.00132300       NO    
+  4. RMS displacement                0.00085167        0.00250000       YES   
+  5. Max displacement                0.00333787        0.00400000       YES   
+----------------------------------------------------------------------------
+
+Performing periodic cleanup (every 5 steps)...
+
+****Step 16****
+Using GDIIS optimizer (step 16 >= switch point 3)
+Displacement norm = 0.006607478030806 Å
+E1 = -2106.24282239, E2 = -2106.24195119, dE = 0.00087120
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00087120        0.00005000       NO    
+  2. RMS gradient                    0.00041012        0.00094500       YES   
+  3. Max gradient                    0.00151635        0.00132300       NO    
+  4. RMS displacement                0.00070840        0.00250000       YES   
+  5. Max displacement                0.00322843        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 17****
+Using GDIIS optimizer (step 17 >= switch point 3)
+Displacement norm = 0.011670963607994 Å
+E1 = -2106.24287202, E2 = -2106.24226203, dE = 0.00060999
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00060999        0.00005000       NO    
+  2. RMS gradient                    0.00058730        0.00094500       YES   
+  3. Max gradient                    0.00224658        0.00132300       NO    
+  4. RMS displacement                0.00125126        0.00250000       YES   
+  5. Max displacement                0.00541937        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 18****
+Using GDIIS optimizer (step 18 >= switch point 3)
+Displacement norm = 0.010562259525274 Å
+E1 = -2106.24289446, E2 = -2106.24236598, dE = 0.00052848
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00052848        0.00005000       NO    
+  2. RMS gradient                    0.00048723        0.00094500       YES   
+  3. Max gradient                    0.00150449        0.00132300       NO    
+  4. RMS displacement                0.00113239        0.00250000       YES   
+  5. Max displacement                0.00506628        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 19****
+Using GDIIS optimizer (step 19 >= switch point 3)
+GDIIS: applying step reduction factor 0.50
+Displacement norm = 0.005024117331362 Å
+E1 = -2106.24291792, E2 = -2106.24252345, dE = 0.00039447
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00039447        0.00005000       NO    
+  2. RMS gradient                    0.00036481        0.00094500       YES   
+  3. Max gradient                    0.00156415        0.00132300       NO    
+  4. RMS displacement                0.00053864        0.00250000       YES   
+  5. Max displacement                0.00220618        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 20****
+Using GDIIS optimizer (step 20 >= switch point 3)
+GDIIS: applying step reduction factor 0.50
+Displacement norm = 0.007563121735354 Å
+E1 = -2106.24294309, E2 = -2106.24273492, dE = 0.00020817
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00020817        0.00005000       NO    
+  2. RMS gradient                    0.00032184        0.00094500       YES   
+  3. Max gradient                    0.00152324        0.00132300       NO    
+  4. RMS displacement                0.00081085        0.00250000       YES   
+  5. Max displacement                0.00332487        0.00400000       YES   
+----------------------------------------------------------------------------
+
+Performing periodic cleanup (every 5 steps)...
+
+****Step 21****
+Using GDIIS optimizer (step 21 >= switch point 3)
+GDIIS: applying step reduction factor 0.50
+Displacement norm = 0.006851891599462 Å
+E1 = -2106.24296250, E2 = -2106.24288596, dE = 0.00007654
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00007654        0.00005000       NO    
+  2. RMS gradient                    0.00030388        0.00094500       YES   
+  3. Max gradient                    0.00135470        0.00132300       NO    
+  4. RMS displacement                0.00073460        0.00250000       YES   
+  5. Max displacement                0.00260341        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 22****
+Using GDIIS optimizer (step 22 >= switch point 3)
+GDIIS: applying step reduction factor 0.50
+Displacement norm = 0.004902329417591 Å
+E1 = -2106.24297743, E2 = -2106.24300263, dE = 0.00002520
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00002520        0.00005000       YES   
+  2. RMS gradient                    0.00029806        0.00094500       YES   
+  3. Max gradient                    0.00129267        0.00132300       YES   
+  4. RMS displacement                0.00052558        0.00250000       YES   
+  5. Max displacement                0.00202535        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+Converged at step 22
+Final geometry saved to to-4-tep-1-pro_mecp.xyz
+
+****Congrats! MECP has converged****

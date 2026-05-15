@@ -243,6 +243,18 @@ pub struct Config {
     ///
     /// Default: true (recommended - significantly more robust than fixed 50/50)
     pub use_hybrid_gediis: bool,
+    /// RMS gradient threshold for phase 1→2 switch in sequential hybrid (default: 0.005 Ha/Å)
+    ///
+    /// Li & Frisch JCTC 2006: "switches to GEDIIS when the root-mean-square force
+    /// of the latest point is smaller than 10⁻² au"
+    /// 10⁻² Ha/Bohr ≈ 0.005 Ha/Å
+    pub gediis_switch_rms: f64,
+    /// RMS displacement threshold for phase 2→3 switch in sequential hybrid (default: 0.001 Å)
+    ///
+    /// Li & Frisch JCTC 2006: "when the root-mean-square RFO step of the latest
+    /// point is less than 2.5×10⁻³ au, GDIIS is used until convergence"
+    /// 2.5×10⁻³ Bohr ≈ 0.0013 Å, rounded to 0.001 Å
+    pub gediis_switch_step: f64,
     /// Step number at which to switch from BFGS to DIIS optimizers (default: 3)
     /// - 0: Use DIIS from step 1 (no BFGS)
     /// - >= max_steps: Use BFGS only (no DIIS)
@@ -439,8 +451,10 @@ impl Default for Config {
             drive_steps: 10,
             drive_type: String::new(),
             drive_atoms: Vec::new(),
-            use_gediis: false,
-            use_hybrid_gediis: false, // Disabled until GEDIIS sign convention is validated
+            use_gediis: false, // GDIIS is the default (robust and well-tested)
+            use_hybrid_gediis: false, // Enable for Li & Frisch JCTC 2006 sequential hybrid
+            gediis_switch_rms: 0.005, // 10⁻² Ha/Bohr → Ha/Å for phase 1→2 switch
+            gediis_switch_step: 0.001, // 2.5×10⁻³ Bohr → Å for phase 2→3 switch
             switch_step: 3,          // Default to current behavior (BFGS for first 3 steps)
             bfgs_rho: 15.0,
             max_history: 4, // Match Python's history size (keeps max 4 gradients)

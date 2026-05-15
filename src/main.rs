@@ -9,7 +9,9 @@
 //! OpenMECP supports two main commands:
 //!
 //! 1. **Input Creation** (`omecp ci <geometry_file> [output_file]`):
-//!    Creates a template input file from a geometry file
+//!    Creates a template input file from a geometry file.
+//!    When creating from QM output files (.log, .out, .json), automatically
+//!    adds "_omecp" suffix to prevent overwriting the original file.
 //!
 //! 2. **MECP Optimization** (`omecp <input_file>`):
 //!    Runs MECP optimization using the specified input file
@@ -19,6 +21,11 @@
 //! ```bash
 //! # Create template input file from XYZ geometry
 //! omecp ci molecule.xyz
+//! # Creates: molecule.inp
+//!
+//! # Create template from Gaussian log file
+//! omecp ci calc.log
+//! # Creates: calc_omecp.inp (prevents overwriting calc.log when run)
 //!
 //! # Create template with custom output name
 //! omecp ci molecule.xyz custom.inp
@@ -686,6 +693,16 @@ fn print_configuration(
             "false"
         }
     );
+    if input_config.use_gediis {
+        println!(
+            "    GEDIIS Switch RMS:        {:.3}",
+            input_config.gediis_switch_rms
+        );
+        println!(
+            "    GEDIIS Switch Step:       {:.3}",
+            input_config.gediis_switch_step
+        );
+    }
     println!(
         "    Use Robust DIIS:          {}",
         if input_config.use_robust_diis {
@@ -1618,62 +1635,8 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 // inverse Hessian multiply — pure Ha/Å only
                 optimizer::bfgs_step(&x_old, &mecp_grad.g_vec, &inv_hessian, &config, 1.0)
             }
-        } else if config.use_robust_diis {
-            // Use new Experimental DIIS implementations
-            if config.use_gediis {
-                println!(
-                    "Using Robust GEDIIS (Experimental) (step {} >= switch point {})",
-                    step, config.switch_step
-                );
-                let gediis_cfg = optimizer::GediisConfig {
-                    max_vectors: config.max_history,
-                    variant: optimizer::parse_gediis_variant(&config.gediis_variant),
-                    sim_switch: config.gediis_sim_switch,
-                    max_rises: 1,
-                    auto_switch: config.gediis_variant == "auto",
-                    ts_scale: 1.0,
-                    n_neg: config.n_neg,
-                };
-                optimizer::robust_gediis_step(&mut opt_state, &config, Some(gediis_cfg))
-            } else {
-                println!(
-                    "Using Robust GDIIS (Experimental) (step {} >= switch point {})",
-                    step, config.switch_step
-                );
-                let cosine_mode = Some(optimizer::parse_cosine_mode(&config.gdiis_cosine_check));
-                let coeff_mode = Some(optimizer::parse_coeff_mode(&config.gdiis_coeff_check));
-                optimizer::robust_gdiis_step(&mut opt_state, &config, cosine_mode, coeff_mode)
-            }
-        } else if config.use_gediis {
-            // Use existing implementations (backward compatible)
-            if config.use_hybrid_gediis {
-                println!(
-                    "Using Smart Hybrid GEDIIS optimizer (adaptive) (step {} >= switch point {})",
-                    step, config.switch_step
-                );
-                optimizer::smart_hybrid_gediis_step(&mut opt_state, &config)
-            } else {
-                println!(
-                    "Using Pure GEDIIS optimizer (step {} >= switch point {})",
-                    step, config.switch_step
-                );
-                optimizer::gediis_step(&mut opt_state, &config)
-            }
         } else {
-            // GDIIS step: 
-            if config.use_direct_hessian {
-                println!(
-                    "Using GDIIS optimizer (step {} >= switch point {})",
-                    step, config.switch_step
-                );
-                optimizer::gdiis_step_direct(&mut opt_state, &config)
-            } else {
-                println!(
-                    "Using GDIIS optimizer (step {} >= switch point {})",
-                    step, config.switch_step
-                );
-                optimizer::gdiis_step(&mut opt_state, &config)
-            }
+            optimizer::select_diis_step(&mut opt_state, &config, step)
         };
 
         // Update geometry
@@ -2735,53 +2698,8 @@ fn run_single_optimization(
                 };
                 // BFGS uses inverse Hessian (matching Fortran MECP)
                 optimizer::bfgs_step(&x_old, &grad, &inv_hessian, config, adaptive_scale)
-            } else if config.use_robust_diis {
-                // Use new Experimental DIIS implementations
-                if config.use_gediis {
-                    println!(
-                        "Using Robust GEDIIS (Experimental) (step {} >= switch point {})",
-                        step, config.switch_step
-                    );
-                    let gediis_cfg = optimizer::GediisConfig {
-                        max_vectors: config.max_history,
-                        variant: optimizer::parse_gediis_variant(&config.gediis_variant),
-                        sim_switch: config.gediis_sim_switch,
-                        max_rises: 1,
-                        auto_switch: config.gediis_variant == "auto",
-                        ts_scale: 1.0,
-                        n_neg: config.n_neg,
-                    };
-                    optimizer::robust_gediis_step(&mut opt_state, config, Some(gediis_cfg))
-                } else {
-                    println!(
-                        "Using Robust GDIIS (Experimental) (step {} >= switch point {})",
-                        step, config.switch_step
-                    );
-                    let cosine_mode = Some(optimizer::parse_cosine_mode(&config.gdiis_cosine_check));
-                    let coeff_mode = Some(optimizer::parse_coeff_mode(&config.gdiis_coeff_check));
-                    optimizer::robust_gdiis_step(&mut opt_state, config, cosine_mode, coeff_mode)
-                }
-            } else if config.use_gediis {
-                // Use existing implementations (backward compatible)
-                if config.use_hybrid_gediis {
-                    println!(
-                        "Using Smart Hybrid GEDIIS optimizer (adaptive) (step {} >= switch point {})",
-                        step, config.switch_step
-                    );
-                    optimizer::smart_hybrid_gediis_step(&mut opt_state, config)
-                } else {
-                    println!(
-                        "Using Pure GEDIIS optimizer (step {} >= switch point {})",
-                        step, config.switch_step
-                    );
-                    optimizer::gediis_step(&mut opt_state, config)
-                }
             } else {
-                println!(
-                    "Using GDIIS optimizer (step {} >= switch point {})",
-                    step, config.switch_step
-                );
-                optimizer::gdiis_step(&mut opt_state, config)
+                optimizer::select_diis_step(&mut opt_state, config, step)
             }
         };
 
@@ -3895,54 +3813,8 @@ fn run_restart(
                 }
                 // BFGS uses inverse Hessian (matching Fortran MECP)
                 optimizer::bfgs_step(&x_old, &grad, &inv_hessian, &config, 1.0)
-            } else if config.use_robust_diis {
-                // Use new Experimental DIIS implementations
-                if config.use_gediis {
-                    println!(
-                        "Using Robust GEDIIS (Experimental) (step {} >= switch point {})",
-                        step, config.switch_step
-                    );
-                    let gediis_cfg = optimizer::GediisConfig {
-                        max_vectors: config.max_history,
-                        variant: optimizer::parse_gediis_variant(&config.gediis_variant),
-                        sim_switch: config.gediis_sim_switch,
-                        max_rises: 1,
-                        auto_switch: config.gediis_variant == "auto",
-                        ts_scale: 1.0,
-                        n_neg: config.n_neg,
-                    };
-                    optimizer::robust_gediis_step(&mut opt_state, &config, Some(gediis_cfg))
-                } else {
-                    println!(
-                        "Using Robust GDIIS (Experimental) (step {} >= switch point {})",
-                        step, config.switch_step
-                    );
-                    let cosine_mode = Some(optimizer::parse_cosine_mode(&config.gdiis_cosine_check));
-                    let coeff_mode = Some(optimizer::parse_coeff_mode(&config.gdiis_coeff_check));
-                    optimizer::robust_gdiis_step(&mut opt_state, &config, cosine_mode, coeff_mode)
-                }
-            } else if config.use_gediis {
-                // Use existing implementations (backward compatible)
-                if config.use_hybrid_gediis {
-                    println!(
-                        "Using Smart Hybrid GEDIIS optimizer (adaptive) (step {} >= switch point {})",
-                        step,
-                        config.switch_step
-                    );
-                    optimizer::smart_hybrid_gediis_step(&mut opt_state, &config)
-                } else {
-                    println!(
-                        "Using Pure GEDIIS optimizer (step {} >= switch point {})",
-                        step, config.switch_step
-                    );
-                    optimizer::gediis_step(&mut opt_state, &config)
-                }
             } else {
-                println!(
-                    "Using GDIIS optimizer (step {} >= switch point {})",
-                    step, config.switch_step
-                );
-                optimizer::gdiis_step(&mut opt_state, &config)
+                optimizer::select_diis_step(&mut opt_state, &config, step)
             }
         };
 

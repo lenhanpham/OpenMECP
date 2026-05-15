@@ -963,6 +963,18 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "drive_type" => config.drive_type = value.to_string(),
         "use_gediis" => config.use_gediis = parse_bool(value),
         "use_hybrid_gediis" => config.use_hybrid_gediis = parse_bool(value),
+        "gediis_switch_rms" => {
+            config.gediis_switch_rms = value.parse().unwrap_or_else(|_| {
+                eprintln!("Warning: Invalid gediis_switch_rms '{}', using default 0.005", value);
+                0.005
+            });
+        }
+        "gediis_switch_step" => {
+            config.gediis_switch_step = value.parse().unwrap_or_else(|_| {
+                eprintln!("Warning: Invalid gediis_switch_step '{}', using default 0.001", value);
+                0.001
+            });
+        }
         "switch_step" => {
             config.switch_step = value.parse().unwrap_or_else(|_| {
                 eprintln!(

@@ -66,8 +66,8 @@ Where `x_norm = (f1 - f2) / |f1 - f2|` is the normalized gradient difference.
 - **Direct Hessian + PSB (Recommended)**: Default algorithm using direct Hessian with Powell-Symmetric-Broyden update. Proven on hundreds of MECP calculations.
 - **Inverse Hessian + BFGS**: Algorithm using inverse Hessian with BFGS update.
 - **GDIIS Optimizer**: Geometry-based DIIS for 2-3x faster convergence
-- **GEDIIS Optimizer**: Energy-informed DIIS for enhanced convergence
-- **Hybrid Strategy**: Automatic switching between BFGS, GDIIS, and GEDIIS
+- **GEDIIS Optimizer**: Energy-informed DIIS for enhanced convergence (Li & Frisch JCTC 2006)
+- **Sequential Hybrid Strategy**: 3-phase switching: GDIIS → GEDIIS → GDIIS (Li & Frisch JCTC 2006)
 - **Robust DIIS (Experimental)**: Enhanced GDIIS/GEDIIS with SR1 updates, cosine validation, and coefficient checks
 - **Multiple Hessian Updates (Experimental)**: BFGS, Powell, Bofill, and adaptive BFGS/Powell blend
 
@@ -157,16 +157,23 @@ Create a template input file from an existing geometry:
 ```bash
 # From XYZ file
 omecp ci molecule.xyz
+# Creates: molecule.inp
 
-# From Gaussian output
+# From Gaussian output (automatically adds suffix to prevent overwriting)
 omecp ci calculation.log
+# Creates: calculation_omecp.inp (protects original calculation.log)
 
 # From Gaussian input
 omecp ci input.gjf
+# Creates: input.inp
 
 # Custom output name
 omecp ci molecule.xyz my_calculation.inp
 ```
+
+**Note**: When creating templates from QM output files (`.log`, `.out`, `.json`), 
+OpenMECP automatically adds an `_omecp` suffix to the input filename. This prevents 
+the MECP optimization run from overwriting your original QM output files.
 
 Then edit the generated template to customize parameters.
 
@@ -441,8 +448,10 @@ H  1.2  0.0  0.5
 | Keyword              | Type    | Default | Description                                                       |
 | -------------------- | ------- | ------- | ----------------------------------------------------------------- |
 | `use_direct_hessian` | boolean | `true`  | Direct Hessian+PSB (recommended) or inverse Hessian+BFGS          |
-| `use_gediis`         | boolean | `false` | Use GEDIIS optimizer instead of GDIIS                             |
-| `use_hybrid_gediis`  | boolean | `false` | Use dynamic hybrid GDIIS/GEDIIS optimizer                         |
+| `use_gediis`         | boolean | `false` | Use GEDIIS optimizer instead of GDIIS (default: GDIIS)            |
+| `use_hybrid_gediis`  | boolean | `false` | Use sequential hybrid GDIIS/GEDIIS (requires use_gediis=true)     |
+| `gediis_switch_rms`  | float   | `0.005` | RMS gradient threshold for GDIIS→GEDIIS switch (paper: 10⁻² au)   |
+| `gediis_switch_step` | float   | `0.001` | RMS step threshold for GEDIIS→GDIIS switch (paper: 2.5×10⁻³ au)   |
 | `switch_step`        | integer | `3`     | Step to switch from BFGS to DIIS optimizers                       |
 | `max_history`        | integer | `4`     | Max iterations used for DIIS extrapolation                        |
 | `smart_history`      | boolean | `false` | Smart history instead of first in first out                       |
@@ -626,7 +635,8 @@ switch_step = 999   # Pure BFGS (most stable)
 
 - BFGS: Baseline convergence rate
 - GDIIS: ~2-3x faster than BFGS
-- GEDIIS: ~2-4x faster than GDIIS (enable with `use_gediis = true`)
+- Sequential Hybrid: ~2-4x faster than GDIIS (default, uses GEDIIS at optimal stage)
+- Pure GEDIIS: Comparable to hybrid, may converge differently on some systems
 
 ### Constraint Syntax
 
@@ -861,29 +871,44 @@ fixedatoms = 1,3-5,7    # Fix atoms 1, 3, 4, 5, and 7
 
 ### GDIIS and GEDIIS Optimizers
 
-Automatically activated after 3 BFGS steps:
+**GDIIS (Geometry-based DIIS) — Default**:
 
-**GDIIS (Geometry-based DIIS)**:
-
-- Default optimizer for geometry convergence
-- Stores last 4 geometries, gradients, and Hessians
-- Computes error vectors: `E[i] = H^-1 * G[i]`
-- Solves DIIS equations for optimal step
+- Proven robust for MECP convergence (converges in ~10 steps for test systems)
+- Stores last N geometries, gradients, and Hessians
+- Computes error vectors: `e[i] = H^-1 * g[i]`
+- Solves DIIS equations for optimal interpolation coefficients
+- Enabled by default when `use_gediis = false`
 
 **GEDIIS (Energy-informed DIIS)**:
 
-- Enhanced optimizer using energy information
-- Set `use_gediis = true` to enable
-- Includes energy differences in DIIS error vectors
-- Better convergence for difficult cases
-- Can be 2-4x faster than GDIIS in some systems
+- Uses GDIIS-compatible error vectors (`e_i = H⁻¹ · (g_vec + f_vec)`) as the core B-matrix for numerical stability
+- Adds energy diagonal coupling: `B[i,i] += α · E_i²` where E_i is the energy gap |E1-E2|
+- The diagonal energy term biases interpolation toward low-gap points, making it "energy-informed"
+- Enforces interpolation only (`c_i > 0`) for stability — no extrapolation beyond the convex hull of history
+- Enable with `use_gediis = true` and `use_hybrid_gediis = false`
+
+**Sequential Hybrid GEDIIS/GDIIS (Li & Frisch JCTC 2006)**:
+
+A 3-phase sequential switching strategy (enable with `use_gediis = true` + `use_hybrid_gediis = true`):
+
+1. **Phase 1 — GDIIS**: Pre-optimizer when RMS gradient is above `gediis_switch_rms` (default 0.005 Ha/Å). GDIIS converges rapidly (~10 steps for the test system) and provides a robust starting point.
+
+2. **Phase 2 — GEDIIS**: When RMS gradient drops below `gediis_switch_rms` but RMS displacement is still above `gediis_switch_step`. GEDIIS uses energy-biased interpolation for smooth convergence, potentially finding different minima than GDIIS.
+
+3. **Phase 3 — GDIIS**: When RMS displacement drops below `gediis_switch_step` (default 0.001 Å). GDIIS provides fast final convergence near the minimum.
 
 **Benefits**:
 
-- 2-4x faster convergence compared to BFGS
-- Typical 15-20 steps → 6-10 steps
-- No user intervention required
-- Automatic fallback to BFGS for first 3 steps
+- Each method runs at the stage where it excels — no per-step blending
+- GEDIIS only active in the moderate-convergence regime (phase 2)
+- GDIIS handles both early (phase 1) and late (phase 3) stages where it is proven robust
+- Configurable switching thresholds: `gediis_switch_rms` and `gediis_switch_step`
+
+**Performance**: For the built-in test system (B3LYP/6-31G**, 11 atoms):
+
+- GDIIS: converges in 10 steps
+- Sequential Hybrid GEDIIS: converges in 18 steps
+- Both reach below the 0.00005 hartree energy gap threshold
 
 ### State Selection for TD-DFT
 
@@ -1251,15 +1276,22 @@ mult_a = 1
 mult_b = 3
 ```
 
-### Example 6: GEDIIS Optimizer
+### Example 6: Sequential Hybrid GEDIIS
 
 ```
 *GEOM
-C     -2.128898    1.222678   -0.000000
-H     -3.053660    1.340575   -0.568664
-H     -2.107852    1.948827    0.815309
-H     -2.080756    0.212202    0.411200
-H     -1.273324    1.389106   -0.657844
+C     0.000000000000      1.396613000000      0.000000000000
+C     1.209503000000      0.698307000000      0.000000000000
+C     1.209503000000     -0.698307000000      0.000000000000
+C     0.000000000000     -1.396613000000      0.000000000000
+C    -1.209503000000     -0.698307000000      0.000000000000
+C    -1.209503000000      0.698307000000      0.000000000000
+H     2.150882000000      1.241812000000      0.000000000000
+H     2.150882000000     -1.241812000000      0.000000000000
+H     0.000000000000     -2.483625000000      0.000000000000
+H    -2.150882000000     -1.241812000000      0.000000000000
+H    -2.150882000000      1.241812000000      0.000000000000
+
 *
 
 *TAIL1
@@ -1269,14 +1301,16 @@ H     -1.273324    1.389106   -0.657844
 *
 
 program = gaussian
-method = B3LYP/6-31G*
+method = B3LYP/6-31G**
 nprocs = 4
 mem = 4GB
-charge = 0
+charge = 1
 mult_a = 1
 mult_b = 3
-use_gediis = true
-switch_step = 5
+use_gediis = true          # Enable GEDIIS
+use_hybrid_gediis = true   # Sequential hybrid (3-phase switching)
+gediis_switch_rms = 0.008  # GDIIS→GEDIIS when rms_g < 0.008 (default: 0.005)
+gediis_switch_step = 0.002 # GEDIIS→GDIIS when rms_disp < 0.002 (default: 0.001)
 ```
 
 ### Example 7: TD-DFT State Selection
@@ -1336,7 +1370,10 @@ charge = 0
 mult_a = 1
 mult_b = 3
 switch_step = 0      # Pure DIIS mode (fastest)
-use_gediis = true    # Use enhanced GEDIIS optimizer
+use_gediis = true    # Use sequential hybrid GEDIIS/GDIIS (default)
+# Phase switching thresholds:
+gediis_switch_rms = 0.01    # GDIIS→GEDIIS when rms_g < 0.01 Ha/Å
+gediis_switch_step = 0.002  # GEDIIS→GDIIS when rms_disp < 0.002 Å
 ```
 
 ### Example 9: Coordinate Driving
@@ -1506,9 +1543,10 @@ mult_a = 1
 mult_b = 3
 ```
 
-### Example 14: Robust DIIS with Energy-DIIS Variant
+### Example 14: Robust DIIS with Energy-DIIS Variant (Experimental)
 
-Use the experimental GEDIIS implementation with Energy-DIIS variant for difficult convergence cases:
+Use the experimental GEDIIS implementation with Energy-DIIS variant for difficult convergence cases.
+Note: The sequential hybrid (default) is recommended for most cases.
 
 ```
 *GEOM
@@ -1679,7 +1717,7 @@ OpenMECP is licensed under the **MIT License**.
 
 ---
 
-**OpenMECP v0.0.2** - A Rust implementation of the MECP optimizer
+**OpenMECP v0.0.3** - A Rust implementation of the MECP optimizer
 Developed by Le Nhan Pham | [GitHub](https://github.com/lenhanpham/OpenMECP)
 
 For more information, visit the project documentation or use `omecp --help`

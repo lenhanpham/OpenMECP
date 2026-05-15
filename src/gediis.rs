@@ -314,6 +314,16 @@ impl GediisOptimizer {
             }
         }
 
+        // Tikhonov regularization
+        let mut diag_sum = 0.0_f64;
+        for i in 0..n {
+            diag_sum += b[(i, i)];
+        }
+        let reg = 1e-6 * (diag_sum / (n as f64)).max(1e-10);
+        for i in 0..n {
+            b[(i, i)] += reg;
+        }
+
         // Add constraint row/column
         for i in 0..n {
             b[(i, n)] = 1.0;
@@ -366,6 +376,18 @@ impl GediisOptimizer {
             for j in 0..n {
                 b[(i, j)] = trace[(i, i)] + trace[(j, j)] - trace[(i, j)] - trace[(j, i)];
             }
+        }
+
+        // Tikhonov regularization: add 1e-6 × mean diagonal to prevent
+        // ill-conditioned matrices when gradient-geometry pairs are nearly
+        // colinear (common with capped steps in MECP).
+        let mut diag_sum = 0.0_f64;
+        for i in 0..n {
+            diag_sum += b[(i, i)];
+        }
+        let reg = 1e-6 * (diag_sum / (n as f64)).max(1e-10);
+        for i in 0..n {
+            b[(i, i)] += reg;
         }
 
         // Add constraint row/column (sum of coefficients = 1)

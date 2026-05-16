@@ -334,14 +334,12 @@ impl CleanupManager {
             )));
         }
 
-        if self.config.should_log(1) {
+        if self.config.should_log(2) {
             info!("Starting cleanup in directory: {}", directory.display());
-            if self.config.should_log(2) {
-                info!(
-                    "Preserving files with extensions: {:?}",
-                    self.config.preserve_extensions
-                );
-            }
+            info!(
+                "Preserving files with extensions: {:?}",
+                self.config.preserve_extensions
+            );
         }
 
         // Read all directory entries
@@ -382,15 +380,15 @@ impl CleanupManager {
             // Check if this file should be preserved
             if self.should_preserve_file(extension, &path, &filename, max_step) {
                 preserved_files.push(path.clone());
-                if self.config.should_log(2) {
-                    debug!("Preserving file: {}", path.display());
-                }
+                    if self.config.should_log(2) {
+                        debug!("Preserving file: {}", path.display());
+                    }
             } else {
                 // Delete the file
                 match fs::remove_file(&path) {
                     Ok(_) => {
                         cleaned_files.push(path.clone());
-                        if self.config.should_log(1) {
+                        if self.config.should_log(2) {
                             info!("Cleaned up file: {}", path.display());
                         }
                     }
@@ -402,16 +400,15 @@ impl CleanupManager {
             }
         }
 
-        // Log summary
-        if self.config.should_log(1) {
+        if self.config.should_log(2) {
             info!(
                 "Cleanup completed: {} files deleted, {} files preserved",
                 cleaned_files.len(),
                 preserved_files.len()
             );
-            if max_step > 0 && self.config.should_log(1) {
-                info!("Latest step number: {}", max_step);
-            }
+        }
+        if self.config.should_log(1) && max_step > 0 {
+            debug!("Latest step number: {}", max_step);
         }
 
         if !errors.is_empty() {
@@ -582,7 +579,7 @@ impl CleanupManager {
             }
             match fs::remove_file(file_path) {
                 Ok(_) => {
-                    if self.config.should_log(1) {
+                    if self.config.should_log(2) {
                         info!("Cleaned up file: {}", file_path.display());
                     }
                     Ok(true)
@@ -603,7 +600,7 @@ impl CleanupManager {
 
             match fs::remove_file(file_path) {
                 Ok(_) => {
-                    if self.config.should_log(1) {
+                    if self.config.should_log(2) {
                         info!("Cleaned up file: {}", file_path.display());
                     }
                     Ok(true)

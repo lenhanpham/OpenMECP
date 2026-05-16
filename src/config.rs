@@ -317,8 +317,24 @@ pub struct Config {
     /// - "energy": Energy-DIIS using gradient-coordinate products
     /// - "simultaneous": Combines Energy-DIIS with quadratic terms
     ///
+    /// When `use_robust_diis = false` (standard mode):
+    /// - "sequential" (default): Standard GDIIS/GEDIIS using mean inverse Hessian
+    /// - "blend": New Python-faithful GDIIS_blend using mean true Hessian inversion
+    ///
+    /// Also settable via `use_gediis = blend` / `use_gediis = sequential` in input.
+    ///
     /// **Default**: "auto"
     pub gediis_variant: String,
+
+    /// Blend mode for hybrid GEDIIS+GDIIS blend methods (default: "fixed_sequential").
+    ///
+    /// - `"fixed"`: 50/50 fixed blend of GDIIS and EDIIS geometries.
+    /// - `"fixed_sequential"`: 50/50 blend far, pure GDIIS near convergence (default).
+    /// - `"gradient"`: Gradient-weighted blend (EDIIS when far, GDIIS near minimum).
+    /// - `"sequential"`: Phased switching (GDIIS → weighted → GDIIS).
+    ///
+    /// Only used when `use_hybrid_gediis = true` and `use_gediis = "blend"`.
+    pub gediis_blend_mode: String,
 
     /// Cosine check mode for GDIIS step validation.
     ///
@@ -363,51 +379,72 @@ pub struct Config {
     /// **Default**: 0.0025 (matching Fortran)
     pub gediis_sim_switch: f64,
 
-    // ========== Advanced Hessian Update Options ==========
+    // ========== Hessian Update Method ==========
 
-    /// Use advanced Hessian update methods from Fortran-ported module.
-    ///
-    /// When enabled, uses the new `update_hessian_advanced()` function
-    /// which supports multiple update methods. When disabled, uses the
-    /// legacy `update_hessian()` function (BFGS only).
-    ///
-    /// **Default**: false (for backward compatibility)
-    pub use_advanced_hessian_update: bool,
-
-    /// Hessian update method selection (only used when use_advanced_hessian_update = true).
+    /// Hessian update method selection.
     ///
     /// Options:
-    /// - "bfgs": Standard BFGS for minima (default, with curvature check)
-    /// - "bfgs_pure": BFGS without curvature check
-    /// - "powell": Symmetric rank-one (SR1) update
-    /// - "bofill": Weighted Powell/MS for saddle points
-    /// - "bfgs_powell_mix": Adaptive BFGS/Powell blend
+    /// - `DirectPsb`: Direct Hessian + PSB update (default, recommended).
+    ///   Solves `B × dk = -g` via LU decomposition. Better for saddle-point-like MECP.
+    /// - `InverseBfgs`: Inverse H⁻¹ + BFGS (Fortran-style).
+    /// - `Bofill`: Weighted Powell/MS for saddle points. Direct Hessian.
+    /// - `Powell`: Symmetric rank-one (SR1) update. Direct Hessian.
+    /// - `BfgsPowellMix`: Adaptive BFGS/Powell blend. Direct Hessian.
     ///
-    /// **Recommendations**:
-    /// - Use "bfgs" for standard MECP optimization
-    /// - Use "bofill" or "powell" for TS-like crossing points
-    /// - Use "bfgs_powell_mix" for difficult convergence cases
+    /// **Default**: DirectPsb
     ///
-    /// **Default**: "bfgs"
-    pub hessian_update_method: String,
+    /// **Compatibility**:
+    /// - All direct Hessian methods (DirectPsb, Bofill, Powell, BfgsPowellMix)
+    ///   are compatible with `use_gediis = blend`.
+    /// - `InverseBfgs` is **incompatible** with `use_gediis = blend`.
+    pub hessian_method: HessianMethod,
+}
 
-    // ========== Direct Hessian Algorithm ==========
+/// Hessian update method for geometry optimization.
+///
+/// Determines how the Hessian matrix (or its inverse) is stored and updated
+/// at each optimization step. The choice affects convergence behavior,
+/// especially near crossing points.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum HessianMethod {
+    /// Direct Hessian + PSB (Powell-Symmetric-Broyden) update.
+    /// Stores the full Hessian H (Ha/Å²), solves H·dk = -g via LU.
+    /// Recommended for MECP. Required for blend optimizer.
+    DirectPsb,
+    /// Inverse H⁻¹ + BFGS update (Fortran-style).
+    /// Stores H⁻¹ (Å²/Ha), computes step as H⁻¹·g via multiply.
+    /// Incompatible with blend optimizer.
+    InverseBfgs,
+    /// Bofill weighted update for saddle-point-like crossings.
+    /// Direct Hessian. Blends Powell and Murtagh-Sargent.
+    Bofill,
+    /// Powell symmetric rank-one (SR1) update.
+    /// Direct Hessian.
+    Powell,
+    /// Adaptive BFGS/Powell blend with Bofill weighting.
+    /// Direct Hessian.
+    BfgsPowellMix,
+}
 
-    /// Enables the direct Hessian + PSB update optimization algorithm.
+impl HessianMethod {
+    /// Returns `true` if this method stores a direct Hessian H (not inverse).
     ///
-    /// When enabled (default), uses a direct Hessian (not inverse) with PSB update:
-    ///
-    /// - **Direct Hessian** (not inverse): Solves `B × dk = -g` via LU decomposition
-    /// - **PSB update** (Powell-Symmetric-Broyden): Better for saddle-point-like MECP problems
-    /// - **Two-stage step limiting**: cap dk, then apply rho, then MaxStep
-    ///
-    /// This is the **recommended** setting for production MECP calculations.
-    /// Validated on hundreds of MECP calculations across diverse chemical systems.
-    ///
-    /// When disabled, uses the inverse Hessian + BFGS update algorithm (Fortran-style).
-    ///
-    /// **Default**: true (recommended)
-    pub use_direct_hessian: bool,
+    /// Direct Hessian methods solve linear systems `H·e = F` to compute
+    /// error vectors. They are required for the blend optimizer.
+    pub fn is_direct(&self) -> bool {
+        matches!(
+            self,
+            HessianMethod::DirectPsb
+                | HessianMethod::Bofill
+                | HessianMethod::Powell
+                | HessianMethod::BfgsPowellMix
+        )
+    }
+
+    /// Returns `true` if this method stores an inverse Hessian H⁻¹.
+    pub fn is_inverse(&self) -> bool {
+        matches!(self, HessianMethod::InverseBfgs)
+    }
 }
 
 impl Default for Config {
@@ -463,16 +500,46 @@ impl Default for Config {
             print_level: 1,      // Default: normal output level
             // New Fortran-ported DIIS options
             use_robust_diis: false,
-            gediis_variant: "auto".to_string(),
+            gediis_variant: "sequential".to_string(),
+            gediis_blend_mode: "fixed_sequential".to_string(),
             gdiis_cosine_check: "standard".to_string(),
             gdiis_coeff_check: "regular".to_string(),
             n_neg: 0,
             gediis_sim_switch: 0.0025,
-            // Advanced Hessian update options
-            use_advanced_hessian_update: false,
-            hessian_update_method: "bfgs".to_string(),
-            // Direct Hessian algorithm (recommended for convergence)
-            use_direct_hessian: true,
+            // Hessian update method (default: direct PSB)
+            hessian_method: HessianMethod::DirectPsb,
+        }
+    }
+}
+
+impl Config {
+    /// Returns `true` when the GEDIIS variant is set to `"blend"`.
+    ///
+    /// `"blend"` activates the new Python-faithful GDIIS_blend implementation
+    /// with blended mean Hessian error vectors and trust-region step control.
+    pub fn gediis_variant_is_blend(&self) -> bool {
+        self.gediis_variant == "blend"
+    }
+
+    /// Validates compatibility between the Hessian method and optimizer variant.
+    ///
+    /// The blend optimizer (`use_gediis = blend`) requires a direct Hessian method
+    /// because it solves `H·e = F` via LU decomposition. Inverse BFGS is incompatible.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if the combination is valid
+    /// - `Err(String)` with a descriptive error message if invalid
+    pub fn validate_hessian_optimizer_compatibility(&self) -> Result<(), String> {
+        if self.gediis_variant_is_blend() && self.hessian_method.is_inverse() {
+            Err(
+                "Incompatible settings: use_gediis = blend requires a direct Hessian method\n\
+                 (direct_psb, bofill, powell, or bfgs_powell_mix), but hessian = inverse_bfgs was selected.\n\
+                 To fix: set hessian = direct_psb (recommended) or use use_gediis = false/sequential."
+                    .to_string(),
+            )
+        } else {
+            Ok(())
         }
     }
 }

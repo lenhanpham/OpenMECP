@@ -46,7 +46,7 @@
 //! The first term drives the energy difference to zero (f-vector).
 //! The second term minimizes energy perpendicular to the gradient difference (g-vector).
 
-use crate::config::Config;
+use crate::config::{Config, HessianMethod};
 use crate::geometry::State;
 use nalgebra::{DMatrix, DVector};
 use std::collections::VecDeque;
@@ -2483,15 +2483,15 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
 /// # Examples
 ///
 /// ```rust
-/// use omecp::optimizer::{smart_hybrid_gediis_step, OptimizationState};
+/// use omecp::optimizer::{sequential_hybrid_gediis_step, OptimizationState};
 /// use omecp::config::Config;
 ///
 /// let config = Config::default();
 /// let mut opt_state = OptimizationState::new(5);
 ///
-/// // let x_new = smart_hybrid_gediis_step(&mut opt_state, &config);
+/// // let x_new = sequential_hybrid_gediis_step(&mut opt_state, &config);
 /// ```
-pub fn smart_hybrid_gediis_step(
+pub fn sequential_hybrid_gediis_step(
     opt_state: &mut OptimizationState,
     config: &Config,
 ) -> DVector<f64> {
@@ -2502,7 +2502,7 @@ pub fn smart_hybrid_gediis_step(
 
     if !opt_state.has_enough_history() {
         println!("Sequential Hybrid: history insufficient, phase 1 GDIIS");
-        if config.use_direct_hessian {
+        if config.hessian_method.is_direct() {
             return gdiis_step_direct(opt_state, config);
         } else {
             return gdiis_step(opt_state, config);
@@ -2529,7 +2529,7 @@ pub fn smart_hybrid_gediis_step(
         } else {
             println!("Sequential Hybrid: GDIIS phase 3 (rms_disp={:.6})", rms_disp);
         }
-        if config.use_direct_hessian {
+        if config.hessian_method.is_direct() {
             gdiis_step_direct(opt_state, config)
         } else {
             gdiis_step(opt_state, config)
@@ -2539,7 +2539,7 @@ pub fn smart_hybrid_gediis_step(
 
 /// Performs a hybrid GEDIIS optimization step (50% GDIIS + 50% GEDIIS).
 ///
-/// **DEPRECATED**: Use `smart_hybrid_gediis_step` instead for production use.
+/// **DEPRECATED**: Use `sequential_hybrid_gediis_step` instead for production use.
 /// This function is kept for backward compatibility and testing.
 ///
 /// This function implements a simple fixed 50/50 blend of GDIIS and GEDIIS.
@@ -2681,37 +2681,37 @@ pub fn parse_hessian_update_method(s: &str) -> HessianUpdateMethod {
     }
 }
 
-/// Updates the inverse Hessian using config-driven method selection.
+/// Updates the Hessian matrix using the specified method.
 ///
-/// When `use_advanced_hessian_update` is true, uses the Fortran-ported
-/// implementations. Otherwise, uses the legacy BFGS implementation.
+/// Dispatches to the appropriate update formula based on the `HessianMethod`:
+/// - `DirectPsb`: PSB (Powell-Symmetric-Broyden) rank-2 update on direct H
+/// - `InverseBfgs`: BFGS inverse Hessian update (legacy)
+/// - `Bofill`: Bofill weighted update for saddle-point-like crossings
+/// - `Powell`: Powell symmetric rank-one (SR1) update
+/// - `BfgsPowellMix`: Adaptive BFGS/Powell blend with Bofill weighting
 ///
 /// # Arguments
 ///
-/// * `h_inv` - Current inverse Hessian matrix
-/// * `delta_x` - Step vector (x_new - x_old)
-/// * `delta_g` - Gradient difference (g_new - g_old)
-/// * `config` - Configuration with Hessian update settings
+/// * `hessian` - Current Hessian matrix (direct or inverse depending on method)
+/// * `delta_x` - Step vector (x_new - x_old) in Å
+/// * `delta_g` - Gradient difference (g_new - g_old) in Ha/Å
+/// * `method` - Hessian update method to use
 ///
 /// # Returns
 ///
-/// Updated inverse Hessian matrix.
-pub fn update_hessian_config_driven(
-    h_inv: &DMatrix<f64>,
+/// Updated Hessian matrix.
+pub fn update_hessian_by_method(
+    hessian: &DMatrix<f64>,
     delta_x: &DVector<f64>,
     delta_g: &DVector<f64>,
-    config: &Config,
+    method: &HessianMethod,
 ) -> DMatrix<f64> {
-    if config.use_advanced_hessian_update {
-        // Use new Fortran-ported implementation
-        println!(
-            "Using advanced Hessian update (method: {})",
-            config.hessian_update_method
-        );
-        update_inverse_hessian_advanced(h_inv, delta_x, delta_g)
-    } else {
-        // Use legacy implementation
-        update_hessian(h_inv, delta_x, delta_g)
+    match method {
+        HessianMethod::DirectPsb => update_hessian_psb(hessian, delta_x, delta_g),
+        HessianMethod::InverseBfgs => update_hessian(hessian, delta_x, delta_g),
+        HessianMethod::Bofill => update_hessian_advanced(hessian, delta_x, delta_g, HessianUpdateMethod::Bofill),
+        HessianMethod::Powell => update_hessian_advanced(hessian, delta_x, delta_g, HessianUpdateMethod::Powell),
+        HessianMethod::BfgsPowellMix => update_hessian_advanced(hessian, delta_x, delta_g, HessianUpdateMethod::BfgsPowellMix),
     }
 }
 
@@ -2719,7 +2719,7 @@ pub fn update_hessian_config_driven(
 // direct Hessian Algorithm Functions
 // ========================================================================
 // These functions implement the optimization strategy
-// directly in Rust. They are activated by `use_direct_hessian = true`.
+// directly in Rust. They are activated by direct Hessian methods.
 
 /// Initializes the direct Hessian matrix for direct Hessian BFGS optimization.
 ///
@@ -3171,7 +3171,7 @@ pub fn select_diis_step(
                 "Using Sequential Hybrid GEDIIS optimizer (step {} >= switch point {})",
                 step, config.switch_step
             );
-            smart_hybrid_gediis_step(opt_state, config)
+            sequential_hybrid_gediis_step(opt_state, config)
         } else {
             println!(
                 "Using Pure GEDIIS optimizer (step {} >= switch point {})",
@@ -3180,7 +3180,7 @@ pub fn select_diis_step(
             gediis_step(opt_state, config)
         }
     } else {
-        if config.use_direct_hessian {
+        if config.hessian_method.is_direct() {
             println!(
                 "Using GDIIS optimizer (step {} >= switch point {})",
                 step, config.switch_step
@@ -3304,3 +3304,1145 @@ mod tests {
         );
     }
 }
+
+// ============================================================================
+// Python-faithful GDIIS_blend, GEDIIS_blend, and Hybrid implementations
+// ============================================================================
+// These functions replicate the exact algorithms from optimizer.py lines 248-317
+// for experimental comparison with the existing Rust implementations.
+//
+// Key differences from existing Rust GDIIS/GEDIIS:
+// 1. Error vectors use INVERTED mean true Hessian: e_i = Hm^{-1} @ F_i
+//    (existing Rust uses h_mean @ F_i where h_mean stores inverse Hessians)
+// 2. GEDIIS B-matrix uses Taylor expansion: -(F_i-F_j).(X_i-X_j)
+//    (existing Rust uses GDIIS error vectors + energy diagonal coupling)
+// 3. true_hess_history stores TRUE Hessians (not inverse Hessians)
+// 4. Hybrid blend uses pure geometric average (Python line 295 has a broken
+//    `newF` variable — intended formula is likely (newX + tmpX) / 2):
+//    x_new = (x_gdiis + x_ediis) / 2
+// ============================================================================
+
+/// Holds optimization state for the Python-faithful GDIIS_blend and
+/// GEDIIS_blend implementations.
+///
+/// # Python Origin
+///
+/// This struct matches the global variables and history lists used in
+/// `optimizer.py` `opt()` (lines 337-374):
+/// - `geom_history` <-> Xhist (geometries)
+/// - `true_hess_history` <-> Bhist/Hhist (TRUE Hessians)
+/// - `grad_history` + `f_vec_history` <-> Fhist (combined MECP force)
+/// - `e1_history` <-> Ehist (E1 energies)
+/// - `energy_history` <-> E1 - E2 (not in Python; stored for debugging)
+///
+/// # Key Difference from [`OptimizationState`]
+///
+/// The existing [`OptimizationState`] stores INVERSE Hessians in
+/// `hess_history`.  This struct stores TRUE Hessians in
+/// `true_hess_history`, matching Python's convention where
+/// `Hm = mean(Hhist)` and `Hm^{-1}` is computed by inversion.
+///
+/// # Note on naming
+///
+/// The name `_blend` suffix distinguishes this from the existing
+/// [`OptimizationState`] and indicates that it is designed for the
+/// GDIIS_blend (inverted mean Hessian error vectors) and GEDIIS_blend
+/// (Taylor expansion B-matrix) methods.
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone)]
+pub struct OptimizationState_blend {
+    /// History of geometries as column vectors.
+    ///
+    /// Python: `Xhist` (list of 1xN row vectors stored as `numpy.mat`).
+    pub geom_history: VecDeque<DVector<f64>>,
+
+    /// History of TRUE Hessian matrices (NxN), NOT inverse Hessians.
+    ///
+    /// Python: `Hhist`/`Bhist` (list of NxN matrices).
+    /// Mean is inverted for error vectors: `error_i = H_mean^{-1} @ F_i`.
+    pub true_hess_history: VecDeque<DMatrix<f64>>,
+
+    /// History of MECP g-vectors (perpendicular component) in Ha/A.
+    ///
+    /// Combined with `f_vec_history` to reconstruct Python's `Fhist`.
+    pub grad_history: VecDeque<DVector<f64>>,
+
+    /// History of f-vectors (energy difference drive term) in Hartree (Ha).
+    ///
+    /// Combined with `grad_history` to reconstruct Python's `Fhist`.
+    pub f_vec_history: VecDeque<DVector<f64>>,
+
+    /// History of E1 energies (used as RHS for EDIIS: `y = [-E_hist, 1]`).
+    ///
+    /// Python: `Ehist` stores `E1` directly (NOT `E1 - E2`).
+    pub e1_history: VecDeque<f64>,
+
+    /// History of E1 - E2 energy differences (stored for compatibility /
+    /// debugging but NOT used in EDIIS RHS).
+    pub energy_history: VecDeque<f64>,
+
+    /// Maximum number of history entries (Python keeps max 4).
+    pub max_history: usize,
+
+    /// E1 energy from the previous iteration (for trust-radius adjustment).
+    pub prev_e1: Option<f64>,
+
+    /// Current trust radius for adaptive step control.
+    /// Initialized from `config.max_step_size` and adjusted dynamically.
+    pub trust_radius: f64,
+}
+
+impl OptimizationState_blend {
+    /// Creates a new empty optimization state for blend methods.
+    ///
+    /// # Python Origin
+    ///
+    /// Matches `opt()` lines 337-340 where `Xhist, Bhist, Fhist, Ehist` are
+    /// initialized as empty lists.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_history` - Maximum number of history entries (Python default: 4)
+    /// * `trust_radius` - Initial trust radius for step size control (typically `config.max_step_size`)
+    pub fn new(max_history: usize, trust_radius: f64) -> Self {
+        Self {
+            geom_history: VecDeque::with_capacity(max_history),
+            true_hess_history: VecDeque::with_capacity(max_history),
+            grad_history: VecDeque::with_capacity(max_history),
+            f_vec_history: VecDeque::with_capacity(max_history),
+            e1_history: VecDeque::with_capacity(max_history),
+            energy_history: VecDeque::with_capacity(max_history),
+            max_history,
+            prev_e1: None,
+            trust_radius,
+        }
+    }
+
+    /// Returns `true` when at least 2 iterations of history exist,
+    /// matching the minimum needed for DIIS interpolation.
+    pub fn has_enough_history(&self) -> bool {
+        self.geom_history.len() >= 2
+    }
+
+    /// Adds a new entry to all history deques with FIFO eviction.
+    ///
+    /// # Python Origin
+    ///
+    /// Matches `opt()` lines 366-374 where `Xhist.append(newX)`,
+    /// `Bhist.append(newH)`, etc. with `pop(0)` when length > 3.
+    /// `e1` stores the raw E1 energy (Python: `Ehist.append(E1)`).
+    ///
+    /// # Arguments
+    ///
+    /// * `geom` - New geometry (Python: appended to `Xhist`)
+    /// * `grad` - MECP g-vector in Ha/Å (part of Python's `Fhist`)
+    /// * `f_vec` - f-vector in Ha (part of Python's `Fhist`)
+    /// * `true_hess` - Updated true Hessian (Python: appended to `Hhist`/`Bhist`)
+    /// * `e1` - E1 energy (Python: appended to `Ehist`)
+    /// * `energy_diff` - E1 - E2 energy difference
+    pub fn add_to_history(
+        &mut self,
+        geom: DVector<f64>,
+        grad: DVector<f64>,
+        f_vec: DVector<f64>,
+        true_hess: DMatrix<f64>,
+        e1: f64,
+        energy_diff: f64,
+    ) {
+        if self.geom_history.len() >= self.max_history {
+            self.geom_history.pop_front();
+            self.grad_history.pop_front();
+            self.f_vec_history.pop_front();
+            self.true_hess_history.pop_front();
+            self.e1_history.pop_front();
+            self.energy_history.pop_front();
+        }
+        self.geom_history.push_back(geom);
+        self.grad_history.push_back(grad);
+        self.f_vec_history.push_back(f_vec);
+        self.true_hess_history.push_back(true_hess);
+        self.e1_history.push_back(e1);
+        self.energy_history.push_back(energy_diff);
+    }
+}
+
+/// Creates an identity matrix as the initial true Hessian approximation.
+///
+/// # Python Origin
+///
+/// `opt()` line 338: `oldH = numpy.eye(numpy.shape(oldX)[1])`
+///
+/// This matches Python's convention of starting with the identity matrix
+/// (vs. the existing Rust code which starts with `0.7 * I` as inverse Hessian).
+pub fn initialize_true_hessian(n: usize) -> DMatrix<f64> {
+    DMatrix::identity(n, n)
+}
+
+/// Applies step size reduction and capping, matching Python's behavior.
+///
+/// # Python Origin
+///
+/// `optimizer.py` `stepsize()` lines 178-186.
+#[allow(non_snake_case)]
+///
+/// # Algorithm
+///
+/// 1. Compute displacement: `dX = newX - oldX`
+/// 2. Scale by `factor`
+/// 3. If `||dX|| > max_step`, rescale to `max_step`
+/// 4. Return `oldX + scaled_dX`
+pub fn stepsize_blend(
+    old_x: &DVector<f64>,
+    new_x: &DVector<f64>,
+    max_step: f64,
+    factor: f64,
+) -> DVector<f64> {
+    let mut d_x = new_x - old_x;
+    d_x *= factor;
+    let step_norm = d_x.norm();
+    if step_norm > max_step && step_norm > 1e-14 {
+        d_x *= max_step / step_norm;
+    }
+    old_x + d_x
+}
+
+/// Computes GDIIS error vectors by INVERTING the mean true Hessian.
+///
+/// # Python Origin
+///
+/// `optimizer.py` `gdiis()` lines 256-258:
+#[allow(dead_code)]
+/// ```python
+/// Hm = sum(Hhist) / nX
+/// for i in range(nX):
+///     matrix_ene[i] = (Hm.I * numpy.mat(Fhist[i]).T).flatten()
+/// ```
+///
+/// # Key Difference from [`compute_error_vectors`]
+///
+/// The existing Rust version does:
+///   `error_i = h_mean @ F_i`  where `h_mean = mean(inverse_Hessians)`
+///
+/// This Python-faithful version does:
+///   `H_mean = mean(true_Hessians)`    (TRUE Hessians, not inverses)
+///   `error_i = H_mean^{-1} @ F_i`     (INVERT the mean true Hessian)
+///
+/// Note: `(mean(H))^{-1} != mean(H^{-1})`, so these give different results.
+///
+/// # Arguments
+///
+/// * `combined_forces` - Combined MECP forces (g_vec + f_vec) at each point.
+///                       Python: `Fhist` (list of combined MECP force vectors).
+/// * `true_hessians` - TRUE Hessian matrices at each point.
+///                     Python: `Hhist`/`Bhist`.
+///
+/// # Returns
+///
+/// Vector of error vectors: `e_i = H_mean^{-1} @ F_i`.
+fn compute_error_vectors_blend(
+    combined_forces: &[DVector<f64>],
+    true_hessians: &VecDeque<DMatrix<f64>>,
+) -> Vec<DVector<f64>> {
+    let n = combined_forces.len();
+    if n == 0 || true_hessians.is_empty() {
+        return Vec::new();
+    }
+
+    // Compute mean of TRUE Hessians: Hm = sum(Hhist) / nX
+    // Python line 256: Hm = sum(Hhist) / nX
+    let mut h_mean = DMatrix::zeros(
+        true_hessians[0].nrows(),
+        true_hessians[0].ncols(),
+    );
+    for hess in true_hessians {
+        h_mean += hess;
+    }
+    h_mean /= n as f64;
+
+    // Compute error vectors by solving Hm @ e_i = F_i for each i.
+    // This is equivalent to Python's Hm.I @ F_i but avoids explicit inversion.
+    // Python lines 257-258: matrix_ene[i] = (Hm.I * Fhist[i].T).flatten()
+    let lu = h_mean.lu();
+    combined_forces
+        .iter()
+        .map(|f| {
+            lu.solve(f).unwrap_or_else(|| {
+                // Fallback if Hessian is singular: return force itself
+                f.clone()
+            })
+        })
+        .collect()
+}
+
+/// Builds the GEDIIS B-matrix using the Taylor expansion formula.
+///
+/// # Python Origin
+///
+/// `optimizer.py` `gdiis()` lines 277-286 when `gediis=True`:
+/// ```python
+/// for i in range(nX):
+///     matrix_ene[i,i] = 0
+///     for j in range(i+1, nX):
+///         matrix_ene[i,j] = -numpy.dot(Fhist[i]-Fhist[j],
+///                                numpy.array(Xhist[i]-Xhist[j]).flatten())
+///         matrix_ene[j,i] = matrix_ene[i,j]
+/// ```
+///
+/// # Formula
+///
+/// ```text
+/// E[i,j] = -(F_i - F_j) . (X_i - X_j)    for i != j
+/// E[i,i] = 0
+/// ```
+///
+/// This approximates the energy difference between points i and j using a
+/// first-order Taylor expansion WITHOUT any Hessian information.
+///
+/// The block matrix is:
+/// ```text
+/// B = [ E     1 ]
+///     [ 1^T   0 ]
+/// ```
+/// RHS (built by caller): `[-E_hist[0], ..., -E_hist[n-1], 1]^T`.
+///
+/// # Key Difference from [`build_gediis_b_matrix`]
+///
+/// The existing Rust version uses GDIIS-style error vectors with energy
+/// diagonal coupling.  This version uses pure Taylor-expansion energy
+/// overlaps as originally described by Li & Frisch.
+///
+/// # Arguments
+///
+/// * `combined_forces` - Effective MECP forces at each history point.
+///                       Python: `Fhist`.
+/// * `geoms` - Geometries at each history point.  Python: `Xhist`.
+/// * `_e1_history` - E1 energies at each history point.  Python: `Ehist`.
+///
+/// # Returns
+///
+/// `(n+1)x(n+1)` block matrix: `[[E, 1], [1^T, 0]]`.
+fn build_gediis_b_matrix_taylor(
+    combined_forces: &[DVector<f64>],
+    geoms: &VecDeque<DVector<f64>>,
+    _e1_history: &VecDeque<f64>,
+) -> DMatrix<f64> {
+    let n = combined_forces.len();
+    if n == 0 {
+        return DMatrix::zeros(1, 1);
+    }
+
+    // Build Taylor E-matrix: E[i,j] = -(F_i - F_j).(X_i - X_j)
+    // Python lines 278-283
+    let mut e_matrix = DMatrix::zeros(n, n);
+    for i in 0..n {
+        // E[i,i] = 0 (already initialized by zeros)
+        for j in (i + 1)..n {
+            let diff_f = &combined_forces[i] - &combined_forces[j];
+            let diff_x = &geoms[i] - &geoms[j];
+            let val = -(diff_f.dot(&diff_x));
+            e_matrix[(i, j)] = val;
+            e_matrix[(j, i)] = val;
+        }
+    }
+
+    // Build DIIS block matrix: [[E, 1], [1^T, 0]]
+    // Python lines 284-286
+    let mut b = DMatrix::zeros(n + 1, n + 1);
+    for i in 0..n {
+        for j in 0..n {
+            b[(i, j)] = e_matrix[(i, j)];
+        }
+    }
+    for i in 0..n {
+        b[(i, n)] = 1.0;
+        b[(n, i)] = 1.0;
+    }
+    b[(n, n)] = 0.0;
+
+    b
+}
+
+/// GDIIS_blend step: interpolate geometry, apply Newton correction via
+/// INVERTED mean true Hessian, with step control.
+///
+/// # Python Origin
+///
+/// `optimizer.py` `gdiis(gediis=False)` — lines 253-272 + 300-303 (GDIIS path only).
+#[allow(non_snake_case)]
+///
+/// # Algorithm
+///
+/// 1. Build combined forces: `F_i = g_vec_i + f_vec_i` (Python's `Fhist`)
+/// 2. Compute error vectors: `e_i = H_mean^{-1} @ F_i` (lines 256-258)
+/// 3. Build B-matrix: `B[i,j] = e_i . e_j` (lines 259-261)
+/// 4. Solve `[B 1; 1^T 0] . c = [0,...,0, 1]^T` (lines 262-264)
+/// 5. Interpolate: `X_interp = sum(c_i . X_i)` (line 269)
+///    and `F_interp = sum(c_i . F_i)` (line 270)
+/// 6. Newton correction: `X_new = X_interp - H_mean^{-1} @ F_interp` (line 272)
+/// 7. Step reduction: factor = 0.5 if ||F_hist|| < thresh * 10 (lines 300-302)
+/// 8. Step size cap via [`stepsize_blend`] (line 303)
+///
+/// # Arguments
+///
+/// * `opt_state` - Optimization state with history of geometries, combined
+///   forces (via grad + f_vec), and true Hessians.
+/// * `max_step` - Maximum allowed step size (Python: `maxstep`).
+/// * `thresh_rms_g` - RMS gradient threshold for step reduction (Python: `conver[4]`).
+///
+/// # Returns
+///
+/// The new geometry after GDIIS_blend interpolation, Newton correction,
+/// and step control.
+pub fn gdiis_blend_step(
+    opt_state: &OptimizationState_blend,
+    max_step: f64,
+    thresh_rms_g: f64,
+    print_level: usize,
+) -> DVector<f64> {
+    let n = opt_state.geom_history.len();
+    if n < 2 {
+        // Not enough history; return last geometry unchanged.
+        return opt_state.geom_history.back().cloned().unwrap_or_default();
+    }
+
+    // Build combined forces: F_i = g_vec_i + f_vec_i (Python's Fhist)
+    let combined_forces: Vec<DVector<f64>> = (0..n)
+        .map(|i| &opt_state.grad_history[i] + &opt_state.f_vec_history[i])
+        .collect();
+
+    // Step 1: Compute error vectors: e_i = H_m^{-1} @ F_i (Python lines 256-258)
+    let h_mean = {
+        let mut hm = DMatrix::zeros(
+            opt_state.true_hess_history[0].nrows(),
+            opt_state.true_hess_history[0].ncols(),
+        );
+        for hess in &opt_state.true_hess_history {
+            hm += hess;
+        }
+        hm / n as f64
+    };
+    // Clone h_mean for try_inverse (both try_inverse and lu consume self)
+    let h_mean_inv = h_mean.clone().try_inverse();
+    let lu = h_mean.lu();
+
+    let errors: Vec<DVector<f64>> = combined_forces
+        .iter()
+        .map(|f| lu.solve(f).unwrap_or_else(|| f.clone()))
+        .collect();
+
+    // Step 2: Build B-matrix and solve for coefficients (Python lines 259-264)
+    let b_matrix = build_b_matrix(&errors);
+    let mut rhs = DVector::zeros(n + 1);
+    rhs[n] = 1.0;
+
+    let solution = b_matrix.lu().solve(&rhs).unwrap_or_else(|| {
+        // Fallback: uniform coefficients
+        let mut fallback = DVector::zeros(n + 1);
+        for i in 0..n {
+            fallback[i] = 1.0 / n as f64;
+        }
+        fallback
+    });
+
+    // Extract coefficients (drop the Lagrange multiplier, Python line 264)
+    let coeffs = solution.rows(0, n).clone_owned();
+
+    // Step 3: Interpolate geometry, force, and Hessian (Python lines 265-271)
+    let mut x_interp = DVector::zeros(opt_state.geom_history[0].len());
+    let mut f_interp = DVector::zeros(combined_forces[0].len());
+    for i in 0..n {
+        x_interp += &opt_state.geom_history[i] * coeffs[i];
+        f_interp += &combined_forces[i] * coeffs[i];
+    }
+
+    // Step 4: Newton correction (Python line 272)
+    // X_new = X_interp - H_mean^{-1} @ F_interp
+    let correction = lu.solve(&f_interp).unwrap_or_else(|| {
+        // Fallback: use pre-computed mean Hessian inverse
+        h_mean_inv
+            .as_ref()
+            .map(|h_inv| h_inv * &f_interp)
+            .unwrap_or_else(|| DVector::zeros(f_interp.len()))
+    });
+    let mut x_new = x_interp - &correction;
+
+    // Step 5: Step reduction check (Python lines 300-302)
+    let history_norm_sq: f64 = combined_forces
+        .iter()
+        .map(|f| f.norm_squared())
+        .sum();
+    let history_norm = history_norm_sq.sqrt();
+
+    let factor = if history_norm < thresh_rms_g * 10.0 {
+        if print_level >= 1 {
+            println!(
+                "    GDIIS_blend: reducing factor activated (history_norm={:.6} < {:.6}, factor=0.5)",
+                history_norm,
+                thresh_rms_g * 10.0
+            );
+        }
+        0.5
+    } else {
+        1.0
+    };
+
+    // Apply step reduction and size cap (Python line 303)
+    let last_geom = opt_state.geom_history.back().unwrap();
+    x_new = stepsize_blend(last_geom, &x_new, max_step, factor);
+
+    x_new
+}
+
+/// GEDIIS_blend step: pure interpolation using Taylor expansion B-matrix.
+///
+/// # Python Origin
+///
+/// `optimizer.py` `gdiis()` lines 274-294 when `gediis=True` (EDIIS portion).
+#[allow(non_snake_case)]
+///
+/// # Algorithm
+///
+/// 1. Build combined forces: `F_i = g_vec_i + f_vec_i` (Python's `Fhist`)
+/// 2. Build Taylor E-matrix: `E[i,j] = -(F_i-F_j).(X_i-X_j)` (lines 277-283)
+/// 3. Build block matrix: `[[E, 1], [1^T, 0]]` (lines 284-286)
+/// 4. RHS: `[-E_hist[0], ..., -E_hist[n-1], 1]^T` (line 287)
+/// 5. Solve for coefficients, drop last (lines 288-289)
+/// 6. Interpolate geometry and force (lines 290-294)
+///
+/// # Key Difference from [`gdiis_blend_step`]
+///
+/// - NO Newton correction — pure interpolation only
+/// - B-matrix uses Taylor energy overlaps, not GDIIS error vectors
+/// - RHS incorporates energy values
+/// - NO step control (step control is applied AFTER the blend in the hybrid)
+///
+/// # Arguments
+///
+/// * `opt_state` - Optimization state with geometry, force, and energy history.
+///
+/// # Returns
+///
+/// The purely interpolated geometry (X_interp_ediis).
+pub fn gediis_blend_step(
+    opt_state: &OptimizationState_blend,
+) -> DVector<f64> {
+    let n = opt_state.geom_history.len();
+    if n < 2 {
+        return opt_state.geom_history.back().cloned().unwrap_or_default();
+    }
+
+    // Build combined forces: F_i = g_vec_i + f_vec_i (Python's Fhist)
+    let combined_forces: Vec<DVector<f64>> = (0..n)
+        .map(|i| &opt_state.grad_history[i] + &opt_state.f_vec_history[i])
+        .collect();
+
+    // Step 1: Build Taylor E-matrix and block matrix (Python lines 277-286)
+    let b_matrix = build_gediis_b_matrix_taylor(
+        &combined_forces,
+        &opt_state.geom_history,
+        &opt_state.e1_history,
+    );
+
+    // Step 2: Build RHS: [-E_hist, 1] (Python line 287)
+    let mut rhs = DVector::zeros(n + 1);
+    for i in 0..n {
+        rhs[i] = -opt_state.e1_history[i];
+    }
+    rhs[n] = 1.0;
+
+    // Step 3: Solve for coefficients (Python line 288)
+    let solution = b_matrix.lu().solve(&rhs).unwrap_or_else(|| {
+        // Fallback: uniform coefficients
+        let mut fallback = DVector::zeros(n + 1);
+        for i in 0..n {
+            fallback[i] = 1.0 / n as f64;
+        }
+        fallback
+    });
+
+    // Drop last coefficient (Lagrange multiplier, Python line 289)
+    let coeffs = solution.rows(0, n).clone_owned();
+
+    // Step 4: Interpolate geometry (Python lines 290-294)
+    // Note: tmpF is computed in Python but NEVER used (it shadows GDIIS tmpF).
+    // We only interpolate geometry.
+    let mut x_interp = DVector::zeros(opt_state.geom_history[0].len());
+    for i in 0..n {
+        x_interp += &opt_state.geom_history[i] * coeffs[i];
+    }
+
+    x_interp
+}
+
+/// Python-faithful hybrid GEDIIS/GDIIS step.
+///
+/// # Python Origin
+///
+/// `optimizer.py` `gdiis(gediis=True)` full function, lines 248-317.
+#[allow(non_snake_case)]
+/// Combines GDIIS_blend and GEDIIS_blend into one step with blend.
+///
+/// # Algorithm
+///
+/// **Phase 1 — GDIIS** (lines 253-272):
+/// - Error vectors via inverted mean true Hessian
+/// - Newton correction on interpolated geometry
+///
+/// **Phase 2 — EDIIS** (lines 274-294):
+/// - Taylor expansion B-matrix with energy RHS
+/// - Pure interpolation, NO Newton correction
+///
+/// **Phase 3 — Hybrid blend** (line 295, newF is undefined):
+/// ```text
+/// x_new = (x_gdiis + x_ediis) / 2
+/// ```
+/// Python line 295 uses `newF` which is UNDEFINED (NameError — broken variable).
+/// We interpret the intended formula as a pure geometric average, ignoring newF.
+///
+/// **Phase 4 — Step control** (lines 300-303):
+/// - Factor = 0.5 if `||F_hist|| < thresh_rms_g * 10`
+/// - Step capped to `max_step`
+///
+/// # Arguments
+///
+/// * `opt_state` - Optimization state with geometry, force, Hessian, and
+///   energy history.
+/// * `max_step` - Maximum allowed step size (Python: `maxstep`).
+/// * `thresh_rms_g` - RMS gradient threshold (Python: `conver[4]`).
+///
+/// # Returns
+///
+/// The blended and step-controlled new geometry.
+pub fn fixed_blend_step(
+    opt_state: &OptimizationState_blend,
+    max_step: f64,
+    thresh_rms_g: f64,
+    print_level: usize,
+) -> DVector<f64> {
+    let n = opt_state.geom_history.len();
+    if n < 2 {
+        return opt_state.geom_history.back().cloned().unwrap_or_default();
+    }
+
+    // Build combined forces: F_i = g_vec_i + f_vec_i (Python's Fhist)
+    let combined_forces: Vec<DVector<f64>> = (0..n)
+        .map(|i| &opt_state.grad_history[i] + &opt_state.f_vec_history[i])
+        .collect();
+
+    // =================== Phase 1: GDIIS ===================
+    // Python lines 253-272
+
+    // Compute error vectors: e_i = H_m^{-1} @ F_i (Python lines 256-258)
+    let h_mean = {
+        let mut hm = DMatrix::zeros(
+            opt_state.true_hess_history[0].nrows(),
+            opt_state.true_hess_history[0].ncols(),
+        );
+        for hess in &opt_state.true_hess_history {
+            hm += hess;
+        }
+        hm / n as f64
+    };
+    // Clone h_mean for try_inverse (both try_inverse and lu consume self)
+    let h_mean_inv = h_mean.clone().try_inverse();
+    let lu = h_mean.lu();
+
+    let errors: Vec<DVector<f64>> = combined_forces
+        .iter()
+        .map(|f| lu.solve(f).unwrap_or_else(|| f.clone()))
+        .collect();
+
+    // Build GDIIS B-matrix and solve (Python lines 259-264)
+    let b_gdiis = build_b_matrix(&errors);
+    let mut rhs_gdiis = DVector::zeros(n + 1);
+    rhs_gdiis[n] = 1.0;
+
+    let solution_gdiis = b_gdiis.lu().solve(&rhs_gdiis).unwrap_or_else(|| {
+        let mut fallback = DVector::zeros(n + 1);
+        for i in 0..n {
+            fallback[i] = 1.0 / n as f64;
+        }
+        fallback
+    });
+    let c_gdiis = solution_gdiis.rows(0, n).clone_owned();
+
+    // Interpolate geometry and force (Python lines 265-271)
+    let mut x_interp_gdiis = DVector::zeros(opt_state.geom_history[0].len());
+    let mut f_interp_gdiis = DVector::zeros(combined_forces[0].len());
+    for i in 0..n {
+        x_interp_gdiis += &opt_state.geom_history[i] * c_gdiis[i];
+        f_interp_gdiis += &combined_forces[i] * c_gdiis[i];
+    }
+
+    // Newton correction (Python line 272)
+    let correction = lu.solve(&f_interp_gdiis).unwrap_or_else(|| {
+        // Fallback: use pre-computed mean Hessian inverse
+        h_mean_inv
+            .as_ref()
+            .map(|h_inv| h_inv * &f_interp_gdiis)
+            .unwrap_or_else(|| DVector::zeros(f_interp_gdiis.len()))
+    });
+    let x_gdiis = x_interp_gdiis - &correction;
+
+    // =================== Phase 2: EDIIS ===================
+    // Python lines 274-294
+
+    // Build Taylor E-matrix (Python lines 277-286)
+    let b_ediis = build_gediis_b_matrix_taylor(
+        &combined_forces,
+        &opt_state.geom_history,
+        &opt_state.e1_history,
+    );
+
+    // RHS: [-E_hist, 1] (Python line 287)
+    let mut rhs_ediis = DVector::zeros(n + 1);
+    for i in 0..n {
+        rhs_ediis[i] = -opt_state.e1_history[i];
+    }
+    rhs_ediis[n] = 1.0;
+
+    // Solve (Python line 288)
+    let solution_ediis = b_ediis.lu().solve(&rhs_ediis).unwrap_or_else(|| {
+        let mut fallback = DVector::zeros(n + 1);
+        for i in 0..n {
+            fallback[i] = 1.0 / n as f64;
+        }
+        fallback
+    });
+    let c_ediis = solution_ediis.rows(0, n).clone_owned();
+
+    // Interpolate geometry (Python lines 292-294)
+    let mut x_ediis = DVector::zeros(opt_state.geom_history[0].len());
+    for i in 0..n {
+        x_ediis += &opt_state.geom_history[i] * c_ediis[i];
+    }
+
+    // =================== Phase 3: Hybrid Blend ===================
+    // Python line 295: newX = (newX + tmpX + newF) / 2
+    //                    ^GDIIS  ^EDIIS  ^newF is UNDEFINED (broken variable)
+    //
+    // Python's `newF` is undefined at this point (NameError).
+    // We interpret the intended formula as ignoring newF:
+    //   newX = (GDIIS_geom + EDIIS_geom) / 2
+    let mut x_new = (&x_gdiis + &x_ediis) / 2.0;
+
+    // =================== Phase 4: Step Control ===================
+    // Python lines 300-303
+
+    // Step reduction check (Python lines 300-302)
+    let history_norm_sq: f64 = combined_forces
+        .iter()
+        .map(|f| f.norm_squared())
+        .sum();
+    let history_norm = history_norm_sq.sqrt();
+
+    let factor = if history_norm < thresh_rms_g * 10.0 {
+        if print_level >= 1 {
+            println!(
+                "    Fixed_blend: reducing factor activated (history_norm={:.6} < {:.6}, factor=0.5)",
+                history_norm,
+                thresh_rms_g * 10.0
+            );
+        }
+        0.5
+    } else {
+        1.0
+    };
+
+    // Apply step reduction and size cap (Python line 303)
+    let last_geom = opt_state.geom_history.back().unwrap();
+    x_new = stepsize_blend(last_geom, &x_new, max_step, factor);
+
+    x_new
+}
+
+/// Gradient-weighted hybrid GEDIIS/GDIIS blend step.
+///
+/// Blends GDIIS and EDIIS geometries based on the RMS gradient magnitude:
+/// - Large forces (far from minimum): w→1, mostly EDIIS (stable global exploration)
+/// - Small forces (near minimum): w→0, mostly GDIIS (fast quadratic convergence)
+///
+/// # Formula
+///
+/// `w = rms_g / (rms_g + switch_rms)` where
+/// - `rms_g` = RMS of latest combined gradient (g_vec + f_vec)
+/// - `switch_rms` = gradient threshold parameter for smooth blending
+///
+/// `x_new = w × x_EDIIS + (1-w) × x_GDIIS`
+///
+/// # Arguments
+///
+/// * `opt_state` - Optimization state with geometry, force, Hessian, and energy history.
+/// * `max_step` - Maximum allowed step size.
+/// * `thresh_rms_g` - RMS gradient convergence threshold (for factor check).
+/// * `switch_rms` - RMS gradient threshold for blend weighting.
+///
+/// # Returns
+///
+/// The blended and step-controlled new geometry.
+#[allow(non_snake_case)]
+pub fn gradient_blend_step(
+    opt_state: &OptimizationState_blend,
+    max_step: f64,
+    thresh_rms_g: f64,
+    switch_rms: f64,
+    print_level: usize,
+) -> DVector<f64> {
+    let n = opt_state.geom_history.len();
+    if n < 2 {
+        return opt_state.geom_history.back().cloned().unwrap_or_default();
+    }
+
+    // Build combined forces: F_i = g_vec_i + f_vec_i (Python's Fhist)
+    let combined_forces: Vec<DVector<f64>> = (0..n)
+        .map(|i| &opt_state.grad_history[i] + &opt_state.f_vec_history[i])
+        .collect();
+
+    // =================== Phase 1: GDIIS ===================
+    let h_mean = {
+        let mut hm = DMatrix::zeros(
+            opt_state.true_hess_history[0].nrows(),
+            opt_state.true_hess_history[0].ncols(),
+        );
+        for hess in &opt_state.true_hess_history {
+            hm += hess;
+        }
+        hm / n as f64
+    };
+    let h_mean_inv = h_mean.clone().try_inverse();
+    let lu = h_mean.lu();
+
+    let errors: Vec<DVector<f64>> = combined_forces
+        .iter()
+        .map(|f| lu.solve(f).unwrap_or_else(|| f.clone()))
+        .collect();
+
+    let b_gdiis = build_b_matrix(&errors);
+    let mut rhs_gdiis = DVector::zeros(n + 1);
+    rhs_gdiis[n] = 1.0;
+
+    let solution_gdiis = b_gdiis.lu().solve(&rhs_gdiis).unwrap_or_else(|| {
+        let mut fallback = DVector::zeros(n + 1);
+        for i in 0..n {
+            fallback[i] = 1.0 / n as f64;
+        }
+        fallback
+    });
+    let c_gdiis = solution_gdiis.rows(0, n).clone_owned();
+
+    let mut x_interp_gdiis = DVector::zeros(opt_state.geom_history[0].len());
+    let mut f_interp_gdiis = DVector::zeros(combined_forces[0].len());
+    for i in 0..n {
+        x_interp_gdiis += &opt_state.geom_history[i] * c_gdiis[i];
+        f_interp_gdiis += &combined_forces[i] * c_gdiis[i];
+    }
+
+    let correction = lu.solve(&f_interp_gdiis).unwrap_or_else(|| {
+        h_mean_inv
+            .as_ref()
+            .map(|h_inv| h_inv * &f_interp_gdiis)
+            .unwrap_or_else(|| DVector::zeros(f_interp_gdiis.len()))
+    });
+    let x_gdiis = x_interp_gdiis - &correction;
+
+    // =================== Phase 2: EDIIS ===================
+    let b_ediis = build_gediis_b_matrix_taylor(
+        &combined_forces,
+        &opt_state.geom_history,
+        &opt_state.e1_history,
+    );
+
+    let mut rhs_ediis = DVector::zeros(n + 1);
+    for i in 0..n {
+        rhs_ediis[i] = -opt_state.e1_history[i];
+    }
+    rhs_ediis[n] = 1.0;
+
+    let solution_ediis = b_ediis.lu().solve(&rhs_ediis).unwrap_or_else(|| {
+        let mut fallback = DVector::zeros(n + 1);
+        for i in 0..n {
+            fallback[i] = 1.0 / n as f64;
+        }
+        fallback
+    });
+    let c_ediis = solution_ediis.rows(0, n).clone_owned();
+
+    let mut x_ediis = DVector::zeros(opt_state.geom_history[0].len());
+    for i in 0..n {
+        x_ediis += &opt_state.geom_history[i] * c_ediis[i];
+    }
+
+    // =================== Phase 3: Gradient-Weighted Blend ===================
+    let last_grad = opt_state.grad_history.back().unwrap();
+    let n_coords = last_grad.len() as f64;
+    let rms_g = last_grad.norm() / n_coords.sqrt();
+
+    let w = rms_g / (rms_g + switch_rms);
+    if print_level >= 1 {
+        println!(
+            "    Weighted blend: w={:.4} (rms_g={:.6}, switch_rms={:.6})",
+            w, rms_g, switch_rms
+        );
+    }
+
+    let mut x_new = &x_ediis * w + &x_gdiis * (1.0 - w);
+
+    // =================== Phase 4: Step Control ===================
+    let history_norm_sq: f64 = combined_forces
+        .iter()
+        .map(|f| f.norm_squared())
+        .sum();
+    let history_norm = history_norm_sq.sqrt();
+
+    let factor = if history_norm < thresh_rms_g * 10.0 {
+        if print_level >= 1 {
+            println!(
+                "    Weighted hybrid: reducing factor activated (history_norm={:.6} < {:.6}, factor=0.5)",
+                history_norm,
+                thresh_rms_g * 10.0
+            );
+        }
+        0.5
+    } else {
+        1.0
+    };
+
+    let last_geom = opt_state.geom_history.back().unwrap();
+    x_new = stepsize_blend(last_geom, &x_new, max_step, factor);
+
+    x_new
+}
+
+/// Smart sequential hybrid GEDIIS/GDIIS blend step.
+///
+/// Mimics the phased switching of [`sequential_hybrid_gediis_step`] but for
+/// blend methods:
+/// - Phase 1: Pure GDIIS when RMS gradient >= switch_rms
+/// - Phase 2: Gradient-weighted blend when RMS gradient < switch_rms
+///   AND RMS displacement > switch_step
+/// - Phase 3: Pure GDIIS when RMS displacement <= switch_step
+///
+/// # Arguments
+///
+/// * `opt_state` - Experiment optimization state.
+/// * `config` - Configuration including phase thresholds.
+///
+/// # Returns
+///
+/// The new geometry from the selected phase.
+#[allow(non_snake_case)]
+pub fn sequential_blend_step(
+    opt_state: &OptimizationState_blend,
+    config: &Config,
+) -> DVector<f64> {
+    if !opt_state.has_enough_history() {
+        if config.print_level >= 1 {
+            println!("Sequential blend: history insufficient, phase 1 GDIIS");
+        }
+        return gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level);
+    }
+
+    let last_grad = opt_state.grad_history.back().unwrap();
+    let n_coords = last_grad.len() as f64;
+    let rms_g = last_grad.norm() / n_coords.sqrt();
+
+    let rms_disp = if opt_state.geom_history.len() >= 2 {
+        let last_disp = opt_state.geom_history.back().unwrap()
+            - &opt_state.geom_history[opt_state.geom_history.len() - 2];
+        last_disp.norm() / n_coords.sqrt()
+    } else {
+        1.0
+    };
+
+    if rms_g < config.gediis_switch_rms && rms_disp > config.gediis_switch_step {
+        if config.print_level >= 1 {
+            println!(
+                "Sequential blend: phase 2 weighted blend (rms_g={:.6}, rms_disp={:.6})",
+                rms_g, rms_disp
+            );
+        }
+        gradient_blend_step(
+            opt_state,
+            opt_state.trust_radius,
+            config.thresholds.rms_g,
+            config.gediis_switch_rms,
+            config.print_level,
+        )
+    } else {
+        if config.print_level >= 1 {
+            if rms_g >= config.gediis_switch_rms {
+                println!("Sequential blend: phase 1 GDIIS (rms_g={:.6})", rms_g);
+            } else {
+                println!("Sequential blend: phase 3 GDIIS (rms_disp={:.6})", rms_disp);
+            }
+        }
+        gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level)
+    }
+}
+
+/// Fixed-then-GDIIS sequential blend step.
+///
+/// Two-phase approach:
+/// - **Phase 1** (far from minimum): 50/50 fixed blend of GDIIS and EDIIS
+/// - **Phase 2** (RMS displacement < `gediis_switch_step`): Pure GDIIS for
+///   quadratic final convergence
+///
+/// This avoids the plateau problem by using pure GDIIS near convergence,
+/// while keeping the stability of the 50/50 blend in the far region.
+///
+/// # Arguments
+///
+/// * `opt_state` - Experiment optimization state.
+/// * `config` - Configuration with phase thresholds.
+///
+/// # Returns
+///
+/// The new geometry from the selected phase.
+pub fn fixed_sequential_blend_step(
+    opt_state: &OptimizationState_blend,
+    config: &Config,
+) -> DVector<f64> {
+    if !opt_state.has_enough_history() {
+        if config.print_level >= 1 {
+            println!("Fixed Sequential blend: history insufficient, using 50/50 blend");
+        }
+        return fixed_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level);
+    }
+
+    let last_grad = opt_state.grad_history.back().unwrap();
+    let n_coords = last_grad.len() as f64;
+
+    // Check displacement: near convergence?
+    let rms_disp = if opt_state.geom_history.len() >= 2 {
+        let last_disp = opt_state.geom_history.back().unwrap()
+            - &opt_state.geom_history[opt_state.geom_history.len() - 2];
+        last_disp.norm() / n_coords.sqrt()
+    } else {
+        1.0
+    };
+
+    if rms_disp < config.gediis_switch_step {
+        if config.print_level >= 1 {
+            println!(
+                "Fixed Sequential blend: switching to GDIIS (rms_disp={:.6} < {:.6})",
+                rms_disp, config.gediis_switch_step
+            );
+        }
+        gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level)
+    } else {
+        if config.print_level >= 1 {
+            println!(
+                "Fixed Sequential blend: using 50/50 fixed blend (rms_disp={:.6})",
+                rms_disp
+            );
+        }
+        fixed_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level)
+    }
+}
+
+/// Adjusts the trust radius based on the actual energy change from QM.
+///
+/// Uses a simple heuristic:
+/// - If energy increased significantly (> 0.0001 Ha): halve trust radius
+/// - If energy decreased (> 0.0001 Ha): increase trust radius by 20%
+/// - Otherwise: keep unchanged
+///
+/// Updates both `trust_radius` and `prev_e1` in the state.
+///
+/// # Arguments
+///
+/// * `state` - Mutable optimization state to update.
+/// * `current_e1` - E1 energy from the most recent QM calculation.
+/// * `print_level` - Print level (0=quiet, 1=normal, 2=verbose).
+pub fn adjust_trust_radius(state: &mut OptimizationState_blend, current_e1: f64, print_level: usize) {
+    if let Some(prev) = state.prev_e1 {
+        let actual = prev - current_e1;
+        if actual < -0.0001 {
+            state.trust_radius *= 0.5;
+            let min_radius = 0.01;
+            if state.trust_radius < min_radius {
+                state.trust_radius = min_radius;
+            }
+            if print_level >= 1 {
+                println!(
+                    "    Trust radius: energy increased by {:.6}, reducing to {:.6}",
+                    actual, state.trust_radius
+                );
+            }
+        } else if actual > 0.0001 {
+            state.trust_radius = (state.trust_radius * 1.2).min(1.0);
+            if print_level >= 1 {
+                println!(
+                    "    Trust radius: energy decreased by {:.6}, increasing to {:.6}",
+                    actual, state.trust_radius
+                );
+            }
+        }
+    }
+    state.prev_e1 = Some(current_e1);
+}
+
+/// Dispatcher for the blend experiment methods.
+///
+/// Routes to the correct blend step function based on config:
+/// - `use_hybrid_gediis = false` (default): Calls [`gdiis_blend_step`]
+/// - `use_hybrid_gediis = true`: Routes based on `gediis_blend_mode`:
+///   - `"fixed"`: Calls [`fixed_blend_step`] (50/50 fixed blend)
+///   - `"fixed_sequential"`: Calls [`fixed_sequential_blend_step`] (50/50 → GDIIS)
+///   - `"gradient"`: Calls [`gradient_blend_step`]
+///   - `"sequential"`: Calls [`sequential_blend_step`]
+///
+/// Uses `blend_state.trust_radius` for dynamic step control (initialized from
+/// `config.max_step_size`), enabling trust-region adaptation via
+/// [`adjust_trust_radius`].
+///
+/// # Arguments
+///
+/// * `blend_state` - Blend optimization state (immutable borrow).
+/// * `config` - Configuration including step size and threshold parameters.
+/// * `step` - Current optimization step number (for display).
+///
+/// # Returns
+///
+/// The predicted new geometry.
+#[allow(non_snake_case)]
+pub fn select_blend_step(
+    blend_state: &OptimizationState_blend,
+    config: &Config,
+    step: usize,
+) -> DVector<f64> {
+    let mode_label = if config.use_hybrid_gediis {
+        match config.gediis_blend_mode.as_str() {
+            "fixed_sequential" => "Fixed Sequential GEDIIS_blend",
+            "gradient" => "Gradient-weighted GEDIIS_blend",
+            "sequential" => "Sequential GEDIIS_blend",
+            _ => "Hybrid GEDIIS_blend",
+        }
+    } else {
+        "GDIIS_blend"
+    };
+    if config.print_level >= 1 {
+        println!(
+            "Using {} optimizer (step {}, trust_radius = {:.3} Å)",
+            mode_label, step, blend_state.trust_radius
+        );
+    }
+
+    if config.use_hybrid_gediis {
+        match config.gediis_blend_mode.as_str() {
+            "fixed_sequential" => fixed_sequential_blend_step(blend_state, config),
+            "gradient" => gradient_blend_step(
+                blend_state,
+                blend_state.trust_radius,
+                config.thresholds.rms_g,
+                config.gediis_switch_rms,
+                config.print_level,
+            ),
+            "sequential" => sequential_blend_step(blend_state, config),
+            _ => fixed_blend_step(blend_state, blend_state.trust_radius, config.thresholds.rms_g, config.print_level),
+        }
+    } else {
+        gdiis_blend_step(blend_state, blend_state.trust_radius, config.thresholds.rms_g, config.print_level)
+    }
+}
+

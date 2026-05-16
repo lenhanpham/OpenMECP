@@ -682,40 +682,68 @@ fn print_configuration(
             ""
         }
     );
-    println!(
-        "  Smart History:              {}",
-        if input_config.smart_history {
-            "true (experimental)"
-        } else {
-            "false (default)"
-        }
-    );
     println!();
     println!("  Optimizers:");
-    println!(
-        "    Use Direct Hessian:       {}",
-        if input_config.use_direct_hessian {
-            "true (default)"
+    {
+        let opt_mode = if !input_config.use_gediis {
+            "GDIIS".to_string()
+        } else if input_config.gediis_variant_is_blend() {
+            if input_config.use_hybrid_gediis {
+                format!("GDIIS_blend ({})", input_config.gediis_blend_mode)
+            } else {
+                "GDIIS_blend".to_string()
+            }
+        } else if input_config.use_hybrid_gediis {
+            "Sequential Hybrid (GDIIS → GEDIIS → GDIIS)".to_string()
         } else {
-            "false"
+            "GEDIIS".to_string()
+        };
+        println!("    Optimizer Mode:           {}", opt_mode);
+    }
+    println!(
+        "    Hessian Method:           {}",
+        match input_config.hessian_method {
+            config::HessianMethod::DirectPsb => "direct_psb (default)",
+            config::HessianMethod::InverseBfgs => "inverse_bfgs",
+            config::HessianMethod::Bofill => "bofill (Experimental)",
+            config::HessianMethod::Powell => "powell (Experimental)",
+            config::HessianMethod::BfgsPowellMix => "bfgs_powell_mix (Experimental)",
         }
     );
     println!(
         "    Use GEDIIS:               {}",
-        if input_config.use_gediis {
-            "true"
-        } else {
+        if !input_config.use_gediis {
             "false (default)"
-        }
-    );
-    println!(
-        "    Use Hybrid GEDIIS:        {}",
-        if input_config.use_hybrid_gediis {
-            "true (default)"
+        } else if input_config.gediis_variant_is_blend() {
+            "blend"
         } else {
-            "false"
+            "true"
         }
     );
+    if input_config.use_gediis {
+        println!(
+            "    Use Hybrid GEDIIS:        {}",
+            if input_config.gediis_variant_is_blend() {
+                if input_config.use_hybrid_gediis {
+                    "true (enables GDIIS+EDIIS blend)"
+                } else {
+                    "false (default: pure GDIIS_blend)"
+                }
+            } else if input_config.use_hybrid_gediis {
+                "true (enables 3-phase sequential switching)"
+            } else {
+                "false (default: pure GEDIIS)"
+            }
+        );
+    } else {
+        println!("    Use Hybrid GEDIIS:        N/A (not active for GDIIS)");
+    }
+    if input_config.gediis_variant_is_blend() && input_config.use_hybrid_gediis {
+        println!(
+            "    GEDIIS Blend Mode:        {}",
+            input_config.gediis_blend_mode
+        );
+    }
     if input_config.use_gediis {
         println!(
             "    GEDIIS Switch RMS:        {:.3}",
@@ -741,17 +769,6 @@ fn print_configuration(
         println!("    N Neg (TS search):        {}", input_config.n_neg);
         println!("    GEDIIS Sim Switch:        {}", input_config.gediis_sim_switch);
     }
-    println!(
-        "    Advanced Hessian Update:  {}",
-        if input_config.use_advanced_hessian_update {
-            "true (Experimental)"
-        } else {
-            "false (default)"
-        }
-    );
-    if input_config.use_advanced_hessian_update {
-        println!("    Hessian Update Method:    {}", input_config.hessian_update_method);
-    }
     println!("    Switch Step:              {}", input_config.switch_step);
     println!("    BFGS Rho:                 {}", input_config.bfgs_rho);
     println!(
@@ -759,8 +776,12 @@ fn print_configuration(
         input_config.reduced_factor
     );
     println!(
-        "    Print Level:              {}",
-        input_config.print_level
+        "    Smart History:            {}",
+        if input_config.smart_history {
+            "true (experimental)"
+        } else {
+            "false (default)"
+        }
     );
     println!(
         "    Print Checkpoint:         {}",
@@ -988,7 +1009,12 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let input_data = parser::parse_input(input_path)?;
 
     // Load settings (for print_level, cleanup, and parameter display)
-    let settings_manager = omecp::settings::SettingsManager::load().ok();
+    let mut settings_manager = omecp::settings::SettingsManager::load().ok();
+
+    // Sync: input file's print_level overrides settings manager (single source of truth)
+    if let Some(ref mut settings) = settings_manager {
+        settings.general_mut().print_level = input_data.config.print_level as u32;
+    }
 
     let print_level = if let Some(settings) = settings_manager.as_ref() {
         settings.general().print_level
@@ -1188,6 +1214,12 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = input_data.config.clone();
     let mut header_a = header_a;
     let mut header_b = header_b;
+
+    // Validate Hessian/optimizer compatibility before running
+    if let Err(msg) = config.validate_hessian_optimizer_compatibility() {
+        eprintln!("{}", msg);
+        std::process::exit(1);
+    }
 
     if original_run_mode == config::RunMode::Normal {
         // Normal Mode: Phase 1 - Pre-point calculations 
@@ -1517,13 +1549,19 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize optimization
     let mut opt_state = optimizer::OptimizationState::new(config.max_history);
+    // Blend state for blend methods (only used when flags are set)
+    // trust_radius initialized from config.max_step_size, dynamically adjusted by adjust_trust_radius
+    let mut blend_state = optimizer::OptimizationState_blend::new(
+        config.max_history,
+        config.max_step_size,
+    );
     let mut x_old = geometry.coords.clone();
     // Initialize Hessian matrix
-    // NOTE: `inv_hessian` name is kept for minimal code changes, but when
-    // use_direct_hessian is true, this stores a DIRECT Hessian (identity matrix)
-    // `Bk = numpy.eye(ncoord)`.
-    let mut inv_hessian = if config.use_direct_hessian {
-        println!("Using direct Hessian algorithm (PSB update)");
+    // NOTE: `inv_hessian` name is kept for minimal code changes, but when a
+    // direct Hessian method is selected, this stores a DIRECT Hessian (identity)
+    // rather than the inverse.
+    let use_blend = config.gediis_variant_is_blend();
+    let mut inv_hessian = if use_blend || config.hessian_method.is_direct() {
         optimizer::initialize_direct_hessian(geometry.coords.len())
     } else {
         // Initialize inverse Hessian with diagonal = 0.7 Å²/Ha (matching Fortran MECP)
@@ -1626,7 +1664,14 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             step < config.switch_step
         };
 
-        let x_new = if use_bfgs || !opt_state.has_enough_history() {
+        // Determine which state to use for "has enough history" check
+        let has_history = if use_blend {
+            blend_state.has_enough_history()
+        } else {
+            opt_state.has_enough_history()
+        };
+
+        let x_new = if use_bfgs || !has_history {
             if config.switch_step >= config.max_steps {
                 println!("Using BFGS optimizer (BFGS-only mode)");
             } else {
@@ -1635,17 +1680,19 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                     step, config.switch_step
                 );
             }
-            // BFGS step: direct Hessian or inverse Hessian depending on algorithm
+            // BFGS step: direct Hessian or inverse Hessian depending on method
             // For direct Hessian: use combined gradient (g_vec + f_vec) so the
             // Newton direction includes the f-vector energy-driving component.
             // For inverse Hessian: use g_vec only since H_inv (Ų/Ha) × f_vec (Ha)
             // would produce Å², not Å.
-            if config.use_direct_hessian {
+            if use_blend || config.hessian_method.is_direct() {
                 optimizer::bfgs_step_direct(&x_old, &mecp_grad.combined, &inv_hessian, &config)
             } else {
                 // inverse Hessian multiply — pure Ha/Å only
                 optimizer::bfgs_step(&x_old, &mecp_grad.g_vec, &inv_hessian, &config, 1.0)
             }
+        } else if use_blend {
+            optimizer::select_blend_step(&blend_state, &config, step)
         } else {
             optimizer::select_diis_step(&mut opt_state, &config, step)
         };
@@ -1798,6 +1845,11 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Print total displacement norm in Angstrom
         println!("Displacement norm = {:.15} Å", disp_norm);
 
+        // Print trust radius (blend methods only)
+        if use_blend && config.print_level >= 1 {
+            println!("Trust radius = {:.3} Å", blend_state.trust_radius);
+        }
+
         // Print energy and convergence status
         println!(
             "E1 = {:.8}, E2 = {:.8}, dE = {:.8}",
@@ -1827,10 +1879,15 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let combined_new = &mecp_grad_new.g_vec + &mecp_grad_new.f_vec;
         let sk = &x_new - &x_old;
         let yk = &combined_new - &combined;
-        if config.use_direct_hessian {
+        if use_blend || config.hessian_method.is_direct() {
             inv_hessian = optimizer::update_hessian_psb(&inv_hessian, &sk, &yk);
         } else {
-            inv_hessian = optimizer::update_hessian_config_driven(&inv_hessian, &sk, &yk, &config);
+            inv_hessian = optimizer::update_hessian_by_method(&inv_hessian, &sk, &yk, &config.hessian_method);
+        }
+
+        // Adaptive trust radius adjustment (blend methods only)
+        if use_blend {
+            optimizer::adjust_trust_radius(&mut blend_state, state_a_new.energy, config.print_level);
         }
 
         // Add to history for GDIIS/GEDIIS
@@ -1845,6 +1902,18 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             opt_state.lambda_de,
             config.smart_history,
         );
+
+        // Add to experiment history (true Hessians, used for blend step computation)
+        if use_blend {
+            blend_state.add_to_history(
+                state_a_new.geometry.coords.clone(),
+                mecp_grad_new.g_vec.clone(),
+                mecp_grad_new.f_vec.clone(),
+                inv_hessian.clone(),
+                state_a_new.energy,
+                energy_diff,
+            );
+        }
 
         // Save checkpoint with dynamic filename based on input file (if enabled)
         if config.print_checkpoint {
@@ -1863,10 +1932,13 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Periodic cleanup during optimization to prevent file accumulation
         let cleanup_freq: u32 = cleanup_manager.config().cleanup_frequency();
         if cleanup_freq > 0 && step % cleanup_freq as usize == 0 {
-            println!(
-                "Performing periodic cleanup (every {} steps)...",
-                cleanup_freq
-            );
+            if config.print_level >= 2 {
+                println!();
+                println!(
+                    "Performing periodic cleanup (every {} steps)...",
+                    cleanup_freq
+                );
+            }
             if let Err(e) = cleanup_manager.cleanup_directory(Path::new(job_dir)) {
                 println!("Warning: Failed to clean up temporary files: {}", e);
             }
@@ -2623,8 +2695,12 @@ fn run_single_optimization(
 
     let mut opt_state = optimizer::OptimizationState::new(config.max_history);
     let mut x_old = geometry.coords.clone();
-    // Initialize inverse Hessian with diagonal = 0.7 Ang²/Ha (matching Fortran MECP)
-    let mut inv_hessian = optimizer::initialize_inverse_hessian(geometry.coords.len());
+    let mut inv_hessian = if config.hessian_method.is_direct() {
+        optimizer::initialize_direct_hessian(geometry.coords.len())
+    } else {
+        // Initialize inverse Hessian with diagonal = 0.7 Å²/Ha (matching Fortran MECP)
+        optimizer::initialize_inverse_hessian(geometry.coords.len())
+    };
 
     for step in 1..=config.max_steps {
         let output_ext = get_output_file_base(config.program);
@@ -2805,7 +2881,7 @@ fn run_single_optimization(
         let sk = &x_new - &x_old;
         let yk = &mecp_grad_new.g_vec - &mecp_grad.g_vec;
         
-        inv_hessian = optimizer::update_hessian_config_driven(&inv_hessian, &sk, &yk, config);
+        inv_hessian = optimizer::update_hessian_by_method(&inv_hessian, &sk, &yk, &config.hessian_method);
         
         let energy_diff = state_a_new.energy - state_b_new.energy;
         opt_state.add_to_history(

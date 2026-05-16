@@ -10,7 +10,7 @@
  # 2026, https://doi.org/10.13140/RG.2.2.21309.73443                             #
  #-------------------------------------------------------------------------------#
 
-[2026-05-16T13:15:23.525Z INFO  omecp::settings] Configuration loaded from: built-in defaults (no configuration file found)
+[2026-05-16T13:49:58.572Z INFO  omecp::settings] Configuration loaded from: built-in defaults (no configuration file found)
 ============================================================================
 CONFIGURATION AND SETTINGS
 ============================================================================
@@ -36,12 +36,20 @@ Input File Parameters:
     Hessian Method:           direct_psb (default)
     Use GEDIIS:               blend
     Use Hybrid GEDIIS:        false (default: pure GDIIS_blend)
+    Trust Reduction Factor:   0.5
+    Trust Increase Factor:    1.2
+    Trust Inc Threshold:      0.0001
+    Trust Dec Threshold:      0.0001
+    Trust Min Radius:         0.01
+    Trust Max Radius:         1
     GEDIIS Switch RMS:        0.005
     GEDIIS Switch Step:       0.001
     Use Robust DIIS:          false (default)
     Switch Step:              3
     BFGS Rho:                 15
     Reduced Factor:           0.5
+    Step Reduction Multiplier:10
+    Steepest Descent Step:    0.01
     Smart History:            false (default)
     Print Checkpoint:         false
   BAGEL Model:                model.inp

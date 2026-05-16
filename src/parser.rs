@@ -1064,6 +1064,54 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "print_level" => config.print_level = value.parse().unwrap_or(1),
         "reduced_factor" => config.reduced_factor = value.parse().unwrap_or(0.5),
         "bfgs_rho" => config.bfgs_rho = value.parse().unwrap_or(15.0),
+        "step_reduction_multiplier" => {
+            config.step_reduction_multiplier = value.parse().unwrap_or_else(|_| {
+                eprintln!("Warning: Invalid step_reduction_multiplier '{}', using default 10.0", value);
+                10.0
+            });
+        }
+        "trust_reduction_factor" => {
+            config.trust_reduction_factor = value.parse().unwrap_or_else(|_| {
+                eprintln!("Warning: Invalid trust_reduction_factor '{}', using default 0.5", value);
+                0.5
+            });
+        }
+        "trust_increase_factor" => {
+            config.trust_increase_factor = value.parse().unwrap_or_else(|_| {
+                eprintln!("Warning: Invalid trust_increase_factor '{}', using default 1.2", value);
+                1.2
+            });
+        }
+        "trust_inc_threshold" => {
+            config.trust_inc_threshold = value.parse().unwrap_or_else(|_| {
+                eprintln!("Warning: Invalid trust_inc_threshold '{}', using default 0.0001", value);
+                0.0001
+            });
+        }
+        "trust_dec_threshold" => {
+            config.trust_dec_threshold = value.parse().unwrap_or_else(|_| {
+                eprintln!("Warning: Invalid trust_dec_threshold '{}', using default 0.0001", value);
+                0.0001
+            });
+        }
+        "trust_min_radius" => {
+            config.trust_min_radius = value.parse().unwrap_or_else(|_| {
+                eprintln!("Warning: Invalid trust_min_radius '{}', using default 0.01", value);
+                0.01
+            });
+        }
+        "trust_max_radius" => {
+            config.trust_max_radius = value.parse().unwrap_or_else(|_| {
+                eprintln!("Warning: Invalid trust_max_radius '{}', using default 1.0", value);
+                1.0
+            });
+        }
+        "steepest_descent_step" => {
+            config.steepest_descent_step = value.parse().unwrap_or_else(|_| {
+                eprintln!("Warning: Invalid steepest_descent_step '{}', using default 0.01", value);
+                0.01
+            });
+        }
         // New Fortran-ported DIIS options
         "use_robust_diis" => config.use_robust_diis = parse_bool(value),
         "gediis_variant" => config.gediis_variant = value.to_lowercase(),

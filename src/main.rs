@@ -744,6 +744,14 @@ fn print_configuration(
             input_config.gediis_blend_mode
         );
     }
+    if input_config.gediis_variant_is_blend() {
+        println!("    Trust Reduction Factor:   {}", input_config.trust_reduction_factor);
+        println!("    Trust Increase Factor:    {}", input_config.trust_increase_factor);
+        println!("    Trust Inc Threshold:      {}", input_config.trust_inc_threshold);
+        println!("    Trust Dec Threshold:      {}", input_config.trust_dec_threshold);
+        println!("    Trust Min Radius:         {}", input_config.trust_min_radius);
+        println!("    Trust Max Radius:         {}", input_config.trust_max_radius);
+    }
     if input_config.use_gediis {
         println!(
             "    GEDIIS Switch RMS:        {:.3}",
@@ -774,6 +782,14 @@ fn print_configuration(
     println!(
         "    Reduced Factor:           {}",
         input_config.reduced_factor
+    );
+    println!(
+        "    Step Reduction Multiplier:{}",
+        input_config.step_reduction_multiplier
+    );
+    println!(
+        "    Steepest Descent Step:    {}",
+        input_config.steepest_descent_step
     );
     println!(
         "    Smart History:            {}",
@@ -1294,16 +1310,20 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Check checkpoint files 
         match input_data.config.program {
             config::QMProgram::Gaussian => {
-                println!("Checking Gaussian checkpoint files...");
+                if print_level >= 1 {
+                    println!("Checking Gaussian checkpoint files...");
+                }
                 // Gaussian creates checkpoint files in root directory (current working directory)
                 let state_a_chk = naming.state_a_chk();
                 let state_b_chk = naming.state_b_chk();
 
                 if Path::new(&state_a_chk).exists() && Path::new(&state_b_chk).exists() {
-                    println!(
-                        " Gaussian checkpoint files found: {} and {}",
-                        state_a_chk, state_b_chk
-                    );
+                    if print_level >= 1 {
+                        println!(
+                            " Gaussian checkpoint files found: {} and {}",
+                            state_a_chk, state_b_chk
+                        );
+                    }
                 } else {
                     return Err(format!(
                         "Error: Gaussian checkpoint files not found after pre-point calculations.\n\
@@ -1340,16 +1360,20 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             config::QMProgram::Xtb => {
-                println!("XTB pre-point calculations completed");
-                println!(
-                    " XTB doesn't require checkpoint files - ready for main optimization loop"
-                );
+                if print_level >= 1 {
+                    println!("XTB pre-point calculations completed");
+                    println!(
+                        " XTB doesn't require checkpoint files - ready for main optimization loop"
+                    );
+                }
             }
             _ => {
-                println!(
-                    "Pre-point calculations completed for {:?}",
-                    input_data.config.program
-                );
+                if print_level >= 1 {
+                    println!(
+                        "Pre-point calculations completed for {:?}",
+                        input_data.config.program
+                    );
+                }
             }
         }
 
@@ -1887,7 +1911,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         // Adaptive trust radius adjustment (blend methods only)
         if use_blend {
-            optimizer::adjust_trust_radius(&mut blend_state, state_a_new.energy, config.print_level);
+            optimizer::adjust_trust_radius(&mut blend_state, state_a_new.energy, &config);
         }
 
         // Add to history for GDIIS/GEDIIS
@@ -2005,15 +2029,7 @@ fn manage_orca_wavefunction_files(
         return Ok(());
     }
 
-    // Load settings to get print_level
-    let settings = match omecp::settings::SettingsManager::load() {
-        Ok(s) => s,
-        Err(_) => {
-            // If settings can't be loaded, use default (quiet mode)
-            return Ok(());
-        }
-    };
-    let print_level = settings.general().print_level;
+    let print_level = config.print_level as u32;
 
     let delete_gbw = config.run_mode == config::RunMode::NoRead;
 
@@ -2025,14 +2041,14 @@ fn manage_orca_wavefunction_files(
         if Path::new(&gbw_a).exists() {
             validation::log_file_operation("Delete", &gbw_a, None, print_level);
             std::fs::remove_file(&gbw_a)?;
-            if print_level >= 1 {
+            if print_level >= 2 {
                 println!("Deleted {} for noread mode", gbw_a);
             }
         }
         if Path::new(&gbw_b).exists() {
             validation::log_file_operation("Delete", &gbw_b, None, print_level);
             std::fs::remove_file(&gbw_b)?;
-            if print_level >= 1 {
+            if print_level >= 2 {
                 println!("Deleted {} for noread mode", gbw_b);
             }
         }
@@ -2056,7 +2072,7 @@ fn manage_orca_wavefunction_files(
     // Write XYZ file for ORCA 
     let xyz_file = format!("{}/{}.xyz", job_dir, step);
     io::write_xyz(geometry, Path::new(&xyz_file))?;
-    if print_level >= 1 {
+    if print_level >= 2 {
         println!("Wrote XYZ file: {}", xyz_file);
     }
 
@@ -2551,11 +2567,7 @@ fn run_single_optimization(
     qm: &dyn qm_interface::QMInterface,
     job_dir: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Load settings to get print_level
-    let print_level = match omecp::settings::SettingsManager::load() {
-        Ok(s) => s.general().print_level,
-        Err(_) => 0, // Default to quiet mode if settings can't be loaded
-    };
+    let print_level = config.print_level as u32;
 
     // Phase 1: Pre-point calculations for Normal mode 
     if config.run_mode == config::RunMode::Normal {
@@ -2603,7 +2615,9 @@ fn run_single_optimization(
         // Copy checkpoint/wavefunction files to standard locations 
         match config.program {
             config::QMProgram::Gaussian => {
-                println!("Copying Gaussian checkpoint files...");
+                if print_level >= 1 {
+                    println!("Copying Gaussian checkpoint files...");
+                }
                 let pre_a_chk = format!("{}/pre_A.chk", job_dir);
                 let pre_b_chk = format!("{}/pre_B.chk", job_dir);
                 let a_chk = format!("{}/a.chk", job_dir);
@@ -2614,7 +2628,9 @@ fn run_single_optimization(
                 // Also copy to root directory for compatibility
                 let _ = std::fs::copy(&a_chk, "a.chk");
                 let _ = std::fs::copy(&b_chk, "b.chk");
-                println!(" Gaussian checkpoint files ready for main optimization loop");
+                if print_level >= 1 {
+                    println!(" Gaussian checkpoint files ready for main optimization loop");
+                }
             }
             config::QMProgram::Orca => {
                 if print_level >= 1 {
@@ -2642,22 +2658,28 @@ fn run_single_optimization(
                 }
             }
             config::QMProgram::Xtb => {
-                println!("XTB pre-point calculations completed");
-                println!(
-                    " XTB doesn't require checkpoint files - ready for main optimization loop"
-                );
+                if print_level >= 1 {
+                    println!("XTB pre-point calculations completed");
+                    println!(
+                        " XTB doesn't require checkpoint files - ready for main optimization loop"
+                    );
+                }
                 // XTB doesn't use persistent checkpoint files like Gaussian/ORCA
                 // The pre-point calculations establish the initial geometry and energy
             }
             config::QMProgram::Bagel => {
-                println!("BAGEL pre-point calculations completed");
-                println!(" BAGEL uses model-based approach - ready for main optimization loop");
+                if print_level >= 1 {
+                    println!("BAGEL pre-point calculations completed");
+                    println!(" BAGEL uses model-based approach - ready for main optimization loop");
+                }
                 // BAGEL uses JSON model files rather than binary checkpoint files
                 // The pre-point calculations validate the model and establish initial state
             }
             config::QMProgram::Custom => {
-                println!("Custom program pre-point calculations completed");
-                println!(" Custom program checkpoint handling depends on implementation");
+                if print_level >= 1 {
+                    println!("Custom program pre-point calculations completed");
+                    println!(" Custom program checkpoint handling depends on implementation");
+                }
                 // Custom programs may or may not use checkpoint files
                 // The behavior depends on the specific program's interface configuration
             }
@@ -3206,15 +3228,7 @@ fn run_pre_point_gaussian(
     run_mode: config::RunMode,
     job_dir: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Load settings to get print_level
-    let settings = match omecp::settings::SettingsManager::load() {
-        Ok(s) => s,
-        Err(_) => {
-            // If settings can't be loaded, use default (quiet mode)
-            return Ok(());
-        }
-    };
-    let print_level = settings.general().print_level;
+    let print_level = input_data.config.print_level as u32;
 
     // Write and run state B first (following B→A order)
     let ext = get_input_file_extension(input_data.config.program);
@@ -3230,7 +3244,9 @@ fn run_pre_point_gaussian(
 
     // Handle inter_read mode special case
     if run_mode == config::RunMode::InterRead {
-        println!("Inter-read mode: copying state B wavefunction to state A");
+        if print_level >= 1 {
+            println!("Inter-read mode: copying state B wavefunction to state A");
+        }
 
         // Ensure proper wavefunction copying (b.chk → a.chk for Gaussian)
         let pre_b_chk = format!("{}/pre_B.chk", job_dir);
@@ -3243,18 +3259,24 @@ fn run_pre_point_gaussian(
             validation::log_file_operation("Copy", "b.chk", Some("a.chk"), print_level);
             std::fs::copy("b.chk", "a.chk")?;
         } else {
-            println!("Warning: No checkpoint file found for inter_read mode. Continuing without wavefunction copying.");
+            if print_level >= 1 {
+                println!("Warning: No checkpoint file found for inter_read mode. Continuing without wavefunction copying.");
+            }
         }
 
         // Modify header A to add guess=(read,mix) for inter_read mode
         let mut header_a_modified = header_a.to_string();
         if header_a_modified.contains("guess=read") {
             header_a_modified = header_a_modified.replace("guess=read", "guess=(read,mix)");
-            println!("Modified state A header to use guess=(read,mix) for inter_read mode");
+            if print_level >= 1 {
+                println!("Modified state A header to use guess=(read,mix) for inter_read mode");
+            }
         } else {
             // Add guess=(read,mix) if not present (fallback)
             header_a_modified = header_a_modified.replace("# ", "# guess=(read,mix) ");
-            println!("Added guess=(read,mix) to state A header for inter_read mode");
+            if print_level >= 1 {
+                println!("Added guess=(read,mix) to state A header for inter_read mode");
+            }
         }
 
         let pre_a_path = format!("{}/pre_A.{}", job_dir, ext);
@@ -3297,15 +3319,7 @@ fn run_pre_point_orca(
     run_mode: config::RunMode,
     _job_dir: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Load settings to get print_level
-    let settings = match omecp::settings::SettingsManager::load() {
-        Ok(s) => s,
-        Err(_) => {
-            // If settings can't be loaded, use default (quiet mode)
-            return Ok(());
-        }
-    };
-    let print_level = settings.general().print_level;
+    let print_level = input_data.config.print_level as u32;
 
     // Write and run state B first
     qm.write_input(
@@ -3329,7 +3343,9 @@ fn run_pre_point_orca(
 
     // Handle inter_read mode
     if run_mode == config::RunMode::InterRead {
-        println!("Inter-read mode: copying state B wavefunction to state A");
+        if print_level >= 1 {
+            println!("Inter-read mode: copying state B wavefunction to state A");
+        }
 
         // Ensure proper wavefunction copying for ORCA
         if Path::new("job_dir/pre_B.gbw").exists() {
@@ -3344,20 +3360,24 @@ fn run_pre_point_orca(
                 println!("Copied pre_B.gbw → a.gbw for inter_read mode");
             }
         } else {
-            println!("Warning: No .gbw file found for inter_read mode. Continuing without wavefunction copying.");
+            if print_level >= 1 {
+                println!("Warning: No .gbw file found for inter_read mode. Continuing without wavefunction copying.");
+            }
         }
 
         // Provide comprehensive user guidance for ORCA inter_read mode
-        println!("\n****ORCA Inter-Read Mode Guidance****");
-        println!("Note: The inter_read mode is set for ORCA. In Gaussian, the program automatically adds guess=mix for state A,");
-        println!("but this will not be done for ORCA. If you want to converge to correct OSS wavefunction from a triplet wavefunction,");
-        println!("guess=(read,mix) is always beneficial. So please do not forget to add relevant convergence controlling in your ORCA tail part.");
-        println!("Recommended ORCA tail keywords for inter_read mode:");
-        println!("  %scf");
-        println!("    MaxIter 200");
-        println!("    ConvForced true");
-        println!("  end");
-        println!("****End of ORCA Guidance****\n");
+        if print_level >= 1 {
+            println!("\n****ORCA Inter-Read Mode Guidance****");
+            println!("Note: The inter_read mode is set for ORCA. In Gaussian, the program automatically adds guess=mix for state A,");
+            println!("but this will not be done for ORCA. If you want to converge to correct OSS wavefunction from a triplet wavefunction,");
+            println!("guess=(read,mix) is always beneficial. So please do not forget to add relevant convergence controlling in your ORCA tail part.");
+            println!("Recommended ORCA tail keywords for inter_read mode:");
+            println!("  %scf");
+            println!("    MaxIter 200");
+            println!("    ConvForced true");
+            println!("  end");
+            println!("****End of ORCA Guidance****\n");
+        }
     }
 
     // Write and run state A

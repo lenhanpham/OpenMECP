@@ -398,6 +398,39 @@ pub struct Config {
     ///   are compatible with `use_gediis = blend`.
     /// - `InverseBfgs` is **incompatible** with `use_gediis = blend`.
     pub hessian_method: HessianMethod,
+
+    /// Multiplier for RMS gradient threshold in step reduction activation.
+    /// Step reduction triggers when history norm < rms_g × this value.
+    /// Default: 10.0
+    pub step_reduction_multiplier: f64,
+
+    /// Trust radius reduction factor when energy increases.
+    /// Default: 0.5
+    pub trust_reduction_factor: f64,
+
+    /// Trust radius increase factor when energy decreases.
+    /// Default: 1.2
+    pub trust_increase_factor: f64,
+
+    /// Energy increase threshold (Ha) for trust radius reduction.
+    /// Default: 0.0001
+    pub trust_inc_threshold: f64,
+
+    /// Energy decrease threshold (Ha) for trust radius increase.
+    /// Default: 0.0001
+    pub trust_dec_threshold: f64,
+
+    /// Minimum trust radius in Angstrom.
+    /// Default: 0.01
+    pub trust_min_radius: f64,
+
+    /// Maximum trust radius in Angstrom.
+    /// Default: 1.0
+    pub trust_max_radius: f64,
+
+    /// Steepest descent step size in Angstrom for fallback when DIIS/BFGS fails.
+    /// Default: 0.01
+    pub steepest_descent_step: f64,
 }
 
 /// Hessian update method for geometry optimization.
@@ -508,6 +541,15 @@ impl Default for Config {
             gediis_sim_switch: 0.0025,
             // Hessian update method (default: direct PSB)
             hessian_method: HessianMethod::DirectPsb,
+            // Step reduction and trust radius parameters
+            step_reduction_multiplier: 10.0,
+            trust_reduction_factor: 0.5,
+            trust_increase_factor: 1.2,
+            trust_inc_threshold: 0.0001,
+            trust_dec_threshold: 0.0001,
+            trust_min_radius: 0.01,
+            trust_max_radius: 1.0,
+            steepest_descent_step: 0.01,
         }
     }
 }

@@ -1913,7 +1913,7 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         let grad_norm = last_grad.norm();
         if grad_norm > 1e-10 {
             // Small steepest descent step
-            x_new = last_geom - last_grad * (0.01 / grad_norm);
+            x_new = last_geom - last_grad * (config.steepest_descent_step / grad_norm);
         } else {
             x_new = last_geom.clone();
         }
@@ -1955,7 +1955,7 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     }
 
     // CRITICAL: Combined gradients are in Ha/Å (g_vec) + Ha (f_vec)
-    let threshold = config.thresholds.rms_g * 10.0;
+    let threshold = config.thresholds.rms_g * config.step_reduction_multiplier;
 
     if config.print_level >= 2 {
         println!(
@@ -1965,10 +1965,14 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     }
 
     let step_reduction_factor = if history_combined_norm < threshold {
-        println!(
-            "Applying step reduction (factor = {})",
-            config.reduced_factor
-        );
+        if config.print_level >= 1 {
+            println!(
+                "    GDIIS step reduction factor={} (history_norm={:.6} < {:.6})",
+                config.reduced_factor,
+                history_combined_norm,
+                threshold
+            );
+        }
         config.reduced_factor
     } else {
         1.0
@@ -2002,7 +2006,7 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         let last_grad = opt_state.grad_history.back().unwrap();
         let grad_norm = last_grad.norm();
         if grad_norm > 1e-10 {
-            let descent_step = -last_grad / grad_norm * 0.01; // Small steepest descent step
+            let descent_step = -last_grad / grad_norm * config.steepest_descent_step; // Small steepest descent step
             x_new = last_geom + descent_step;
         } else {
             // Gradient is also zero - we're truly stuck
@@ -2386,12 +2390,16 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
     let history_combined_norm = history_combined_norm_sq.sqrt();
 
     // CRITICAL: Scale threshold for Ha/Å units
-    let threshold = config.thresholds.rms_g * 10.0;
+    let threshold = config.thresholds.rms_g * config.step_reduction_multiplier;
     if history_combined_norm < threshold {
-        println!(
-            "GEDIIS: applying step reduction factor {:.2}",
-            config.reduced_factor
-        );
+        if config.print_level >= 1 {
+            println!(
+                "    GEDIIS step reduction factor={} (history_norm={:.6} < {:.6})",
+                config.reduced_factor,
+                history_combined_norm,
+                threshold
+            );
+        }
         step *= config.reduced_factor;
     }
 
@@ -2409,7 +2417,7 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
         let combined_last = last_grad + last_f;
         let grad_norm = combined_last.norm();
         if grad_norm > 1e-10 {
-            let descent_step = -&combined_last / grad_norm * 0.01;
+            let descent_step = -&combined_last / grad_norm * config.steepest_descent_step;
             x_new = last_geom + descent_step;
         } else {
             println!("ERROR: Both step and gradient are zero - optimizer is stuck!");
@@ -2874,7 +2882,7 @@ pub fn bfgs_step_direct(
         println!("BFGS: Hessian singular, falling back to steepest descent");
         let g_norm = g0.norm();
         if g_norm > 1e-14 {
-            -g0 / g_norm * 0.01 // Small steepest descent step
+            -g0 / g_norm * config.steepest_descent_step // Small steepest descent step
         } else {
             DVector::zeros(g0.len())
         }
@@ -3090,12 +3098,16 @@ pub fn gdiis_step_direct(
     let history_combined_norm = history_combined_norm_sq.sqrt();
 
     // Combined gradient norm includes f_vec (Ha) + g_vec (Ha/Å)
-    let threshold = config.thresholds.rms_g * 10.0;
+    let threshold = config.thresholds.rms_g * config.step_reduction_multiplier;
     if history_combined_norm < threshold {
-        println!(
-            "GDIIS: applying step reduction factor {:.2}",
-            config.reduced_factor
-        );
+        if config.print_level >= 1 {
+            println!(
+                "    GDIIS step reduction factor={} (history_norm={:.6} < {:.6})",
+                config.reduced_factor,
+                history_combined_norm,
+                threshold
+            );
+        }
         step *= config.reduced_factor;
     }
 
@@ -3418,10 +3430,10 @@ impl OptimizationState_blend {
         }
     }
 
-    /// Returns `true` when at least 2 iterations of history exist,
-    /// matching the minimum needed for DIIS interpolation.
+    /// Returns `true` when at least 3 iterations of history exist,
+    /// matching the minimum needed for reliable DIIS interpolation.
     pub fn has_enough_history(&self) -> bool {
-        self.geom_history.len() >= 2
+        self.geom_history.len() >= 3
     }
 
     /// Adds a new entry to all history deques with FIFO eviction.
@@ -3688,6 +3700,7 @@ fn build_gediis_b_matrix_taylor(
 ///   forces (via grad + f_vec), and true Hessians.
 /// * `max_step` - Maximum allowed step size (Python: `maxstep`).
 /// * `thresh_rms_g` - RMS gradient threshold for step reduction (Python: `conver[4]`).
+/// * `reduced_factor` - Step reduction factor when activated.
 ///
 /// # Returns
 ///
@@ -3698,6 +3711,8 @@ pub fn gdiis_blend_step(
     max_step: f64,
     thresh_rms_g: f64,
     print_level: usize,
+    reduced_factor: f64,
+    step_reduction_multiplier: f64,
 ) -> DVector<f64> {
     let n = opt_state.geom_history.len();
     if n < 2 {
@@ -3773,15 +3788,16 @@ pub fn gdiis_blend_step(
         .sum();
     let history_norm = history_norm_sq.sqrt();
 
-    let factor = if history_norm < thresh_rms_g * 10.0 {
+    let factor = if history_norm < thresh_rms_g * step_reduction_multiplier {
         if print_level >= 1 {
             println!(
-                "    GDIIS_blend: reducing factor activated (history_norm={:.6} < {:.6}, factor=0.5)",
+                "    GDIIS_blend step reduction factor={} (history_norm={:.6} < {:.6})",
+                reduced_factor,
                 history_norm,
-                thresh_rms_g * 10.0
+                thresh_rms_g * step_reduction_multiplier
             );
         }
-        0.5
+        reduced_factor
     } else {
         1.0
     };
@@ -3909,6 +3925,7 @@ pub fn gediis_blend_step(
 ///   energy history.
 /// * `max_step` - Maximum allowed step size (Python: `maxstep`).
 /// * `thresh_rms_g` - RMS gradient threshold (Python: `conver[4]`).
+/// * `reduced_factor` - Step reduction factor when activated.
 ///
 /// # Returns
 ///
@@ -3918,6 +3935,8 @@ pub fn fixed_blend_step(
     max_step: f64,
     thresh_rms_g: f64,
     print_level: usize,
+    reduced_factor: f64,
+    step_reduction_multiplier: f64,
 ) -> DVector<f64> {
     let n = opt_state.geom_history.len();
     if n < 2 {
@@ -4036,15 +4055,16 @@ pub fn fixed_blend_step(
         .sum();
     let history_norm = history_norm_sq.sqrt();
 
-    let factor = if history_norm < thresh_rms_g * 10.0 {
+    let factor = if history_norm < thresh_rms_g * step_reduction_multiplier {
         if print_level >= 1 {
             println!(
-                "    Fixed_blend: reducing factor activated (history_norm={:.6} < {:.6}, factor=0.5)",
+                "    Fixed_blend step reduction factor={} (history_norm={:.6} < {:.6})",
+                reduced_factor,
                 history_norm,
-                thresh_rms_g * 10.0
+                thresh_rms_g * step_reduction_multiplier
             );
         }
-        0.5
+        reduced_factor
     } else {
         1.0
     };
@@ -4076,6 +4096,7 @@ pub fn fixed_blend_step(
 /// * `max_step` - Maximum allowed step size.
 /// * `thresh_rms_g` - RMS gradient convergence threshold (for factor check).
 /// * `switch_rms` - RMS gradient threshold for blend weighting.
+/// * `reduced_factor` - Step reduction factor when activated.
 ///
 /// # Returns
 ///
@@ -4087,6 +4108,8 @@ pub fn gradient_blend_step(
     thresh_rms_g: f64,
     switch_rms: f64,
     print_level: usize,
+    reduced_factor: f64,
+    step_reduction_multiplier: f64,
 ) -> DVector<f64> {
     let n = opt_state.geom_history.len();
     if n < 2 {
@@ -4194,15 +4217,16 @@ pub fn gradient_blend_step(
         .sum();
     let history_norm = history_norm_sq.sqrt();
 
-    let factor = if history_norm < thresh_rms_g * 10.0 {
+    let factor = if history_norm < thresh_rms_g * step_reduction_multiplier {
         if print_level >= 1 {
             println!(
-                "    Weighted hybrid: reducing factor activated (history_norm={:.6} < {:.6}, factor=0.5)",
+                "    Weighted_hybrid step reduction factor={} (history_norm={:.6} < {:.6})",
+                reduced_factor,
                 history_norm,
-                thresh_rms_g * 10.0
+                thresh_rms_g * step_reduction_multiplier
             );
         }
-        0.5
+        reduced_factor
     } else {
         1.0
     };
@@ -4239,7 +4263,7 @@ pub fn sequential_blend_step(
         if config.print_level >= 1 {
             println!("Sequential blend: history insufficient, phase 1 GDIIS");
         }
-        return gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level);
+        return gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level, config.reduced_factor, config.step_reduction_multiplier);
     }
 
     let last_grad = opt_state.grad_history.back().unwrap();
@@ -4267,6 +4291,8 @@ pub fn sequential_blend_step(
             config.thresholds.rms_g,
             config.gediis_switch_rms,
             config.print_level,
+            config.reduced_factor,
+            config.step_reduction_multiplier,
         )
     } else {
         if config.print_level >= 1 {
@@ -4276,7 +4302,7 @@ pub fn sequential_blend_step(
                 println!("Sequential blend: phase 3 GDIIS (rms_disp={:.6})", rms_disp);
             }
         }
-        gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level)
+        gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level, config.reduced_factor, config.step_reduction_multiplier)
     }
 }
 
@@ -4306,7 +4332,7 @@ pub fn fixed_sequential_blend_step(
         if config.print_level >= 1 {
             println!("Fixed Sequential blend: history insufficient, using 50/50 blend");
         }
-        return fixed_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level);
+        return fixed_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level, config.reduced_factor, config.step_reduction_multiplier);
     }
 
     let last_grad = opt_state.grad_history.back().unwrap();
@@ -4328,7 +4354,7 @@ pub fn fixed_sequential_blend_step(
                 rms_disp, config.gediis_switch_step
             );
         }
-        gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level)
+        gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level, config.reduced_factor, config.step_reduction_multiplier)
     } else {
         if config.print_level >= 1 {
             println!(
@@ -4336,7 +4362,7 @@ pub fn fixed_sequential_blend_step(
                 rms_disp
             );
         }
-        fixed_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level)
+        fixed_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level, config.reduced_factor, config.step_reduction_multiplier)
     }
 }
 
@@ -4354,14 +4380,14 @@ pub fn fixed_sequential_blend_step(
 /// * `state` - Mutable optimization state to update.
 /// * `current_e1` - E1 energy from the most recent QM calculation.
 /// * `print_level` - Print level (0=quiet, 1=normal, 2=verbose).
-pub fn adjust_trust_radius(state: &mut OptimizationState_blend, current_e1: f64, print_level: usize) {
+pub fn adjust_trust_radius(state: &mut OptimizationState_blend, current_e1: f64, config: &Config) {
+    let print_level = config.print_level;
     if let Some(prev) = state.prev_e1 {
         let actual = prev - current_e1;
-        if actual < -0.0001 {
-            state.trust_radius *= 0.5;
-            let min_radius = 0.01;
-            if state.trust_radius < min_radius {
-                state.trust_radius = min_radius;
+        if actual < -config.trust_inc_threshold {
+            state.trust_radius *= config.trust_reduction_factor;
+            if state.trust_radius < config.trust_min_radius {
+                state.trust_radius = config.trust_min_radius;
             }
             if print_level >= 1 {
                 println!(
@@ -4369,8 +4395,8 @@ pub fn adjust_trust_radius(state: &mut OptimizationState_blend, current_e1: f64,
                     actual, state.trust_radius
                 );
             }
-        } else if actual > 0.0001 {
-            state.trust_radius = (state.trust_radius * 1.2).min(1.0);
+        } else if actual > config.trust_dec_threshold {
+            state.trust_radius = (state.trust_radius * config.trust_increase_factor).min(config.trust_max_radius);
             if print_level >= 1 {
                 println!(
                     "    Trust radius: energy decreased by {:.6}, increasing to {:.6}",
@@ -4437,12 +4463,14 @@ pub fn select_blend_step(
                 config.thresholds.rms_g,
                 config.gediis_switch_rms,
                 config.print_level,
+                config.reduced_factor,
+                config.step_reduction_multiplier,
             ),
             "sequential" => sequential_blend_step(blend_state, config),
-            _ => fixed_blend_step(blend_state, blend_state.trust_radius, config.thresholds.rms_g, config.print_level),
+            _ => fixed_blend_step(blend_state, blend_state.trust_radius, config.thresholds.rms_g, config.print_level, config.reduced_factor, config.step_reduction_multiplier),
         }
     } else {
-        gdiis_blend_step(blend_state, blend_state.trust_radius, config.thresholds.rms_g, config.print_level)
+        gdiis_blend_step(blend_state, blend_state.trust_radius, config.thresholds.rms_g, config.print_level, config.reduced_factor, config.step_reduction_multiplier)
     }
 }
 

@@ -68,6 +68,12 @@ Where `x_norm = (f1 - f2) / |f1 - f2|` is the normalized gradient difference.
 - **GDIIS Optimizer**: Geometry-based DIIS for 2-3x faster convergence
 - **GEDIIS Optimizer**: Energy-informed DIIS for enhanced convergence (Li & Frisch JCTC 2006)
 - **Sequential Hybrid Strategy**: 3-phase switching: GDIIS → GEDIIS → GDIIS (Li & Frisch JCTC 2006)
+- **GDIIS_blend**: Pure GDIIS with trust region and inverted mean true Hessian
+- **GDIIS_blend + EDIIS Blend**: Four blend strategies combining GDIIS and EDIIS with trust radius:
+  - `fixed`: 50/50 equal blend
+  - `fixed_sequential` (default): 50/50 → pure GDIIS near convergence
+  - `gradient`: Smooth sigmoid blend weighted by RMS gradient
+  - `sequential`: Per-step GDIIS/EDIIS switching based on step trend
 - **Robust DIIS (Experimental)**: Enhanced GDIIS/GEDIIS with SR1 updates, cosine validation, and coefficient checks
 - **Multiple Hessian Updates (Experimental)**: BFGS, Powell, Bofill, and adaptive BFGS/Powell blend
 
@@ -211,7 +217,7 @@ mult_a = 1
 mult_b = 3
 ```
 
-### 3. Get Help
+### Get Help
 
 ```bash
 # General help
@@ -231,7 +237,7 @@ omecp --help examples
 omecp ci --help
 ```
 
-### 4. Run OpenMECP
+### Run OpenMECP
 
 - Copy omecp to your preferred directory, and chmod 700 omecp before exporting this dir in your shellscript
 
@@ -244,7 +250,7 @@ module load gaussian (or Orca) // Check your HPC system
 omecp input.inp > output.log 
 ```
 
-### 5. Check Results
+### Check Results
 
 - Optimized geometry: `{input_basename}_mecp.xyz` (e.g., `compound_xyz_123_mecp.xyz`)
 - Intermediate geometries: `running_dir/` directory
@@ -445,21 +451,29 @@ H  1.2  0.0  0.5
 
 #### Optimizer Settings
 
-| Keyword              | Type        | Default            | Description                                                                                   |
-| -------------------- | ----------- | ------------------ | --------------------------------------------------------------------------------------------- |
-| `hessian`            | string      | `direct_psb`       | Hessian update method: `direct_psb`, `inverse_bfgs`, `bofill`, `powell`, `bfgs_powell_mix`    |
-| `use_gediis`         | bool/string | `false`            | `false`/`none`=GDIIS, `true`/`sequential`=GEDIIS, `blend`=GDIIS_blend with trust region       |
-| `use_hybrid_gediis`  | boolean     | `false`            | Sequential hybrid GDIIS/GEDIIS (requires `use_gediis=true` or `sequential`)                   |
-| `gediis_blend_mode`  | string      | `fixed_sequential` | Blend strategy when `use_gediis=blend`: `fixed`, `fixed_sequential`, `gradient`, `sequential` |
-| `gediis_switch_rms`  | float       | `0.005`            | RMS gradient threshold for GDIIS→GEDIIS switch (paper: 10⁻² au)                               |
-| `gediis_switch_step` | float       | `0.001`            | RMS step threshold for GEDIIS→GDIIS switch (paper: 2.5×10⁻³ au)                               |
-| `switch_step`        | integer     | `3`                | Step to switch from BFGS to DIIS optimizers                                                   |
-| `max_history`        | integer     | `4`                | Max iterations used for DIIS extrapolation                                                    |
-| `smart_history`      | boolean     | `false`            | Smart history instead of first in first out                                                   |
-| `reduced_factor`     | float       | `0.5`              | Step size reduction factor for GDIIS                                                          |
-| `bfgs_rho`           | float       | `15.0`             | Scaling factor for BFGS step size                                                             |
-| `print_level`        | integer     | `1`                | Output verbosity: `0`=quiet, `1`=normal, `2`=verbose (DIIS debug)                             |
-| `print_checkpoint`   | boolean     | `false`            | Enable/disable checkpoint JSON file generation                                                |
+| Keyword                     | Type        | Default            | Description                                                                                   |
+| --------------------------- | ----------- | ------------------ | --------------------------------------------------------------------------------------------- |
+| `hessian`                   | string      | `direct_psb`       | Hessian update method: `direct_psb`, `inverse_bfgs`, `bofill`, `powell`, `bfgs_powell_mix`    |
+| `use_gediis`                | bool/string | `false`            | `false`/`none`=GDIIS, `true`/`sequential`=GEDIIS, `blend`=GDIIS_blend with trust region       |
+| `use_hybrid_gediis`         | boolean     | `false`            | Sequential hybrid GDIIS/GEDIIS (requires `use_gediis=true` or `sequential`)                   |
+| `gediis_blend_mode`         | string      | `fixed_sequential` | Blend strategy when `use_gediis=blend`: `fixed`, `fixed_sequential`, `gradient`, `sequential` |
+| `gediis_switch_rms`         | float       | `0.005`            | RMS gradient threshold for GDIIS→GEDIIS switch (paper: 10⁻² au)                               |
+| `gediis_switch_step`        | float       | `0.001`            | RMS step threshold for GEDIIS→GDIIS switch (paper: 2.5×10⁻³ au)                               |
+| `switch_step`               | integer     | `3`                | Step to switch from BFGS to DIIS optimizers                                                   |
+| `max_history`               | integer     | `4`                | Max iterations used for DIIS extrapolation                                                    |
+| `smart_history`             | boolean     | `false`            | Smart history instead of first in first out                                                   |
+| `reduced_factor`            | float       | `0.5`              | Step size reduction factor for GDIIS                                                          |
+| `step_reduction_multiplier` | float       | `10.0`             | RMS gradient multiplier for step reduction threshold                                          |
+| `steepest_descent_step`     | float       | `0.01`             | Small steepest descent step size (Å) for fallback when DIIS/BFGS fails                        |
+| `bfgs_rho`                  | float       | `15.0`             | Scaling factor for BFGS step size                                                             |
+| `trust_reduction_factor`    | float       | `0.5`              | Trust radius contraction factor when energy increases                                         |
+| `trust_increase_factor`     | float       | `1.2`              | Trust radius expansion factor when energy decreases                                           |
+| `trust_inc_threshold`       | float       | `0.0001`           | Energy increase threshold (Ha) for trust radius reduction                                     |
+| `trust_dec_threshold`       | float       | `0.0001`           | Energy decrease threshold (Ha) for trust radius increase                                      |
+| `trust_min_radius`          | float       | `0.01`             | Minimum trust radius in Å                                                                     |
+| `trust_max_radius`          | float       | `1.0`              | Maximum trust radius in Å                                                                     |
+| `print_level`               | integer     | `1`                | Output verbosity: `0`=quiet, `1`=normal, `2`=verbose (DIIS debug)                             |
+| `print_checkpoint`          | boolean     | `false`            | Enable/disable checkpoint JSON file generation                                                |
 
 #### Advanced DIIS Options (Step Validation)
 
@@ -596,19 +610,6 @@ hessian = bofill
 | `dispersion`            | string  | `""`    | Dispersion correction                   |
 | `custom_interface_file` | string  | `""`    | Path to custom QM interface JSON config |
 | `fixedatoms`            | string  | `""`    | Fixed atom indices (e.g., `1,3-5,7`)    |
-
-#### Deprecated Keywords (Backward Compatibility)
-
-| New Keyword | Status     | Description                     |
-| ----------- | ---------- | ------------------------------- |
-| `mult1`     | Deprecated | Multiplicity for state A        |
-| `mult2`     | Deprecated | Multiplicity for state B        |
-| `td1`       | Deprecated | TD-DFT keywords for state A     |
-| `td2`       | Deprecated | TD-DFT keywords for state B     |
-| `state1`    | Deprecated | Excited state index for state A |
-| `state2`    | Deprecated | Excited state index for state B |
-
-**Note**: Deprecated keywords still work but will show warnings. Please use the new keywords in new input files.
 
 #### Optimizer Switching Control
 
@@ -985,10 +986,11 @@ transition midpoint (w = 0.5 when RMS_grad = switch_rms).
 
 **Trust radius**: All blend modes use a trust radius that:
 
-- Contracts to `reduced_factor × radius` (default 0.5) when energy increases
-- Expands by 20% when energy decreases
+- Contracts to `trust_reduction_factor × radius` when energy increases
+- Expands by `trust_increase_factor × radius` when energy decreases
+- Bounds between `trust_min_radius` and `trust_max_radius`
 - Caps the displacement norm to prevent wild steps
-- Bootstraps from the BFGS max_step_size
+- Bootstraps from the BFGS `max_step_size`
 
 **Requirements**: Blend mode requires a direct Hessian method
 (`direct_psb`, `bofill`, `powell`, or `bfgs_powell_mix`).
@@ -1180,8 +1182,8 @@ All five criteria must be satisfied:
 | Criterion        | Threshold          | Description                    |
 | ---------------- | ------------------ | ------------------------------ |
 | ΔE               | < 0.000050 hartree | Energy difference              |
-| RMS gradient     | < 0.0005           | Root mean square gradient      |
-| Max gradient     | < 0.0007           | Maximum gradient component     |
+| RMS gradient     | < 0.000945         | Root mean square gradient      |
+| Max gradient     | < 0.000945         | Maximum gradient component     |
 | RMS displacement | < 0.0025           | Root mean square displacement  |
 | Max displacement | < 0.004            | Maximum displacement component |
 
@@ -1189,7 +1191,7 @@ All five criteria must be satisfied:
 
 ## Examples
 
-### Example 1: Basic MECP (Singlet-Triplet)
+### Example 1: Basic MECP (Singlet-Triplet, pure GDIIS)
 
 ```
 *GEOM
@@ -1814,7 +1816,7 @@ use_hybrid_gediis = true
 gediis_blend_mode = fixed_sequential  # explicit; this is also the default
 ```
 
-### Example 19: Pure GDIIS_blend (no EDIIS)
+### Example 19: Pure GDIIS_blend (no EDIIS, very robust)
 
 Pure GDIIS with trust region and inverted mean true Hessian. No EDIIS component.
 Set `use_hybrid_gediis = false` (the default for blend mode):
@@ -1850,7 +1852,7 @@ mult_b = 3
 # Enable GDIIS_blend optimizer
 use_gediis = blend
 # Pure GDIIS_blend: no EDIIS component
-# use_hybrid_gediis = false  # default for blend, can be omitted
+use_hybrid_gediis = false  # default for blend, can be omitted
 ```
 
 ## Troubleshooting
@@ -1879,7 +1881,6 @@ use_gediis = blend
 
 - **Gaussian**: "Convergence failure" → Try `scf=(xqc,qc,nofermi)` in TAIL
 - **ORCA**: "SCF not converged" → Try `%scf SOSCF true end` in TAIL
-- **XTB**: "GFN2-xTB failed" → Check geometry validity, try different charge/multiplicity
 - **Custom**: Check JSON configuration and program-specific error messages
 
 #### Error: "Failed to parse output"
@@ -1926,7 +1927,7 @@ use_gediis = blend
 
 **Symptoms**: Many optimization steps required
 
-**Solutions**: add more steps
+**Solutions**: add more steps; try other optimizers
 
 ## Cite
 

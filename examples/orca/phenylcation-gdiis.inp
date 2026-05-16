@@ -1,13 +1,13 @@
 #===============================================================================
 # OpenMECP Input Template
 #===============================================================================
-# Generated from geometry: new-test-gdiis.xyz
+# Generated from geometry: phenylcation.xyz
 #===============================================================================
 
 #===== Basic Settings (required) ===============================================
 nprocs = 10                  # processors for QM program
-mem = 40GB                  # memory (use maxcore value for ORCA)
-method = n b3lyp/6-31g**     # QM method: n method/basis keywords ...
+mem = 4000                   # memory (use maxcore value for ORCA)
+method = B3LYP 6-31G(d,p) VeryTightSCF     # QM method: n method/basis keywords ...
 td_state_a =                 # TD-DFT keywords for state A (Gaussian). Short: td_a
 td_state_b =                 # TD-DFT keywords for state B (Gaussian). Short: td_b
 mp2 = false                  # true for MP2 or double-hybrid in Gaussian
@@ -28,15 +28,7 @@ max_steps = 100              # maximum optimization steps
 max_step_size = 0.1          # maximum step size (angstrom)
 max_history = 4              # DIIS history length
 reduced_factor = 0.5         # step reduction factor near convergence
-step_reduction_multiplier = 10.0  # rms_g multiplier for step reduction threshold
-steepest_descent_step = 0.01      # fallback step when DIIS/BFGS fails (angstrom)
 bfgs_rho = 15                # BFGS step amplification factor (rho)
-trust_reduction_factor = 0.5      # trust radius contraction on energy increase
-trust_increase_factor = 1.2       # trust radius expansion on energy decrease
-trust_inc_threshold = 0.0001      # energy increase threshold for reduction (hartree)
-trust_dec_threshold = 0.0001      # energy decrease threshold for expansion (hartree)
-trust_min_radius = 0.01           # minimum trust radius (angstrom)
-trust_max_radius = 1.0            # maximum trust radius (angstrom)
 
 #===== Optimizer Selection =====================================================
 switch_step = 3              # 0=DIIS-only, 3=BFGS→DIIS (default), >=max_steps=BFGS-only
@@ -69,9 +61,9 @@ smart_history = false        # experimental: remove worst DIIS point instead of 
 #gediis_sim_switch = 0.0025  # (active: use_robust_diis=true)
 
 #===== Program Settings ========================================================
-program = gaussian           # gaussian | orca | xtb | bagel
+program = orca               # gaussian | orca | xtb | bagel
 gau_comm = g16               # Gaussian command
-orca_comm = orca             # ORCA command
+orca_comm = /apps/orca/6.1.1/orca             # ORCA command
 xtb_comm = xtb               # XTB command
 bagel_comm = bagel           # BAGEL command
 bagel_model = model.inp      # BAGEL model file
@@ -105,7 +97,7 @@ bagel_model = model.inp      # BAGEL model file
 # Geometry section: Cartesian coordinates in Angstrom
 #===============================================================================
 *geom
-@new-test-gdiis.xyz
+@phenylcation.xyz
 *
 
 #===============================================================================

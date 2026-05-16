@@ -20,7 +20,7 @@ currdir=$(pwd)
 
  
 INPUT=${PBS_JOBNAME%.*}.inp 
-OUTPUT=${PBS_JOBNAME%.*}-MECP.log
+OUTPUT=${PBS_JOBNAME%.*}.log
  
 module load gaussian/g16c01 
 module load orca

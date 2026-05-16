@@ -218,6 +218,8 @@ max_steps = 100              # maximum optimization steps
 max_step_size = 0.1          # maximum step size (angstrom)
 max_history = 4              # DIIS history length
 reduced_factor = 0.5         # step reduction factor near convergence
+step_reduction_multiplier = 10.0  # rms_g multiplier for step reduction threshold
+steepest_descent_step = 0.01      # fallback step when DIIS/BFGS fails (angstrom)
 bfgs_rho = 15                # BFGS step amplification factor (rho)
 
 #===== Optimizer Selection =====================================================
@@ -231,6 +233,14 @@ use_hybrid_gediis = false    # activated when use_gediis = true or blend
 gediis_blend_mode = fixed_sequential # activated when use_gediis = blend AND use_hybrid_gediis = true
                                      # options: fixed, fixed_sequential (default), gradient, sequential
 smart_history = false        # experimental: remove worst DIIS point instead of oldest
+
+#===== Optimization Control for blend-mode trust radius only====================
+trust_reduction_factor = 0.5      # trust radius contraction on energy increase
+trust_increase_factor = 1.2       # trust radius expansion on energy decrease
+trust_inc_threshold = 0.0001      # energy increase threshold for reduction (hartree)
+trust_dec_threshold = 0.0001      # energy decrease threshold for expansion (hartree)
+trust_min_radius = 0.01           # minimum trust radius (angstrom)
+trust_max_radius = 1.0            # maximum trust radius (angstrom)
 
 #===== Advanced Optimizer Settings =============================================
 # ALL parameters below are commented out (= inactive). Their default values

@@ -1,13 +1,13 @@
 #===============================================================================
 # OpenMECP Input Template
 #===============================================================================
-# Generated from geometry: to-4-tep-1-pro-new.xyz
+# Generated from geometry: new-test-blend-gdiis.xyz
 #===============================================================================
 
 #===== Basic Settings (required) ==============================================
-nprocs = 48              # processors for QM program
-mem = 190GB              # memory (use maxcore value for ORCA)
-method = n scf(maxcycle=500,xqc) uwb97xd/def2svpp scrf(smd,solvent=benzene) # QM method: n method/basis keywords ...
+nprocs = 10              # processors for QM program
+mem = 40GB              # memory (use maxcore value for ORCA)
+method = n b3lyp/6-31g** # QM method: n method/basis keywords ...
 td_state_a =             # TD-DFT keywords for state A (Gaussian). Short: td_a
 td_state_b =             # TD-DFT keywords for state B (Gaussian). Short: td_b
 mp2 = false              # true for MP2 or double-hybrid in Gaussian
@@ -33,16 +33,21 @@ print_level = 1          # 0=quiet, 1=normal, 2=verbose (DIIS debug)
 
 #===== Optimizer Selection ====================================================
 switch_step = 3          # switch from BFGS to DIIS after this many steps
-use_direct_hessian = true # true: direct Hessian + PSB (recommended)
-                         # false: inverse Hessian + BFGS (Fortran-style)
-use_gediis = false       # enable GEDIIS (energy-informed DIIS)
-use_hybrid_gediis = true # blend GDIIS+GEDIIS (only if use_gediis = true)
+hessian = direct_psb     # (default) Direct H + PSB update
+                         # Options: inverse_bfgs, bofill, powell, bfgs_powell_mix
+use_gediis = blend       # optimizer: false/none=GDIIS (default), true/sequential=GEDIIS,
+                         #           blend=GDIIS_blend with trust region
+use_hybrid_gediis = false # sequential hybrid GEDIIS/GDIIS (use_gediis=true or sequential)
+gediis_blend_mode = sequential # blend mode for use_gediis=blend:
+                         #   fixed, fixed_sequential (default), gradient, sequential
 smart_history = false    # experimental: remove worst DIIS point instead of oldest
 
 #===== Advanced Optimizer Settings ============================================
 # ALL parameters below are commented out (= inactive). Their default values
 # (shown after the = sign) are used unless you uncomment and change them.
 #
+#gediis_switch_rms = 0.005    # Phase 1→2 switch: RMS gradient for GDIIS→GEDIIS (paper: 10⁻² au)
+#gediis_switch_step = 0.001   # Phase 2→3 switch: RMS displacement for GEDIIS→GDIIS (paper: 2.5×10⁻³ au)
 #use_robust_diis = false      # Activate DIIS step validation: rejects bad
                               # extrapolations via cosine & coefficient checks.
                               # Prevents wild steps near convergence.
@@ -51,10 +56,8 @@ smart_history = false    # experimental: remove worst DIIS point instead of olde
 #gdiis_coeff_check = regular  # Only when use_robust_diis=true
 #n_neg = 0                    # 0 = minimum search, 1 = transition state
 #gediis_sim_switch = 0.0025   # Only when use_robust_diis=true
-#use_advanced_hessian_update = false  # Switch from default PSB to Bofill/
-                              # Powell formulas when PSB struggles near
-                              # saddle-point curvature.
-#hessian_update_method = bfgs # Only when use_advanced_hessian_update=true
+#hessian = bofill          # Alternative Hessian methods for difficult
+                          # cases: bofill, powell, bfgs_powell_mix
 
 #===== Program Settings =======================================================
 program = gaussian       # gaussian | orca | xtb | bagel
@@ -93,7 +96,7 @@ bagel_model = model.inp   # BAGEL model file
 # Geometry section: Cartesian coordinates in Angstrom
 #===============================================================================
 *geom
-@to-4-tep-1-pro-new.xyz
+@new-test-blend-gdiis.xyz
 *
 
 #===============================================================================

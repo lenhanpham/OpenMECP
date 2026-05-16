@@ -331,11 +331,11 @@ pub const KEYWORDS: &[Keyword] = &[
         required: false,
     },
     Keyword {
-        name: "use_direct_hessian",
+        name: "hessian",
         category: KeywordCategory::Convergence,
-        description: "Use direct Hessian + PSB update (recommended) or inverse Hessian + BFGS (legacy)",
-        default_value: Some("true"),
-        example: Some("use_direct_hessian = true   # Direct Hessian + PSB (recommended)\nuse_direct_hessian = false  # Inverse Hessian + BFGS"),
+        description: "Hessian update method: direct_psb (default, recommended), inverse_bfgs (Fortran-style), bofill, powell, bfgs_powell_mix. Direct methods required for blend optimizer.",
+        default_value: Some("direct_psb"),
+        example: Some("hessian = direct_psb       # Direct H + PSB (recommended, default)\nhessian = inverse_bfgs    # Inverse H⁻¹ + BFGS\nhessian = bofill          # Bofill update (TS-like)\nhessian = powell          # Powell SR1\nhessian = bfgs_powell_mix # Adaptive BFGS/Powell"),
         required: false,
     },
     Keyword {
@@ -357,17 +357,25 @@ pub const KEYWORDS: &[Keyword] = &[
     Keyword {
         name: "use_gediis",
         category: KeywordCategory::Convergence,
-        description: "Enable GEDIIS (energy-weighted DIIS) optimizer. Default: false (uses GDIIS).",
+        description: "Optimizer variant: false/\"none\"=GDIIS (default), true/\"sequential\"=sequential hybrid GEDIIS, \"blend\"=GDIIS_blend with trust region.",
         default_value: Some("false"),
-        example: Some("use_gediis = true"),
+        example: Some("use_gediis = false         # GDIIS (default)\nuse_gediis = true          # Sequential hybrid GEDIIS\nuse_gediis = sequential    # Same as true\nuse_gediis = blend         # GDIIS_blend with trust region"),
         required: false,
     },
     Keyword {
         name: "use_hybrid_gediis",
         category: KeywordCategory::Convergence,
-        description: "Sequential hybrid GEDIIS/GDIIS (Li & Frisch JCTC 2006). Only active when use_gediis=true.",
+        description: "Sequential hybrid GEDIIS/GDIIS (Li & Frisch JCTC 2006). Only active when use_gediis=true or use_gediis=\"sequential\".",
         default_value: Some("false"),
         example: Some("use_hybrid_gediis = true   # Sequential hybrid\nuse_hybrid_gediis = false  # Pure GEDIIS (default for GEDIIS)"),
+        required: false,
+    },
+    Keyword {
+        name: "gediis_blend_mode",
+        category: KeywordCategory::Convergence,
+        description: "Blend strategy when use_gediis=\"blend\": \"fixed\" (50/50), \"fixed_sequential\" (50/50→GDIIS near minimum), \"gradient\" (RMS-gradient weighted), \"sequential\" (GDIIS↔GEDIIS per step).",
+        default_value: Some("\"fixed_sequential\""),
+        example: Some("gediis_blend_mode = fixed             # 50/50 GDIIS/GEDIIS blend\ngediis_blend_mode = gradient         # RMS-gradient-weighted blend\ngediis_blend_mode = sequential       # Per-step GDIIS/GEDIIS switching"),
         required: false,
     },
     Keyword {
@@ -443,24 +451,6 @@ pub const KEYWORDS: &[Keyword] = &[
         example: Some("gediis_sim_switch = 0.005"),
         required: false,
     },
-    // Advanced Hessian update options
-    Keyword {
-        name: "use_advanced_hessian_update",
-        category: KeywordCategory::Convergence,
-        description: "Try alternative Hessian formulas (Bofill, Powell) when PSB curvature is poor near saddle-point crossings",
-        default_value: Some("false"),
-        example: Some("use_advanced_hessian_update = true"),
-        required: false,
-    },
-    Keyword {
-        name: "hessian_update_method",
-        category: KeywordCategory::Convergence,
-        description: "Hessian update method: bfgs, bfgs_pure, powell, bofill, bfgs_powell_mix",
-        default_value: Some("bfgs"),
-        example: Some("hessian_update_method = bofill  # For TS-like crossings"),
-        required: false,
-    },
-
     // ADVANCED OPTIONS
     Keyword {
         name: "restart",
@@ -777,7 +767,7 @@ pub const FEATURES: &[FeatureInfo] = &[
     FeatureInfo {
         name: "GDIIS Optimizer",
         description: "Geometry Direct Inversion of Iterative Subspace for later steps",
-        usage: "use_gediis = false (default)",
+            usage: "use_gediis = false (default)",
         example: Some("use_gediis = false"),
     },
     FeatureInfo {
@@ -791,6 +781,12 @@ pub const FEATURES: &[FeatureInfo] = &[
         description: "3-phase switching: GDIIS → GEDIIS → GDIIS (Li & Frisch JCTC 2006)",
         usage: "use_gediis = true + use_hybrid_gediis = true",
         example: Some("use_hybrid_gediis = true  # Sequential hybrid"),
+    },
+    FeatureInfo {
+        name: "GDIIS_blend Optimizer",
+        description: "Gradient-weighted and trust-region blend of GDIIS/GEDIIS steps (experimental).",
+        usage: "use_gediis = blend + use_hybrid_gediis = true + gediis_blend_mode = <mode>",
+        example: Some("use_gediis = blend\nuse_hybrid_gediis = true\ngediis_blend_mode = gradient  # RMS-gradient-weighted blend"),
     },
     FeatureInfo {
         name: "Flexible Optimizer Switching",
@@ -1110,6 +1106,20 @@ pub fn print_feature_help() {
     println!("    Phase 3: GDIIS when RMS step < gediis_switch_step (default 0.001 Å)");
     println!("    Enable: 'use_gediis = true' + 'use_hybrid_gediis = true'.");
     println!("    Configurable thresholds: gediis_switch_rms, gediis_switch_step.");
+    println!();
+    println!("GDIIS_blend");
+    println!("    Gradient-weighted and trust-region blend of GDIIS/GEDIIS steps.");
+    println!("    Four blend modes (gediis_blend_mode):");
+    println!("    - 'fixed' (50/50): Equal weight to GDIIS and GEDIIS steps.");
+    println!("    - 'fixed_sequential' (default): 50/50 blend far from minimum,");
+    println!("      automatically transitions to pure GDIIS near convergence");
+    println!("      (RMS displacement < gediis_switch_step).");
+    println!("    - 'gradient': Smooth blend weight w = RMS_grad / (RMS_grad + gediis_switch_rms)");
+    println!("      EDIIS-dominated when far from minimum (energy-guided navigation),");
+    println!("      smoothly transitions to GDIIS-dominated near convergence (Newton step).");
+    println!("    - 'sequential': Per-step switching based on RMS displacement trend.");
+    println!("    All modes use a trust radius that contracts on energy rise and");
+    println!("    expands on energy drop. Enable: 'use_gediis = blend'.");
     println!();
     println!("OPTIMIZER SWITCHING");
     println!("    Control when to switch from BFGS to DIIS with 'switch_step = N':");

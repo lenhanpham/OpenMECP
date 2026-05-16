@@ -1,7 +1,7 @@
 #===============================================================================
 # OpenMECP Input Template
 #===============================================================================
-# Generated from geometry: new-test-gdiis.xyz
+# Generated from geometry: new-test-blend-gediis_fixed_sequential.xyz
 #===============================================================================
 
 #===== Basic Settings (required) ==============================================
@@ -35,10 +35,10 @@ print_level = 1          # 0=quiet, 1=normal, 2=verbose (DIIS debug)
 switch_step = 3          # switch from BFGS to DIIS after this many steps
 hessian = direct_psb     # (default) Direct H + PSB update
                          # Options: inverse_bfgs, bofill, powell, bfgs_powell_mix
-use_gediis = false       # optimizer: false/none=GDIIS (default), true/sequential=GEDIIS,
+use_gediis = blend       # optimizer: false/none=GDIIS (default), true/sequential=GEDIIS,
                          #           blend=GDIIS_blend with trust region
 use_hybrid_gediis = true # sequential hybrid GEDIIS/GDIIS (use_gediis=true or sequential)
-gediis_blend_mode = sequential # blend mode for use_gediis=blend:
+gediis_blend_mode = fixed_sequential # blend mode for use_gediis=blend:
                          #   fixed, fixed_sequential (default), gradient, sequential
 smart_history = false    # experimental: remove worst DIIS point instead of oldest
 
@@ -96,7 +96,7 @@ bagel_model = model.inp   # BAGEL model file
 # Geometry section: Cartesian coordinates in Angstrom
 #===============================================================================
 *geom
-@new-test-blend-gediis_gradient.xyz
+@new-test-blend-gediis_fixed_sequential.xyz
 *
 
 #===============================================================================

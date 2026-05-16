@@ -72,7 +72,7 @@
 //! let constraints = input_data.constraints;
 //! ```
 
-use crate::config::{Config, QMProgram, RunMode, ScanSpec, ScanType};
+use crate::config::{Config, HessianMethod, QMProgram, RunMode, ScanSpec, ScanType};
 use crate::constraints::Constraint;
 use crate::geometry::Geometry;
 use regex::Regex;
@@ -961,8 +961,31 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "drive_end" => config.drive_end = value.parse().unwrap_or(0.0),
         "drive_steps" => config.drive_steps = value.parse().unwrap_or(10),
         "drive_type" => config.drive_type = value.to_string(),
-        "use_gediis" => config.use_gediis = parse_bool(value),
+        "use_gediis" => {
+            let lower = value.trim().to_lowercase();
+            match lower.as_str() {
+                "blend" | "sequential" => {
+                    config.use_gediis = true;
+                    config.gediis_variant = lower;
+                }
+                _ => config.use_gediis = parse_bool(value),
+            }
+        }
         "use_hybrid_gediis" => config.use_hybrid_gediis = parse_bool(value),
+        "gediis_blend_mode" => {
+            let lower = value.trim().to_lowercase();
+            match lower.as_str() {
+                "fixed" | "gradient" | "sequential" | "fixed_sequential" => {
+                    config.gediis_blend_mode = lower;
+                }
+                _ => {
+                    eprintln!(
+                        "Warning: Invalid gediis_blend_mode '{}', expected 'fixed', 'fixed_sequential', 'gradient', or 'sequential', using 'fixed'",
+                        value
+                    );
+                }
+            }
+        }
         "gediis_switch_rms" => {
             config.gediis_switch_rms = value.parse().unwrap_or_else(|_| {
                 eprintln!("Warning: Invalid gediis_switch_rms '{}', using default 0.005", value);
@@ -1048,12 +1071,23 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "gdiis_coeff_check" => config.gdiis_coeff_check = value.to_lowercase(),
         "n_neg" => config.n_neg = value.parse().unwrap_or(0),
         "gediis_sim_switch" => config.gediis_sim_switch = value.parse().unwrap_or(0.0025),
-        // Advanced Hessian update options
-        "use_advanced_hessian_update" => config.use_advanced_hessian_update = parse_bool(value),
-        "hessian_update_method" => config.hessian_update_method = value.to_lowercase(),
-        // Direct Hessian algorithm
-        "use_direct_hessian" => {
-            config.use_direct_hessian = parse_bool(value);
+        // Hessian update method
+        "hessian" => {
+            let lower = value.trim().to_lowercase();
+            config.hessian_method = match lower.as_str() {
+                "direct_psb" => HessianMethod::DirectPsb,
+                "inverse_bfgs" => HessianMethod::InverseBfgs,
+                "bofill" => HessianMethod::Bofill,
+                "powell" | "sr1" => HessianMethod::Powell,
+                "bfgs_powell_mix" | "mix" => HessianMethod::BfgsPowellMix,
+                _ => {
+                    eprintln!(
+                        "Warning: Invalid hessian method '{}', expected 'direct_psb', 'inverse_bfgs', 'bofill', 'powell', or 'bfgs_powell_mix', using 'direct_psb'",
+                        value
+                    );
+                    HessianMethod::DirectPsb
+                }
+            };
         }
         _ => {}
     }

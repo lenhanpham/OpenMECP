@@ -88,7 +88,7 @@
 //!
 //! ## GEDIIS (Energy-Informed DIIS)
 //! - Enhanced version of GDIIS using energy information
-//! - Set `use_gediis = true` to enable
+//! - Set `use_gediis = true` to enable (or `"blend"` for new GDIIS_blend method)
 //! - 2-4x faster convergence than GDIIS for difficult cases
 //! - Better handling of energy-difference minimization
 //!

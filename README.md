@@ -445,44 +445,70 @@ H  1.2  0.0  0.5
 
 #### Optimizer Settings
 
-| Keyword              | Type    | Default | Description                                                       |
-| -------------------- | ------- | ------- | ----------------------------------------------------------------- |
-| `use_direct_hessian` | boolean | `true`  | Direct Hessian+PSB (recommended) or inverse Hessian+BFGS          |
-| `use_gediis`         | boolean | `false` | Use GEDIIS optimizer instead of GDIIS (default: GDIIS)            |
-| `use_hybrid_gediis`  | boolean | `false` | Use sequential hybrid GDIIS/GEDIIS (requires use_gediis=true)     |
-| `gediis_switch_rms`  | float   | `0.005` | RMS gradient threshold for GDIIS→GEDIIS switch (paper: 10⁻² au)   |
-| `gediis_switch_step` | float   | `0.001` | RMS step threshold for GEDIIS→GDIIS switch (paper: 2.5×10⁻³ au)   |
-| `switch_step`        | integer | `3`     | Step to switch from BFGS to DIIS optimizers                       |
-| `max_history`        | integer | `4`     | Max iterations used for DIIS extrapolation                        |
-| `smart_history`      | boolean | `false` | Smart history instead of first in first out                       |
-| `reduced_factor`     | float   | `0.5`   | Step size reduction factor for GDIIS                              |
-| `bfgs_rho`           | float   | `15.0`  | Scaling factor for BFGS step size                                 |
-| `print_level`        | integer | `1`     | Output verbosity: `0`=quiet, `1`=normal, `2`=verbose (DIIS debug) |
-| `print_checkpoint`   | boolean | `false` | Enable/disable checkpoint JSON file generation                    |
+| Keyword              | Type        | Default            | Description                                                                                   |
+| -------------------- | ----------- | ------------------ | --------------------------------------------------------------------------------------------- |
+| `hessian`            | string      | `direct_psb`       | Hessian update method: `direct_psb`, `inverse_bfgs`, `bofill`, `powell`, `bfgs_powell_mix`    |
+| `use_gediis`         | bool/string | `false`            | `false`/`none`=GDIIS, `true`/`sequential`=GEDIIS, `blend`=GDIIS_blend with trust region       |
+| `use_hybrid_gediis`  | boolean     | `false`            | Sequential hybrid GDIIS/GEDIIS (requires `use_gediis=true` or `sequential`)                   |
+| `gediis_blend_mode`  | string      | `fixed_sequential` | Blend strategy when `use_gediis=blend`: `fixed`, `fixed_sequential`, `gradient`, `sequential` |
+| `gediis_switch_rms`  | float       | `0.005`            | RMS gradient threshold for GDIIS→GEDIIS switch (paper: 10⁻² au)                               |
+| `gediis_switch_step` | float       | `0.001`            | RMS step threshold for GEDIIS→GDIIS switch (paper: 2.5×10⁻³ au)                               |
+| `switch_step`        | integer     | `3`                | Step to switch from BFGS to DIIS optimizers                                                   |
+| `max_history`        | integer     | `4`                | Max iterations used for DIIS extrapolation                                                    |
+| `smart_history`      | boolean     | `false`            | Smart history instead of first in first out                                                   |
+| `reduced_factor`     | float       | `0.5`              | Step size reduction factor for GDIIS                                                          |
+| `bfgs_rho`           | float       | `15.0`             | Scaling factor for BFGS step size                                                             |
+| `print_level`        | integer     | `1`                | Output verbosity: `0`=quiet, `1`=normal, `2`=verbose (DIIS debug)                             |
+| `print_checkpoint`   | boolean     | `false`            | Enable/disable checkpoint JSON file generation                                                |
 
 #### Advanced DIIS Options (Step Validation)
 
 Standard GDIIS/GEDIIS can occasionally produce wild extrapolations when the DIIS matrix is ill-conditioned (e.g., near-convergence or redundant history). These options activate additional sanity checks that reject bad steps.
 
-**How to use:** Uncomment these lines in your input file and set values as needed. All are inactive by default.
+**Master switch:** `use_robust_diis = true` — the options below only take effect when this is enabled.
 
-**Dependency:** `use_robust_diis = true` is the master switch. The other options below only take effect when `use_robust_diis = true` is set. If `use_robust_diis` remains `false` (default), all the options below are ignored regardless of their values.
+| Keyword              | Type    | Default      | Activation                                            | Description                                              |
+| -------------------- | ------- | ------------ | ----------------------------------------------------- | -------------------------------------------------------- |
+| `use_robust_diis`    | boolean | `false`      | standalone                                            | **Master switch** for DIIS step validation               |
+| `gediis_variant`     | string  | `"auto"`     | requires `use_robust_diis=true` AND `use_gediis=true` | `auto`, `rfo`, `energy`, `simultaneous`                  |
+| `gdiis_cosine_check` | string  | `"standard"` | requires `use_robust_diis=true`                       | Cosine threshold for step acceptance (see below)         |
+| `gdiis_coeff_check`  | string  | `"regular"`  | requires `use_robust_diis=true`                       | DIIS coefficient bounds (see below)                      |
+| `n_neg`              | integer | `0`          | requires `use_robust_diis=true`                       | `0` for minimum search, `1` for transition-state search  |
+| `gediis_sim_switch`  | float   | `0.0025`     | requires `use_robust_diis=true`                       | RMS error threshold controlling GEDIIS variant switching |
 
-| Keyword              | Type    | Default      | Activation                                            | Description                                                                         |
-| -------------------- | ------- | ------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `use_robust_diis`    | boolean | `false`      | standalone                                            | Enable DIIS step validation (master switch)                                         |
-| `gediis_variant`     | string  | `"auto"`     | requires `use_robust_diis=true` AND `use_gediis=true` | `auto`, `rfo`, `energy`, `simultaneous`                                             |
-| `gdiis_cosine_check` | string  | `"standard"` | requires `use_robust_diis=true`                       | Cosine threshold: `none`, `zero`, `standard` (≥0.71), `variable`, `strict` (≥0.866) |
-| `gdiis_coeff_check`  | string  | `"regular"`  | requires `use_robust_diis=true`                       | Coefficient bounds: `none`, `regular`, `force_recent`, `combined`                   |
-| `n_neg`              | integer | `0`          | requires `use_robust_diis=true`                       | `0` for minimum search, `1` for transition-state search                             |
-| `gediis_sim_switch`  | float   | `0.0025`     | requires `use_robust_diis=true`                       | RMS error threshold controlling GEDIIS variant switching                            |
+**How step validation works:**
+
+When a DIIS extrapolation produces a candidate step, the robust DIIS system checks:
+
+1. **Cosine check** (`gdiis_cosine_check`): Computes the cosine between the DIIS step and the reference gradient. A low cosine (< threshold) indicates that DIIS is extrapolating in a direction inconsistent with the local gradient, suggesting the step is unreliable.
+   
+   - `none`: Skip cosine check entirely
+   - `zero`: Reject when cosine is negative (step points uphill)
+   - `standard` (default): Require cosine ≥ 0.71 (45° angle) — balances safety with convergence speed
+   - `variable`: Use adaptive threshold: 0.1 far from minimum, tightening to 0.7 near convergence. More permissive in early steps where gradients are large.
+   - `strict`: Require cosine ≥ 0.866 (30° angle) — conservative, good for fragile systems
+
+2. **Coefficient check** (`gdiis_coeff_check`): Validates that the DIIS interpolation coefficients are physically reasonable. DIIS ideally interpolates (coefficients sum to 1, individual cᵢ between 0 and 1). Deviation signals ill-conditioning.
+   
+   - `none`: Accept any coefficients (even wildly negative or > 1)
+   - `regular` (default): Reject if coefficients deviate beyond reasonable bounds. Accepts moderate negative coefficients but flags extreme values.
+   - `force_recent`: Strongly bias toward the latest point. Useful when history contains outdated geometries.
+   - `combined`: Both regular bounds and cosine threshold applied together — the most restrictive.
+
+3. **n_neg control**: Set `n_neg = 1` to treat the optimization as a **transition-state search** (seeking a saddle point with one negative Hessian eigenvalue). Default `n_neg = 0` is for minimum-energy crossing point search.
 
 **GEDIIS Variants** (only active when `use_robust_diis=true` AND `use_gediis=true`):
 
-- `auto`: Automatically selects based on RMS error and energy trend
-- `rfo`: RFO-DIIS using quadratic step overlaps (good near minima)
-- `energy`: Energy-DIIS using gradient-coordinate products (better far from minimum)
-- `simultaneous`: Combines Energy-DIIS with quadratic energy approximation
+- `auto`: Automatically selects the best variant based on RMS error and energy trend. Starts with `energy` for robust early convergence, switches to `rfo` when close to the minimum.
+- `rfo`: Rational Function Optimization with DIIS. Uses quadratic step overlaps for the B-matrix. Performs best near the minimum where the quadratic approximation is accurate.
+- `energy`: Energy-DIIS using gradient-coordinate products for the B-matrix. More robust far from the minimum, where the PES is less quadratic.
+- `simultaneous`: Combines Energy-DIIS with a quadratic energy approximation. The most sophisticated variant, blending the advantages of both `rfo` and `energy`.
+
+**When to use robust DIIS:**
+
+- **Difficult convergence**: If the optimizer oscillates or takes wild steps near convergence, enable `use_robust_diis = true` with `standard` settings.
+- **Fragile calculations**: For systems with ill-conditioned Hessians (e.g., flat PES, near-dissociation), use `gdiis_cosine_check = strict`.
+- **Restart calculations**: On restart, the history may contain stale points. Use `gdiis_coeff_check = force_recent` to favour the latest geometry.
 
 **Example — activating step validation:**
 
@@ -493,32 +519,20 @@ gediis_variant = energy
 gdiis_cosine_check = standard
 ```
 
-#### Advanced Hessian Update Options (Alternative Formulas)
+#### Hessian Update Methods
 
-The default algorithm uses a **PSB** (Powell-Symmetric-Broyden) Hessian update, which works well for most MECP systems. When the potential energy surface has saddle-point character near the crossing seam, alternative update formulas may converge faster.
+The `hessian` keyword controls how the Hessian matrix is stored and updated:
 
-**How to use:** Uncomment `use_advanced_hessian_update = true` and optionally choose a method. All are inactive by default.
-
-**Dependency:** `use_advanced_hessian_update = true` is the master switch. `hessian_update_method` is only checked when this is `true`. If `use_advanced_hessian_update` remains `false` (default), the default PSB update is always used.
-
-| Keyword                       | Type    | Default  | Activation                                  | Description                                                |
-| ----------------------------- | ------- | -------- | ------------------------------------------- | ---------------------------------------------------------- |
-| `use_advanced_hessian_update` | boolean | `false`  | standalone                                  | Master switch for alternative Hessian formulas             |
-| `hessian_update_method`       | string  | `"bfgs"` | requires `use_advanced_hessian_update=true` | `bfgs`, `bfgs_pure`, `powell`, `bofill`, `bfgs_powell_mix` |
-
-**Hessian Update Methods** (only active when `use_advanced_hessian_update=true`):
-
-- `bfgs`: Standard BFGS with positive-curvature check — **default for this mode**
-- `bfgs_pure`: BFGS without curvature check (more aggressive near saddle points)
-- `powell`: Symmetric rank-one (SR1) update, tolerates negative curvature
-- `bofill`: Weighted Powell/Murtagh-Sargent blend — **recommended for TS-like crossings**
-- `bfgs_powell_mix`: Adaptive blend switching between BFGS and Powell
+- `direct_psb` **(default, recommended)**: Direct Hessian + PSB (Powell-Symmetric-Broyden) update. Stores the full Hessian H (Ha/Å²) and solves `H·dk = -g` via LU decomposition. Required when `use_gediis = blend`.
+- `inverse_bfgs`**: Stores inverse Hessian H⁻¹ (Å²/Ha) and computes steps as `H⁻¹·g` via simple matrix-vector multiply. **Incompatible with the blend optimizer**.
+- `bofill` **(experimental)**: Bofill weighted update blending Powell and Murtagh-Sargent formulas. Recommended for TS-like crossing points. Direct Hessian.
+- `powell` **(experimental)**: Symmetric rank-one (SR1) update. Tolerates negative curvature. Direct Hessian.
+- `bfgs_powell_mix` **(experimental)**: Adaptive blend switching between BFGS and Powell using Bofill-style weighting. Direct Hessian.
 
 **Example — switching to Bofill:**
 
 ```
-use_advanced_hessian_update = true
-hessian_update_method = bofill
+hessian = bofill
 ```
 
 #### Convergence Thresholds
@@ -871,44 +885,114 @@ fixedatoms = 1,3-5,7    # Fix atoms 1, 3, 4, 5, and 7
 
 ### GDIIS and GEDIIS Optimizers
 
-**GDIIS (Geometry-based DIIS) — Default**:
+**GDIIS (Geometry-based DIIS) — Default** (`use_gediis = false`):
 
-- Proven robust for MECP convergence (converges in ~10 steps for test systems)
-- Stores last N geometries, gradients, and Hessians
-- Computes error vectors: `e[i] = H^-1 * g[i]`
-- Solves DIIS equations for optimal interpolation coefficients
-- Enabled by default when `use_gediis = false`
+The geometry DIIS method solves for interpolation coefficients **c** that minimize a
+linear combination of error vectors subject to ∑cᵢ = 1:
 
-**GEDIIS (Energy-informed DIIS)**:
+```
+Error vectors:      eᵢ = H⁻¹ · (gᵢ + fᵢ)         [Newton-step on combined forces]
+B-matrix:           Bⱼₖ = ⟨eⱼ | eₖ⟩
+Linear system:      ┌        ┐ ┌    ┐   ┌  ┐
+                    │ B   1  │ │ c  │   │ 0│
+                    │ 1ᵀ  0  │ │ λ  │ = │ 1│
+                    └        ┘ └    ┘   └  ┘
+Interpolated geom:  x* = ∑cᵢ·xᵢ
+Newton correction:  x_GDIIS = x* - H⁻¹ · P(x*)
+```
 
-- Uses GDIIS-compatible error vectors (`e_i = H⁻¹ · (g_vec + f_vec)`) as the core B-matrix for numerical stability
-- Adds energy diagonal coupling: `B[i,i] += α · E_i²` where E_i is the energy gap |E1-E2|
-- The diagonal energy term biases interpolation toward low-gap points, making it "energy-informed"
-- Enforces interpolation only (`c_i > 0`) for stability — no extrapolation beyond the convex hull of history
-- Enable with `use_gediis = true` and `use_hybrid_gediis = false`
+where P(x*) is the interpolated combined force. GDIIS minimizes residual forces
+via Newton-step corrections, giving robust quadratic convergence. Proven reliable
+for ~10-step convergence on test systems.
 
-**Sequential Hybrid GEDIIS/GDIIS (Li & Frisch JCTC 2006)**:
+**GEDIIS (Energy-informed DIIS)** (`use_gediis = true` + `use_hybrid_gediis = false`):
 
-A 3-phase sequential switching strategy (enable with `use_gediis = true` + `use_hybrid_gediis = true`):
+Extends GDIIS by adding an energy-based diagonal bias:
 
-1. **Phase 1 — GDIIS**: Pre-optimizer when RMS gradient is above `gediis_switch_rms` (default 0.005 Ha/Å). GDIIS converges rapidly (~10 steps for the test system) and provides a robust starting point.
+```
+Bⱼₖ = ⟨eⱼ | eₖ⟩                           (same as GDIIS)
+Bᵢᵢ += α · Eᵢ²                              (energy diagonal coupling)
+RHSᵢ  = -Eᵢ                                  (RHS now includes energy)
+```
 
-2. **Phase 2 — GEDIIS**: When RMS gradient drops below `gediis_switch_rms` but RMS displacement is still above `gediis_switch_step`. GEDIIS uses energy-biased interpolation for smooth convergence, potentially finding different minima than GDIIS.
+where Eᵢ = |E1ᵢ - E2ᵢ| is the energy gap at point i. The diagonal term `α·Eᵢ²`
+biases the interpolation toward low-gap points (where the MECP lies), making it
+"energy-informed." The modified RHS `-Eᵢ` shifts the interpolation toward
+geometries with smaller energy gaps.
 
-3. **Phase 3 — GDIIS**: When RMS displacement drops below `gediis_switch_step` (default 0.001 Å). GDIIS provides fast final convergence near the minimum.
+Key constraint: `cᵢ > 0` (interpolation only, no extrapolation beyond convex hull).
 
-**Benefits**:
+**Sequential Hybrid GEDIIS/GDIIS** (`use_gediis = true` + `use_hybrid_gediis = true`):
 
-- Each method runs at the stage where it excels — no per-step blending
-- GEDIIS only active in the moderate-convergence regime (phase 2)
-- GDIIS handles both early (phase 1) and late (phase 3) stages where it is proven robust
-- Configurable switching thresholds: `gediis_switch_rms` and `gediis_switch_step`
+A 3-phase switching strategy (Li & Frisch JCTC 2006 Sec II.B):
 
-**Performance**: For the built-in test system (B3LYP/6-31G**, 11 atoms):
+1. **Phase 1 — GDIIS**: Active while RMS gradient > `gediis_switch_rms` (0.005 Ha/Å).
+   GDIIS converges robustly from poor starting geometries using Newton-step
+   force minimization.
 
-- GDIIS: converges in 10 steps
-- Sequential Hybrid GEDIIS: converges in 18 steps
-- Both reach below the 0.00005 hartree energy gap threshold
+2. **Phase 2 — GEDIIS**: Activates when RMS gradient falls below `gediis_switch_rms`.
+   The energy-diagonal bias guides interpolation toward the crossing seam,
+   improving the energy gap while maintaining gradient convergence.
+
+3. **Phase 3 — GDIIS**: Activates when RMS displacement < `gediis_switch_step`
+   (0.001 Å). Switches back to pure GDIIS for clean quadratic final convergence,
+   avoiding the plateau problem where 50/50 blends stall.
+
+**GDIIS_blend Optimizer** (`use_gediis = "blend"`):
+
+A per-step blend of GDIIS and EDIIS steps with a trust region. At each step,
+both the GDIIS geometry (`x_GDIIS`, Newton-corrected interpolation) and EDIIS
+geometry (`x_EDIIS`, energy-informed interpolation) are computed independently,
+then blended together:
+
+```
+x_new = w · x_EDIIS  +  (1 - w) · x_GDIIS
+```
+
+where `w` is the EDIIS weight (0 = pure GDIIS, 1 = pure EDIIS). The blend
+strategy is selected by `gediis_blend_mode` and only activates when
+`use_hybrid_gediis = true`. When `use_hybrid_gediis = false`, the optimizer
+uses pure GDIIS_blend (GDIIS step with an inverted mean true Hessian and
+trust radius, no EDIIS component at all).
+
+**Blend Modes** (all require `use_gediis = "blend"` + `use_hybrid_gediis = true`):
+
+| Mode                         | Weight formula                                                     | Behavior                                                                                                                                                                  |
+| ---------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fixed`                      | `w = 0.5`                                                          | Constant 50/50 GDIIS+EDIIS. Simple but may plateau                                                                                                                        |
+| `fixed_sequential` (default) | `w = 0.5` while `RMS_disp ≥ switch_step`, then `w = 0`             | 50/50 blend far from minimum, transitions to pure GDIIS near convergence for quadratic finishing                                                                          |
+| `gradient`                   | `w = RMS_g / (RMS_g + switch_rms)`                                 | Smooth sigmoid: EDIIS-dominated when forces are large (uses energy info to navigate toward seam), smoothly transitions to GDIIS as forces decrease for Newton convergence |
+| `sequential`                 | Stepwise: `w = 1` (EDIIS) if step decreasing, else `w = 0` (GDIIS) | Binary per-step selection based on RMS displacement trend                                                                                                                 |
+
+where `switch_rms = gediis_switch_rms` (default 0.005 Ha/Å) and
+`switch_step = gediis_switch_step` (default 0.001 Å).
+
+**Gradient blend form** (`gediis_blend_mode = gradient`):
+
+```
+w = RMS_grad / (RMS_grad + gediis_switch_rms)
+```
+
+Unlike `fixed`, this smoothly and continuously varies the EDIIS weight from
+~1 (dominant EDIIS when far) to ~0 (dominant GDIIS near convergence) with no
+hard switching threshold. The `gediis_switch_rms` parameter controls the
+transition midpoint (w = 0.5 when RMS_grad = switch_rms).
+
+- **Large forces (far)**: `RMS_g ≫ switch_rms` → `w ≈ 1` → mostly EDIIS,
+  using energy information to find the crossing seam
+- **Small forces (near)**: `RMS_g ≪ switch_rms` → `w ≈ 0` → mostly GDIIS,
+  Newton-step minimization for clean final convergence
+
+**Trust radius**: All blend modes use a trust radius that:
+
+- Contracts to `reduced_factor × radius` (default 0.5) when energy increases
+- Expands by 20% when energy decreases
+- Caps the displacement norm to prevent wild steps
+- Bootstraps from the BFGS max_step_size
+
+**Requirements**: Blend mode requires a direct Hessian method
+(`direct_psb`, `bofill`, `powell`, or `bfgs_powell_mix`).
+`inverse_bfgs` is incompatible and raises an error.
 
 ### State Selection for TD-DFT
 
@@ -1291,7 +1375,6 @@ H     2.150882000000     -1.241812000000      0.000000000000
 H     0.000000000000     -2.483625000000      0.000000000000
 H    -2.150882000000     -1.241812000000      0.000000000000
 H    -2.150882000000      1.241812000000      0.000000000000
-
 *
 
 *TAIL1
@@ -1605,13 +1688,169 @@ mem = 4GB
 charge = 0
 mult_a = 1
 mult_b = 3
-# Enable advanced Hessian update
-use_advanced_hessian_update = true
-hessian_update_method = bofill
+# Use Bofill Hessian update for TS-like crossings
+hessian = bofill
 # Combine with robust DIIS for best results
 use_robust_diis = true
 use_gediis = true
 n_neg = 1
+```
+
+### Example 16: GDIIS_blend with Gradient-Weighted Blend
+
+Use the new GDIIS_blend optimizer with gradient-weighted blend mode for difficult cases with plateaus:
+
+```
+*GEOM
+C     0.000000000000      1.396613000000      0.000000000000
+C     1.209503000000      0.698307000000      0.000000000000
+C     1.209503000000     -0.698307000000      0.000000000000
+C     0.000000000000     -1.396613000000      0.000000000000
+C    -1.209503000000     -0.698307000000      0.000000000000
+C    -1.209503000000      0.698307000000      0.000000000000
+H     2.150882000000      1.241812000000      0.000000000000
+H     2.150882000000     -1.241812000000      0.000000000000
+H     0.000000000000     -2.483625000000      0.000000000000
+H    -2.150882000000     -1.241812000000      0.000000000000
+H    -2.150882000000      1.241812000000      0.000000000000
+*
+
+*TAIL1
+*
+
+*TAIL2
+*
+
+program = gaussian
+method = B3LYP/6-31G*
+nprocs = 4
+mem = 4GB
+charge = 1
+mult_a = 1
+mult_b = 3
+# Enable GDIIS_blend optimizer
+use_gediis = blend
+# Enable hybrid blend with gradient-weighted mode
+use_hybrid_gediis = true
+gediis_blend_mode = gradient
+```
+
+### Example 17: GDIIS_blend with Sequential Blend
+
+Per-step switching between GDIIS and EDIIS based on RMS displacement trend:
+
+```
+*GEOM
+C     0.000000000000      1.396613000000      0.000000000000
+C     1.209503000000      0.698307000000      0.000000000000
+C     1.209503000000     -0.698307000000      0.000000000000
+C     0.000000000000     -1.396613000000      0.000000000000
+C    -1.209503000000     -0.698307000000      0.000000000000
+C    -1.209503000000      0.698307000000      0.000000000000
+H     2.150882000000      1.241812000000      0.000000000000
+H     2.150882000000     -1.241812000000      0.000000000000
+H     0.000000000000     -2.483625000000      0.000000000000
+H    -2.150882000000     -1.241812000000      0.000000000000
+H    -2.150882000000      1.241812000000      0.000000000000
+*
+
+*TAIL1
+*
+
+*TAIL2
+*
+
+program = gaussian
+method = B3LYP/6-31G*
+nprocs = 4
+mem = 4GB
+charge = 1
+mult_a = 1
+mult_b = 3
+# Enable GDIIS_blend optimizer
+use_gediis = blend
+# Enable hybrid blend with per-step switching
+use_hybrid_gediis = true
+gediis_blend_mode = sequential
+```
+
+### Example 18: GDIIS_blend with Fixed Sequential Blend (Default Blend)
+
+Recommended blend mode: 50/50 blend far from minimum, pure GDIIS near convergence.
+This is the default `gediis_blend_mode` when `use_gediis = blend` + `use_hybrid_gediis = true`:
+
+```
+*GEOM
+C     0.000000000000      1.396613000000      0.000000000000
+C     1.209503000000      0.698307000000      0.000000000000
+C     1.209503000000     -0.698307000000      0.000000000000
+C     0.000000000000     -1.396613000000      0.000000000000
+C    -1.209503000000     -0.698307000000      0.000000000000
+C    -1.209503000000      0.698307000000      0.000000000000
+H     2.150882000000      1.241812000000      0.000000000000
+H     2.150882000000     -1.241812000000      0.000000000000
+H     0.000000000000     -2.483625000000      0.000000000000
+H    -2.150882000000     -1.241812000000      0.000000000000
+H    -2.150882000000      1.241812000000      0.000000000000
+*
+
+*TAIL1
+*
+
+*TAIL2
+*
+
+program = gaussian
+method = B3LYP/6-31G*
+nprocs = 4
+mem = 4GB
+charge = 1
+mult_a = 1
+mult_b = 3
+# Enable GDIIS_blend optimizer
+use_gediis = blend
+# Enable hybrid blend with default fixed_sequential mode
+use_hybrid_gediis = true
+gediis_blend_mode = fixed_sequential  # explicit; this is also the default
+```
+
+### Example 19: Pure GDIIS_blend (no EDIIS)
+
+Pure GDIIS with trust region and inverted mean true Hessian. No EDIIS component.
+Set `use_hybrid_gediis = false` (the default for blend mode):
+
+```
+*GEOM
+C     0.000000000000      1.396613000000      0.000000000000
+C     1.209503000000      0.698307000000      0.000000000000
+C     1.209503000000     -0.698307000000      0.000000000000
+C     0.000000000000     -1.396613000000      0.000000000000
+C    -1.209503000000     -0.698307000000      0.000000000000
+C    -1.209503000000      0.698307000000      0.000000000000
+H     2.150882000000      1.241812000000      0.000000000000
+H     2.150882000000     -1.241812000000      0.000000000000
+H     0.000000000000     -2.483625000000      0.000000000000
+H    -2.150882000000     -1.241812000000      0.000000000000
+H    -2.150882000000      1.241812000000      0.000000000000
+*
+
+*TAIL1
+*
+
+*TAIL2
+*
+
+program = gaussian
+method = B3LYP/6-31G*
+nprocs = 4
+mem = 4GB
+charge = 1
+mult_a = 1
+mult_b = 3
+# Enable GDIIS_blend optimizer
+use_gediis = blend
+# Pure GDIIS_blend: no EDIIS component
+# use_hybrid_gediis = false  # default for blend, can be omitted
 ```
 
 ## Troubleshooting
@@ -1717,7 +1956,7 @@ OpenMECP is licensed under the **MIT License**.
 
 ---
 
-**OpenMECP v0.0.3** - A Rust implementation of the MECP optimizer
+**OpenMECP v0.0.4** - A Rust implementation of the MECP optimizer
 Developed by Le Nhan Pham | [GitHub](https://github.com/lenhanpham/OpenMECP)
 
 For more information, visit the project documentation or use `omecp --help`

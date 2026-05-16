@@ -123,7 +123,7 @@ impl Default for GeneralSettings {
         Self {
             max_memory: "4GB".to_string(),
             default_nprocs: 4,
-            print_level: 0, // Default to quiet mode
+            print_level: 1, // Default to normal verbosity (1)
         }
     }
 }
@@ -263,6 +263,11 @@ impl SettingsManager {
         &self.settings.general
     }
 
+    /// Gets mutable general settings.
+    pub fn general_mut(&mut self) -> &mut GeneralSettings {
+        &mut self.settings.general
+    }
+
     /// Gets the logging settings.
     pub fn logging(&self) -> &LoggingSettings {
         &self.settings.logging
@@ -281,7 +286,7 @@ impl SettingsManager {
     /// Loads configuration from files with hierarchical precedence.
     fn load_from_files() -> Result<(Settings, String), ConfigError> {
         let mut settings = Settings::default();
-        let mut config_source = "built-in defaults".to_string();
+        let mut config_source = "built-in defaults (no configuration file found)".to_string();
 
         // Try to load system configuration
         if let Some(system_path) = Self::get_system_config_path() {

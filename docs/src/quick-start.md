@@ -61,7 +61,7 @@ mult_a   = 1
 mult_b   = 3
 ```
 
-See the [Input File Format](input-format/README.md) chapter for the full section
+See the [Input File Format](input-format/input-format.md) chapter for the full section
 reference and the [Keywords Reference](input-format/keywords.md) for all available
 parameters.
 

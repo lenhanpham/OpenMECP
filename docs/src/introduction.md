@@ -57,8 +57,8 @@ $$\hat{\mathbf{x}} = \frac{\mathbf{f}_1 - \mathbf{f}_2}{|\mathbf{f}_1 - \mathbf{
 ## Quick Navigation
 
 - New to OpenMECP? Start with [Installation](installation.md) then [Quick Start](quick-start.md).
-- Ready to run? See the [Input File Format](input-format/README.md) and [Keywords Reference](input-format/keywords.md).
-- Want to understand the algorithms? See [MECP Algorithm](algorithms/README.md).
+- Ready to run? See the [Input File Format](input-format/input-format.md) and [Keywords Reference](input-format/keywords.md).
+- Want to understand the algorithms? See [MECP Algorithm](algorithms/mecp-algorithm.md).
 - Looking for the full API? See [API Reference](api-reference.md).
 
 ## Citation

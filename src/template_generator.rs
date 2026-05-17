@@ -195,91 +195,91 @@ fn generate_template(_elements: Vec<String>, _coords: &Vec<f64>, geometry_path: 
 #===============================================================================
 
 #===== Basic Settings (required) ===============================================
-nprocs = 30                  # processors for QM program
-mem = 120GB                  # memory (use maxcore value for ORCA)
-method = n b3lyp/6-31g**     # QM method: n method/basis keywords ...
-td_state_a =                 # TD-DFT keywords for state A (Gaussian). Short: td_a
-td_state_b =                 # TD-DFT keywords for state B (Gaussian). Short: td_b
-mp2 = false                  # true for MP2 or double-hybrid in Gaussian
-charge = 1                   # molecular charge (same for both states unless charge2)
-mult_state_a = 3             # multiplicity of state A. Short: mult_a
-mult_state_b = 1             # multiplicity of state B. Short: mult_b
-mode = normal                # normal | read | noread | stable | inter_read
+nprocs = 30                         # processors for QM program
+mem = 120GB                         # memory (use maxcore value for ORCA)
+method = n b3lyp/6-31g**            # QM method: n method/basis keywords ...
+td_state_a =                        # TD-DFT keywords for state A (Gaussian). Short: td_a
+td_state_b =                        # TD-DFT keywords for state B (Gaussian). Short: td_b
+mp2 = false                         # true for MP2 or double-hybrid in Gaussian
+charge = 1                          # molecular charge (same for both states unless charge_b)
+mult_state_a = 3                    # multiplicity of state A. Short: mult_a
+mult_state_b = 1                    # multiplicity of state B. Short: mult_b
+mode = normal                       # normal | read | noread | stable | inter_read
 
 #===== Convergence Thresholds ==================================================
-dE_thresh = 0.000050         # energy difference convergence (hartree)
-rms_thresh = 0.0025          # RMS displacement convergence (angstrom)
-max_dis_thresh = 0.004       # max displacement convergence (angstrom)
-max_g_thresh = 0.001323      # max gradient convergence (hartree/angstrom)
-rms_g_thresh = 0.000945      # RMS gradient convergence (hartree/angstrom)
+delta_e = 0.000050                  # energy difference convergence (hartree)
+rms_dis = 0.0025                    # RMS displacement convergence (angstrom)
+max_dis = 0.004                     # max displacement convergence (angstrom)
+max_grad = 0.001323                 # max gradient convergence (hartree/angstrom)
+rms_grad = 0.000945                 # RMS gradient convergence (hartree/angstrom)
 
 #===== Optimization Control ====================================================
-max_steps = 100              # maximum optimization steps
-max_step_size = 0.1          # maximum step size (angstrom)
-max_history = 4              # DIIS history length
-reduced_factor = 0.5         # step reduction factor near convergence
-step_reduction_multiplier = 10.0  # rms_g multiplier for step reduction threshold
-steepest_descent_step = 0.01      # fallback step when DIIS/BFGS fails (angstrom)
-bfgs_rho = 15                # BFGS step amplification factor (rho)
+max_steps = 100                     # maximum optimization steps
+max_step_size = 0.1                 # maximum step size (angstrom)
+max_history = 4                     # DIIS history length
+reduced_factor = 0.5                # step reduction factor near convergence
+step_reduction_multiplier = 10.0    # rms_g multiplier for step reduction threshold
+steepest_descent_step = 0.01        # fallback step when DIIS/BFGS fails (angstrom)
+bfgs_rho = 15                       # BFGS step amplification factor (rho)
 
 #===== Optimizer Selection =====================================================
-switch_step = 3              # 0=DIIS-only, 3=BFGS→DIIS (default), >=max_steps=BFGS-only
-hessian = direct_psb         # direct_psb (default) | inverse_bfgs | bofill | powell | bfgs_powell_mix
-                             # Note: blend mode requires a direct Hessian method.
-use_gediis = false           # options: false/none=GDIIS (default), true/sequential=GEDIIS,
-                             #           blend=GDIIS_blend with trust region
-use_hybrid_gediis = false    # activated when use_gediis = true or blend
-                             # options: true/false
+switch_step = 3                     # 0=DIIS-only, 3=BFGS→DIIS (default), >=max_steps=BFGS-only
+hessian = direct_psb                # direct_psb (default) | inverse_bfgs | bofill | powell | bfgs_powell_mix
+                                    # Note: blend mode requires a direct Hessian method.
+use_gediis = false                  # options: false/none=GDIIS (default), true/sequential=GEDIIS,
+                                    #           blend=GDIIS_blend with trust region
+use_hybrid_gediis = false           # activated when use_gediis = true or blend
+                                    # options: true/false
 gediis_blend_mode = fixed_sequential # activated when use_gediis = blend AND use_hybrid_gediis = true
                                      # options: fixed, fixed_sequential (default), gradient, sequential
-smart_history = false        # experimental: remove worst DIIS point instead of oldest
+smart_history = false               # experimental: remove worst DIIS point instead of oldest
 
 #===== Optimization Control for blend-mode trust radius only====================
-trust_reduction_factor = 0.5      # trust radius contraction on energy increase
-trust_increase_factor = 1.2       # trust radius expansion on energy decrease
-trust_inc_threshold = 0.0001      # energy increase threshold for reduction (hartree)
-trust_dec_threshold = 0.0001      # energy decrease threshold for expansion (hartree)
-trust_min_radius = 0.01           # minimum trust radius (angstrom)
-trust_max_radius = 1.0            # maximum trust radius (angstrom)
+trust_reduction_factor = 0.5        # trust radius contraction on energy increase
+trust_increase_factor = 1.2         # trust radius expansion on energy decrease
+trust_inc_threshold = 0.0001        # energy increase threshold for reduction (hartree)
+trust_dec_threshold = 0.0001        # energy decrease threshold for expansion (hartree)
+trust_min_radius = 0.01             # minimum trust radius (angstrom)
+trust_max_radius = 1.0              # maximum trust radius (angstrom)
 
 #===== Advanced Optimizer Settings =============================================
 # ALL parameters below are commented out (= inactive). Their default values
 # (shown after the = sign) are used unless you uncomment and change them.
 #
-#gediis_switch_rms = 0.005   # Phase 1→2: RMS gradient for GDIIS→GEDIIS switch
-                             # (active: use_gediis=true + use_hybrid_gediis=true)
-#gediis_switch_step = 0.001  # Phase 2→3: RMS displacement for GEDIIS→GDIIS switch
-                             # (also used by blend's fixed_sequential mode)
-#use_robust_diis = false     # Activate DIIS step validation (cosine & coefficient checks)
-#gediis_variant = auto       # auto (default) | rfo | energy | simultaneous
-                             # (active: use_gediis=true + use_robust_diis=true)
-#gdiis_cosine_check = standard # none | zero | standard (default) | variable | strict
-                             # (active: use_robust_diis=true)
-#gdiis_coeff_check = regular # none | regular (default) | strict
-                             # (active: use_robust_diis=true)
-#n_neg = 0                   # 0 = minimum search, 1 = transition state
-#gediis_sim_switch = 0.0025  # (active: use_robust_diis=true)
+#gediis_switch_rms = 0.005          # Phase 1→2: RMS gradient for GDIIS→GEDIIS switch
+                                    # (active: use_gediis=true + use_hybrid_gediis=true)
+#gediis_switch_step = 0.001         # Phase 2→3: RMS displacement for GEDIIS→GDIIS switch
+                                    # (also used by blend's fixed_sequential mode)
+#use_robust_diis = false            # Activate DIIS step validation (cosine & coefficient checks)
+#gediis_variant = auto              # auto (default) | rfo | energy | simultaneous
+                                    # (active: use_gediis=true + use_robust_diis=true)
+#gdiis_cosine_check = standard      # none | zero | standard (default) | variable | strict
+                                    # (active: use_robust_diis=true)
+#gdiis_coeff_check = regular        # none | regular (default) | strict
+                                    # (active: use_robust_diis=true)
+#n_neg = 0                          # 0 = minimum search, 1 = transition state
+#gediis_sim_switch = 0.0025         # (active: use_robust_diis=true)
 
 #===== Program Settings ========================================================
-program = gaussian           # gaussian | orca | xtb | bagel
-gau_comm = g16               # Gaussian command
-orca_comm = orca             # ORCA command
-xtb_comm = xtb               # XTB command
-bagel_comm = bagel           # BAGEL command
-bagel_model = model.inp      # BAGEL model file
+program = gaussian                  # gaussian | orca | xtb | bagel
+gau_comm = g16                      # Gaussian command
+orca_comm = orca                    # ORCA command
+xtb_comm = xtb                      # XTB command
+bagel_comm = bagel                  # BAGEL command
+bagel_model = model.inp             # BAGEL model file
 #custom_interface_file = custom_qm.json  # custom QM program config
 
 #===== Advanced Options ========================================================
-#restart = false             # restart from checkpoint file
-#print_checkpoint = true     # save checkpoint JSON at each step
-#fix_de = 0.0                # eV: fix energy difference (FixDE mode)
-#state_a = 0                 # state index for BAGEL multireference
+#restart = false                    # restart from checkpoint file
+#print_checkpoint = true            # save checkpoint JSON at each step
+#fix_de = 0.0                       # eV: fix energy difference (FixDE mode)
+#state_a = 0                        # state index for BAGEL multireference
 #state_b = 1
-#basis =                     # basis set (for programs separating method/basis)
-#solvent =                   # solvent model
-#dispersion =                # dispersion correction
-#charge2 =                   # separate charge for state B (default: same as charge)
-#fixedatoms = 1,3,5-7        # comma/hyphen ranges of fixed atoms (1-based)
+#basis =                            # basis set (for programs separating method/basis)
+#solvent =                          # solvent model
+#dispersion =                       # dispersion correction
+#charge_b =                         # separate charge for state B (default: same as charge)
+#fixedatoms = 1,3,5-7               # comma/hyphen ranges of fixed atoms (1-based)
 
 #===== ONIOM (QM/MM) ===========================================================
 #isoniom = false
@@ -287,8 +287,8 @@ bagel_model = model.inp      # BAGEL model file
 #chargeandmultforoniom2 = 0 1
 
 #===== Coordinate Driving ======================================================
-#drive_type = bond           # bond | angle | dihedral
-#drive_atoms = 1,2           # atom indices (1-based)
+#drive_type = bond                  # bond | angle | dihedral
+#drive_atoms = 1,2                  # atom indices (1-based)
 #drive_start = 1.0
 #drive_end = 2.0
 #drive_steps = 10
@@ -303,13 +303,13 @@ bagel_model = model.inp      # BAGEL model file
 #===============================================================================
 # Tail sections: extra keywords appended to QM input files
 #===============================================================================
-*tail1
+*tail_a
 # Extra keywords for state A (e.g., SCF convergence, basis sets)
 # For Gaussian: TD(NStates=5,Root=1)
 # For ORCA: %tddft nroots 5 end
 *
 
-*tail2
+*tail_b
 # Extra keywords for state B (e.g., SCF convergence, basis sets)
 *
 
@@ -323,13 +323,13 @@ bagel_model = model.inp      # BAGEL model file
 # Atom indices are 1-based.
 #===============================================================================
 *constr
-#R 1 2 1.0                   # fix bond 1-2 at 1.0 Angstrom
-#A 1 2 3 100.0               # fix angle 1-2-3 at 100 degrees
-#S R 1 2 1.0 10 0.1          # scan bond 1-2 from 1.0, 10 steps of 0.1
+#R 1 2 1.0                          # fix bond 1-2 at 1.0 Angstrom
+#A 1 2 3 100.0                      # fix angle 1-2-3 at 100 degrees
+#S R 1 2 1.0 10 0.1                 # scan bond 1-2 from 1.0, 10 steps of 0.1
 *
 
 #===== Output Control ==========================================================
-print_level = 1              # 0=quiet, 1=normal, 2=verbose (DIIS debug)
+print_level = 1                     # 0=quiet, 1=normal, 2=verbose (DIIS debug)
 
 "#,
         geom_filename = geom_filename

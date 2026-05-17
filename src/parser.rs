@@ -52,9 +52,9 @@
 //!
 //! ## Optional Sections
 //!
-//! - `*TAIL1` / `*TAIL2`: Additional keywords for each electronic state
+//! - `*TAIL_a` / `*TAIL_b`: Additional keywords for each electronic state
 //! - `*CONSTR`: Geometric constraints (bonds, angles, scans)
-//! - `*LST1` / `*LST2`: Geometries for linear synchronous transit interpolation
+//! - `*LST_a` / `*LST_b`: Geometries for linear synchronous transit interpolation
 //!
 //! # Examples
 //!
@@ -99,7 +99,7 @@ pub enum ParseError {
     /// Invalid tail section content with detailed context
     #[error("Invalid tail section '{section}'{}: {message}", line_number.map(|n| format!(" at line {}", n)).unwrap_or_default())]
     InvalidTailSection {
-        /// Name of the tail section (e.g., "TAIL1", "TAIL2")
+        /// Name of the tail section (e.g., "TAIL_a", "TAIL_b")
         section: String,
         /// Descriptive error message
         message: String,
@@ -139,8 +139,8 @@ type Result<T> = std::result::Result<T, ParseError>;
 /// let config = &input_data.config;
 /// let geometry = &input_data.geometry;
 /// let constraints = &input_data.constraints;
-/// let tail1 = &input_data.tail1;
-/// let tail2 = &input_data.tail2;
+/// let tail_a = &input_data.tail_a;
+/// let tail_b = &input_data.tail_b;
 /// ```
 pub struct InputData {
     /// Complete calculation configuration
@@ -150,15 +150,15 @@ pub struct InputData {
     /// List of geometric constraints
     pub constraints: Vec<Constraint>,
     /// Additional keywords for electronic state 1
-    pub tail1: String,
+    pub tail_a: String,
     /// Additional keywords for electronic state 2
-    pub tail2: String,
+    pub tail_b: String,
     /// List of fixed atom indices (0-based)
     pub fixed_atoms: Vec<usize>,
     /// Optional geometry for LST interpolation (first endpoint)
-    pub lst1: Option<Geometry>,
+    pub lst_a: Option<Geometry>,
     /// Optional geometry for LST interpolation (second endpoint)
-    pub lst2: Option<Geometry>,
+    pub lst_b: Option<Geometry>,
 }
 
 /// Parse an OpenMECP input file.
@@ -224,21 +224,21 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
     let mut elements: Vec<String> = Vec::new();
     let mut coords: Vec<f64> = Vec::new();
     let mut constraints: Vec<Constraint> = Vec::new();
-    let mut tail1: String = String::new();
-    let mut tail2: String = String::new();
+    let mut tail_a: String = String::new();
+    let mut tail_b: String = String::new();
     let mut fixed_atoms: Vec<usize> = Vec::new();
-    let mut lst1_elements: Vec<String> = Vec::new();
-    let mut lst1_coords: Vec<f64> = Vec::new();
-    let mut lst2_elements: Vec<String> = Vec::new();
-    let mut lst2_coords: Vec<f64> = Vec::new();
+    let mut lst_a_elements: Vec<String> = Vec::new();
+    let mut lst_a_coords: Vec<f64> = Vec::new();
+    let mut lst_b_elements: Vec<String> = Vec::new();
+    let mut lst_b_coords: Vec<f64> = Vec::new();
     let mut oniom_layer_info: Vec<String> = Vec::new();
 
     let mut in_geom: bool = false;
-    let mut in_tail1: bool = false;
-    let mut in_tail2: bool = false;
+    let mut in_tail_a: bool = false;
+    let mut in_tail_b: bool = false;
     let mut in_constr: bool = false;
-    let mut in_lst1: bool = false;
-    let mut in_lst2: bool = false;
+    let mut in_lst_a: bool = false;
+    let mut in_lst_b: bool = false;
 
     let geom_re: Regex = Regex::new(r"^\s*(\S+)\s+(-?\d+\.?\d*)").unwrap();
 
@@ -253,28 +253,28 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
         if trimmed.contains("*geom") {
             in_geom = true;
             continue;
-        } else if trimmed.contains("*tail1") {
-            in_tail1 = true;
+        } else if trimmed.contains("*tail_a") {
+            in_tail_a = true;
             continue;
-        } else if trimmed.contains("*tail2") {
-            in_tail2 = true;
+        } else if trimmed.contains("*tail_b") {
+            in_tail_b = true;
             continue;
         } else if trimmed.contains("*constr") {
             in_constr = true;
             continue;
-        } else if trimmed.contains("*lst1") {
-            in_lst1 = true;
+        } else if trimmed.contains("*lst_a") {
+            in_lst_a = true;
             continue;
-        } else if trimmed.contains("*lst2") {
-            in_lst2 = true;
+        } else if trimmed.contains("*lst_b") {
+            in_lst_b = true;
             continue;
         } else if trimmed == "*" {
             in_geom = false;
-            in_tail1 = false;
-            in_tail2 = false;
+            in_tail_a = false;
+            in_tail_b = false;
             in_constr = false;
-            in_lst1 = false;
-            in_lst2 = false;
+            in_lst_a = false;
+            in_lst_b = false;
             continue;
         }
 
@@ -312,59 +312,59 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
                     }
                 }
             }
-        } else if in_lst1 && geom_re.is_match(line) {
+        } else if in_lst_a && geom_re.is_match(line) {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 4 {
-                lst1_elements.push(parts[0].to_string());
-                lst1_coords.push(
+                lst_a_elements.push(parts[0].to_string());
+                lst_a_coords.push(
                     parts[1]
                         .parse()
                         .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
                 );
-                lst1_coords.push(
+                lst_a_coords.push(
                     parts[2]
                         .parse()
                         .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
                 );
-                lst1_coords.push(
+                lst_a_coords.push(
                     parts[3]
                         .parse()
                         .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
                 );
             }
-        } else if in_lst2 && geom_re.is_match(line) {
+        } else if in_lst_b && geom_re.is_match(line) {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 4 {
-                lst2_elements.push(parts[0].to_string());
-                lst2_coords.push(
+                lst_b_elements.push(parts[0].to_string());
+                lst_b_coords.push(
                     parts[1]
                         .parse()
                         .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
                 );
-                lst2_coords.push(
+                lst_b_coords.push(
                     parts[2]
                         .parse()
                         .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
                 );
-                lst2_coords.push(
+                lst_b_coords.push(
                     parts[3]
                         .parse()
                         .map_err(|_| ParseError::Parse("Invalid coordinate".into()))?,
                 );
             }
-        } else if in_tail1 {
+        } else if in_tail_a {
             if !is_comment_line(line) && !line.trim().is_empty() {
-                if !tail1.is_empty() {
-                    tail1.push(' '); // Add space separator between keywords
+                if !tail_a.is_empty() {
+                    tail_a.push(' '); // Add space separator between keywords
                 }
-                tail1.push_str(line.trim());
+                tail_a.push_str(line.trim());
             }
-        } else if in_tail2 {
+        } else if in_tail_b {
             if !is_comment_line(line) && !line.trim().is_empty() {
-                if !tail2.is_empty() {
-                    tail2.push(' '); // Add space separator between keywords
+                if !tail_b.is_empty() {
+                    tail_b.push(' '); // Add space separator between keywords
                 }
-                tail2.push_str(line.trim());
+                tail_b.push_str(line.trim());
             }
         } else if in_constr && !trimmed.is_empty() {
             if trimmed.starts_with('s') {
@@ -381,21 +381,21 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
 
     // Validate tail sections after parsing with enhanced error reporting
     // Provide context about filtering if sections became empty
-    validate_tail_section_with_filtering_context(&tail1, "TAIL1")?;
-    validate_tail_section_with_filtering_context(&tail2, "TAIL2")?;
+    validate_tail_section_with_filtering_context(&tail_a, "TAIL_a")?;
+    validate_tail_section_with_filtering_context(&tail_b, "TAIL_b")?;
 
     // Coordinates are stored directly in Angstrom (no conversion needed)
     let geometry = Geometry::new(elements, coords);
     
-    let lst1 = if !lst1_elements.is_empty() {
+    let lst_a = if !lst_a_elements.is_empty() {
         // LST geometry coordinates are also stored in Angstrom
-        Some(Geometry::new(lst1_elements, lst1_coords))
+        Some(Geometry::new(lst_a_elements, lst_a_coords))
     } else {
         None
     };
-    let lst2 = if !lst2_elements.is_empty() {
+    let lst_b = if !lst_b_elements.is_empty() {
         // LST geometry coordinates are also stored in Angstrom
-        Some(Geometry::new(lst2_elements, lst2_coords))
+        Some(Geometry::new(lst_b_elements, lst_b_coords))
     } else {
         None
     };
@@ -407,11 +407,11 @@ pub fn parse_input(path: &Path) -> Result<InputData> {
         config,
         geometry,
         constraints,
-        tail1,
-        tail2,
+        tail_a,
+        tail_b,
         fixed_atoms,
-        lst1,
-        lst2,
+        lst_a,
+        lst_b,
     })
 }
 
@@ -864,22 +864,13 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
         "nprocs" => config.nprocs = value.parse().unwrap_or(1),
         "mem" => config.mem = value.to_string(),
         "charge" => config.charge = value.parse().unwrap_or(0),
-        // New keywords (preferred)
+        "charge_b" => {
+            if let Ok(val) = value.parse() {
+                config.charge_b = Some(val);
+            }
+        }
         "mult_state_a" | "mult_a" => config.mult_state_a = value.parse().unwrap_or(1),
         "mult_state_b" | "mult_b" => config.mult_state_b = value.parse().unwrap_or(1),
-        // Old keywords (deprecated, backward compatibility)
-        "mult1" => {
-            eprintln!(
-                "Warning: 'mult1' is deprecated. Please use 'mult_state_a' or 'mult_a' instead."
-            );
-            config.mult_state_a = value.parse().unwrap_or(1);
-        }
-        "mult2" => {
-            eprintln!(
-                "Warning: 'mult2' is deprecated. Please use 'mult_state_b' or 'mult_b' instead."
-            );
-            config.mult_state_b = value.parse().unwrap_or(1);
-        }
         "method" => config.method = value.to_string(),
         "program" => {
             config.program = match value.to_lowercase().as_str() {
@@ -899,30 +890,10 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
                 _ => RunMode::Normal,
             };
         }
-        // New keywords (preferred)
         "td_state_a" | "td_a" => config.td_state_a = value.to_string(),
         "td_state_b" | "td_b" => config.td_state_b = value.to_string(),
-        // Old keywords (deprecated, backward compatibility)
-        "td1" => {
-            eprintln!("Warning: 'td1' is deprecated. Please use 'td_state_a' or 'td_a' instead.");
-            config.td_state_a = value.to_string();
-        }
-        "td2" => {
-            eprintln!("Warning: 'td2' is deprecated. Please use 'td_state_b' or 'td_b' instead.");
-            config.td_state_b = value.to_string();
-        }
-        // State selection for TD-DFT
         "state_a" => config.state_a = value.parse().unwrap_or(0),
         "state_b" => config.state_b = value.parse().unwrap_or(0),
-        // Old keywords (deprecated, backward compatibility)
-        "state1" => {
-            eprintln!("Warning: 'state1' is deprecated. Please use 'state_a' instead.");
-            config.state_a = value.parse().unwrap_or(0);
-        }
-        "state2" => {
-            eprintln!("Warning: 'state2' is deprecated. Please use 'state_b' instead.");
-            config.state_b = value.parse().unwrap_or(0);
-        }
         "mp2" => config.mp2 = parse_bool(value),
         "max_steps" => config.max_steps = value.parse().unwrap_or(100),
         "max_step_size" => {
@@ -939,20 +910,20 @@ fn parse_parameter(line: &str, config: &mut Config, fixed_atoms: &mut Vec<usize>
             });
         }
         "fix_de" => config.fix_de = value.parse().unwrap_or(0.0),
-        "de_thresh" => config.thresholds.de = value.parse().unwrap_or(0.000050),
+        "delta_e" => config.thresholds.delta_e = value.parse().unwrap_or(0.000050),
         // Displacement thresholds: users specify in Angstrom
-        "rms_thresh" => {
-            config.thresholds.rms = value.parse().unwrap_or(0.0025);
+        "rms_dis" => {
+            config.thresholds.rms_dis = value.parse().unwrap_or(0.0025);
         }
-        "max_dis_thresh" => {
+        "max_dis" => {
             config.thresholds.max_dis = value.parse().unwrap_or(0.004);
         }
         // Gradient thresholds: input in Ha/Å
-        "max_g_thresh" => {
-            config.thresholds.max_g = value.parse().unwrap_or(0.0007);
+        "max_grad" => {
+            config.thresholds.max_grad = value.parse().unwrap_or(0.0007);
         }
-        "rms_g_thresh" => {
-            config.thresholds.rms_g = value.parse().unwrap_or(0.0005);
+        "rms_grad" => {
+            config.thresholds.rms_grad = value.parse().unwrap_or(0.0005);
         }
         "bagel_model" => config.bagel_model = value.to_string(),
         "custom_interface_file" => config.custom_interface_file = value.to_string(),
@@ -1289,13 +1260,13 @@ pub fn validate_gaussian_keywords(content: &str) -> Result<()> {
 /// use omecp::parser::validate_gaussian_syntax;
 ///
 /// // Valid Gaussian keywords
-/// assert!(validate_gaussian_syntax("TD(NStates=5) Root=1", "TAIL1").is_ok());
+/// assert!(validate_gaussian_syntax("TD(NStates=5) Root=1", "TAIL_a").is_ok());
 ///
 /// // Invalid content with newlines
-/// assert!(validate_gaussian_syntax("TD(NStates=5)\nRoot=1", "TAIL1").is_err());
+/// assert!(validate_gaussian_syntax("TD(NStates=5)\nRoot=1", "TAIL_a").is_err());
 ///
 /// // Invalid content with comment characters
-/// assert!(validate_gaussian_syntax("TD(NStates=5) # comment", "TAIL1").is_err());
+/// assert!(validate_gaussian_syntax("TD(NStates=5) # comment", "TAIL_a").is_err());
 /// ```
 pub fn validate_gaussian_syntax(content: &str, section_name: &str) -> Result<()> {
     if content.is_empty() {
@@ -1424,7 +1395,7 @@ pub fn validate_gaussian_syntax(content: &str, section_name: &str) -> Result<()>
 /// # Arguments
 ///
 /// * `content` - The tail section content to validate
-/// * `section_name` - The name of the section (e.g., "TAIL1", "TAIL2") for error reporting
+/// * `section_name` - The name of the section (e.g., "TAIL_a", "TAIL_b") for error reporting
 ///
 /// # Returns
 ///
@@ -1437,10 +1408,10 @@ pub fn validate_gaussian_syntax(content: &str, section_name: &str) -> Result<()>
 /// use omecp::parser::validate_tail_section_with_context;
 ///
 /// // Empty content is handled gracefully
-/// assert!(validate_tail_section_with_context("", "TAIL1").is_ok());
+/// assert!(validate_tail_section_with_context("", "TAIL_a").is_ok());
 ///
 /// // Valid content passes validation
-/// assert!(validate_tail_section_with_context("TD(NStates=5)", "TAIL1").is_ok());
+/// assert!(validate_tail_section_with_context("TD(NStates=5)", "TAIL_a").is_ok());
 /// ```
 pub fn validate_tail_section_with_context(content: &str, section_name: &str) -> Result<()> {
     // Handle empty content gracefully with informational context
@@ -1464,7 +1435,7 @@ pub fn validate_tail_section_with_context(content: &str, section_name: &str) -> 
 /// # Arguments
 ///
 /// * `content` - The filtered tail section content to validate
-/// * `section_name` - The name of the section (e.g., "TAIL1", "TAIL2") for error reporting
+/// * `section_name` - The name of the section (e.g., "TAIL_a", "TAIL_b") for error reporting
 ///
 /// # Returns
 ///
@@ -1520,7 +1491,7 @@ fn log_empty_tail_section_info(section_name: &str) {
 /// # Arguments
 ///
 /// * `content` - The tail section content to validate
-/// * `section_name` - The name of the section (e.g., "TAIL1", "TAIL2") for error reporting
+/// * `section_name` - The name of the section (e.g., "TAIL_a", "TAIL_b") for error reporting
 ///
 /// # Returns
 ///
@@ -1533,13 +1504,13 @@ fn log_empty_tail_section_info(section_name: &str) {
 /// use omecp::parser::validate_tail_section;
 ///
 /// // Valid content
-/// assert!(validate_tail_section("TD(NStates=5) Root=1", "TAIL1").is_ok());
+/// assert!(validate_tail_section("TD(NStates=5) Root=1", "TAIL_a").is_ok());
 ///
 /// // Empty content is acceptable
-/// assert!(validate_tail_section("", "TAIL1").is_ok());
+/// assert!(validate_tail_section("", "TAIL_a").is_ok());
 ///
 /// // Invalid content with comments (should be filtered before validation)
-/// assert!(validate_tail_section("TD(NStates=5) # comment", "TAIL1").is_err());
+/// assert!(validate_tail_section("TD(NStates=5) # comment", "TAIL_a").is_err());
 /// ```
 pub fn validate_tail_section(content: &str, section_name: &str) -> Result<()> {
     // Empty content after filtering is acceptable - provide informational context
@@ -1865,7 +1836,7 @@ mod tests {
 
     #[test]
     fn test_enhanced_error_messages_td_without_parentheses() {
-        let result = validate_tail_section("TD NStates=5", "TAIL1");
+        let result = validate_tail_section("TD NStates=5", "TAIL_a");
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("TD keyword found without required parentheses"));
@@ -1874,7 +1845,7 @@ mod tests {
 
     #[test]
     fn test_enhanced_error_messages_unbalanced_parentheses() {
-        let result = validate_tail_section("TD(NStates=5", "TAIL1");
+        let result = validate_tail_section("TD(NStates=5", "TAIL_a");
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Unbalanced parentheses"));
@@ -1883,7 +1854,7 @@ mod tests {
 
     #[test]
     fn test_enhanced_error_messages_comment_character() {
-        let result = validate_tail_section("TD(NStates=5) # comment", "TAIL1");
+        let result = validate_tail_section("TD(NStates=5) # comment", "TAIL_a");
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Comment character '#' found"));
@@ -1892,7 +1863,7 @@ mod tests {
 
     #[test]
     fn test_enhanced_error_messages_case_sensitivity() {
-        let result = validate_tail_section("td(nstates=5)", "TAIL1");
+        let result = validate_tail_section("td(nstates=5)", "TAIL_a");
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("case-sensitive"));
@@ -1900,7 +1871,7 @@ mod tests {
 
     #[test]
     fn test_enhanced_error_messages_root_without_td() {
-        let result = validate_tail_section("Root=1", "TAIL2");
+        let result = validate_tail_section("Root=1", "TAIL_b");
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("ROOT keyword found without TD keyword"));
@@ -1909,7 +1880,7 @@ mod tests {
 
     #[test]
     fn test_enhanced_error_messages_nstates_without_equals() {
-        let result = validate_tail_section("TD(NStates)", "TAIL1");
+        let result = validate_tail_section("TD(NStates)", "TAIL_a");
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("NStates keyword found without value assignment"));
@@ -1918,33 +1889,33 @@ mod tests {
 
     #[test]
     fn test_enhanced_error_messages_valid_content() {
-        let result = validate_tail_section("TD(NStates=5,Root=1)", "TAIL1");
+        let result = validate_tail_section("TD(NStates=5,Root=1)", "TAIL_a");
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_enhanced_error_messages_empty_content() {
-        let result = validate_tail_section("", "TAIL1");
+        let result = validate_tail_section("", "TAIL_a");
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_graceful_empty_tail_section_handling() {
         // Test that empty content is handled gracefully
-        let result = validate_tail_section_with_context("", "TAIL1");
+        let result = validate_tail_section_with_context("", "TAIL_a");
         assert!(result.is_ok());
 
-        let result = validate_tail_section_with_context("", "TAIL2");
+        let result = validate_tail_section_with_context("", "TAIL_b");
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_graceful_empty_tail_section_with_filtering_context() {
         // Test the filtering context function
-        let result = validate_tail_section_with_filtering_context("", "TAIL1");
+        let result = validate_tail_section_with_filtering_context("", "TAIL_a");
         assert!(result.is_ok());
 
-        let result = validate_tail_section_with_filtering_context("", "TAIL2");
+        let result = validate_tail_section_with_filtering_context("", "TAIL_b");
         assert!(result.is_ok());
     }
 
@@ -1989,7 +1960,7 @@ mod tests {
 
     #[test]
     fn test_enhanced_error_messages_multiple_spaces() {
-        let result = validate_tail_section("TD(NStates=5)  Root=1", "TAIL1");
+        let result = validate_tail_section("TD(NStates=5)  Root=1", "TAIL_a");
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Multiple consecutive spaces"));
@@ -1998,11 +1969,11 @@ mod tests {
 
     #[test]
     fn test_user_friendly_suggestions() {
-        let result = validate_tail_section("TD(NStates=5) # This is a comment", "TAIL1");
+        let result = validate_tail_section("TD(NStates=5) # This is a comment", "TAIL_a");
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("Suggestions for fixing TAIL1 section"));
-        assert!(error_msg.contains("Example of valid TAIL1 content"));
+        assert!(error_msg.contains("Suggestions for fixing TAIL_a section"));
+        assert!(error_msg.contains("Example of valid TAIL_a content"));
     }
 
     #[test]
@@ -2068,15 +2039,6 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(config.state_b, 2);
 
-        // Test deprecated state1 keyword
-        let mut config2 = Config::default();
-        let result = parse_parameter("state1 = 3", &mut config2, &mut fixed_atoms);
-        assert!(result.is_ok());
-        assert_eq!(config2.state_a, 3);
 
-        // Test deprecated state2 keyword
-        let result = parse_parameter("state2 = 4", &mut config2, &mut fixed_atoms);
-        assert!(result.is_ok());
-        assert_eq!(config2.state_b, 4);
     }
 }

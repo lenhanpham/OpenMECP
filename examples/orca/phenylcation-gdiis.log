@@ -10,7 +10,7 @@
  # 2026, https://doi.org/10.13140/RG.2.2.21309.73443                             #
  #-------------------------------------------------------------------------------#
 
-[2026-05-16T11:21:24.195Z INFO  omecp::settings] Configuration loaded from: built-in defaults (no configuration file found)
+[2026-05-17T00:48:14.954Z INFO  omecp::settings] Configuration loaded from: built-in defaults (no configuration file found)
 ============================================================================
 CONFIGURATION AND SETTINGS
 ============================================================================
@@ -40,6 +40,8 @@ Input File Parameters:
     Switch Step:              3
     BFGS Rho:                 15
     Reduced Factor:           0.5
+    Step Reduction Multiplier:10
+    Steepest Descent Step:    0.01
     Smart History:            false (default)
     Print Checkpoint:         false
   BAGEL Model:                model.inp
@@ -242,7 +244,7 @@ E1 = -231.08941025, E2 = -231.08946832, dE = 0.00005807
 
 ****Step 10****
 Using GDIIS optimizer (step 10 >= switch point 3)
-GDIIS: applying step reduction factor 0.50
+    GDIIS step reduction factor=0.5 (history_norm=0.009172 < 0.009450)
 Displacement norm = 0.002225259004314 Å
 E1 = -231.08941810, E2 = -231.08942520, dE = 0.00000710
  Criteria                            Current           Threshold        Pass

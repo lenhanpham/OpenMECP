@@ -10,7 +10,7 @@
  # 2026, https://doi.org/10.13140/RG.2.2.21309.73443                             #
  #-------------------------------------------------------------------------------#
 
-[2026-05-16T11:21:22.813Z INFO  omecp::settings] Configuration loaded from: built-in defaults (no configuration file found)
+[2026-05-17T00:48:14.963Z INFO  omecp::settings] Configuration loaded from: built-in defaults (no configuration file found)
 ============================================================================
 CONFIGURATION AND SETTINGS
 ============================================================================
@@ -36,12 +36,20 @@ Input File Parameters:
     Hessian Method:           direct_psb (default)
     Use GEDIIS:               blend
     Use Hybrid GEDIIS:        false (default: pure GDIIS_blend)
+    Trust Reduction Factor:   0.5
+    Trust Increase Factor:    1.2
+    Trust Inc Threshold:      0.0001
+    Trust Dec Threshold:      0.0001
+    Trust Min Radius:         0.01
+    Trust Max Radius:         1
     GEDIIS Switch RMS:        0.005
     GEDIIS Switch Step:       0.001
     Use Robust DIIS:          false (default)
     Switch Step:              3
     BFGS Rho:                 15
     Reduced Factor:           0.5
+    Step Reduction Multiplier:10
+    Steepest Descent Step:    0.01
     Smart History:            false (default)
     Print Checkpoint:         false
   BAGEL Model:                model.inp
@@ -181,7 +189,7 @@ E1 = -231.08900144, E2 = -231.08999435, dE = 0.00099291
 
 ****Step 5****
 Using GDIIS_blend optimizer (step 5, trust_radius = 0.072 Å)
-Displacement norm = 0.023966170289855 Å
+Displacement norm = 0.023966170289896 Å
 Trust radius = 0.072 Å
 E1 = -231.08934629, E2 = -231.08915682, dE = 0.00018947
  Criteria                            Current           Threshold        Pass
@@ -197,7 +205,7 @@ E1 = -231.08934629, E2 = -231.08915682, dE = 0.00018947
 
 ****Step 6****
 Using GDIIS_blend optimizer (step 6, trust_radius = 0.086 Å)
-Displacement norm = 0.009654096415533 Å
+Displacement norm = 0.009654096415675 Å
 Trust radius = 0.086 Å
 E1 = -231.08936792, E2 = -231.08953616, dE = 0.00016824
  Criteria                            Current           Threshold        Pass
@@ -212,7 +220,7 @@ E1 = -231.08936792, E2 = -231.08953616, dE = 0.00016824
 
 ****Step 7****
 Using GDIIS_blend optimizer (step 7, trust_radius = 0.086 Å)
-Displacement norm = 0.003753989894375 Å
+Displacement norm = 0.003753989894081 Å
 Trust radius = 0.086 Å
 E1 = -231.08937551, E2 = -231.08955997, dE = 0.00018446
  Criteria                            Current           Threshold        Pass
@@ -227,7 +235,7 @@ E1 = -231.08937551, E2 = -231.08955997, dE = 0.00018446
 
 ****Step 8****
 Using GDIIS_blend optimizer (step 8, trust_radius = 0.086 Å)
-Displacement norm = 0.007597215851129 Å
+Displacement norm = 0.007597215851494 Å
 Trust radius = 0.086 Å
 E1 = -231.08939705, E2 = -231.08954267, dE = 0.00014562
  Criteria                            Current           Threshold        Pass
@@ -242,7 +250,7 @@ E1 = -231.08939705, E2 = -231.08954267, dE = 0.00014562
 
 ****Step 9****
 Using GDIIS_blend optimizer (step 9, trust_radius = 0.086 Å)
-Displacement norm = 0.003336232896296 Å
+Displacement norm = 0.003336232896064 Å
 Trust radius = 0.086 Å
 E1 = -231.08941102, E2 = -231.08947190, dE = 0.00006087
  Criteria                            Current           Threshold        Pass
@@ -257,8 +265,8 @@ E1 = -231.08941102, E2 = -231.08947190, dE = 0.00006087
 
 ****Step 10****
 Using GDIIS_blend optimizer (step 10, trust_radius = 0.086 Å)
-    GDIIS_blend: reducing factor activated (history_norm=0.009060 < 0.009450, factor=0.5)
-Displacement norm = 0.002347951403427 Å
+    GDIIS_blend step reduction factor=0.5 (history_norm=0.009060 < 0.009450)
+Displacement norm = 0.002347951403647 Å
 Trust radius = 0.086 Å
 E1 = -231.08941907, E2 = -231.08941863, dE = 0.00000044
  Criteria                            Current           Threshold        Pass

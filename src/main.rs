@@ -308,19 +308,8 @@ fn main() {
 
 /// Print version and citation information
 fn print_version() {
-    println!("**** OpenMECP: Minimum Energy Crossing Point Optimizer ****");
-    println!(
-        "              Version {}  Release date: 2026",
-        env!("CARGO_PKG_VERSION")
-    );
-    println!("               ****Developer Le Nhan Pham****             ");
-    println!("           https://github.com/lenhanpham/OpenMECP        \n");
-    println!(" Please cite this preprint if you use OpenMECP for your research:");
-    println!(" #-------------------------------------------------------------------------------#");
-    println!(" # L.N Pham, \"OpenMECP: A High-Performance Rust Implementation for               #");
-    println!(" # the Rigorous Location of Minimum Energy Crossing Points in Chemical Dynamics\" #");
-    println!(" # 2026, https://doi.org/10.13140/RG.2.2.21309.73443                             #");
-    println!(" #-------------------------------------------------------------------------------#");
+    use omecp::help::print_header;
+    print_header();
 }
 
 /// Check for help/version flags and print appropriate output
@@ -1780,7 +1769,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             config.state_b,
         )?;
 
-        // NOTE: geometry.coords already contains x_new from the optimizer (line 1546)
+        // NOTE: geometry.coords already contains x_new from the optimizer 
         // QM programs (ORCA, Gaussian) perform single-point calculations without
         // changing geometry, so the geometry in their output should match the input.
         // We do NOT overwrite geometry.coords here to avoid redundant operations.

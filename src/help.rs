@@ -914,8 +914,19 @@ pub const FEATURES: &[FeatureInfo] = &[
     },
 ];
 
-/// Print global help
-pub fn print_global_help() {
+/// Prints the standard OpenMECP program header with version and citation information.
+///
+/// This is the single source of truth for the header block. It is called by
+/// `print_global_help()`, `print_version()`, and at the start of each optimization
+/// run so that the banner only needs to be maintained in one place.
+///
+/// # Examples
+///
+/// ```
+/// use omecp::help::print_header;
+/// print_header();
+/// ```
+pub fn print_header() {
     println!("**** OpenMECP: Minimum Energy Crossing Point Optimizer ****");
     println!(
         "              Version {}  Release date: 2026",
@@ -929,6 +940,11 @@ pub fn print_global_help() {
     println!(" # the Rigorous Location of Minimum Energy Crossing Points in Chemical Dynamics\" #");
     println!(" # 2026, https://doi.org/10.13140/RG.2.2.21309.73443                             #");
     println!(" #-------------------------------------------------------------------------------#");
+}
+
+/// Print global help
+pub fn print_global_help() {
+    print_header();
     println!();
     println!();
     println!("USAGE:");

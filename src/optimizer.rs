@@ -63,16 +63,16 @@ pub use crate::hessian_update::HessianUpdateMethod;
 ///
 /// The Harvey algorithm combines two physically distinct components:
 /// - `f_vec`: drives the energy difference to zero (pure Hartree)
-/// - `g_vec`: minimizes energy on the crossing seam (pure Ha/Å)
+/// - `g_vec`: minimizes energy on the crossing seam (pure Ha/A)
 ///
 /// The `combined` field is `f_vec + g_vec` used only for the step direction.
-/// Downstream consumers that expect pure Ha/Å (Hessian update, DIIS error
+/// Downstream consumers that expect pure Ha/A (Hessian update, DIIS error
 /// vectors, convergence check) should use `g_vec`.
 #[derive(Debug, Clone)]
 pub struct MecpGradient {
     /// f-vector: (E1 - E2) * x_hat — pure Hartree (Ha)
     pub f_vec: DVector<f64>,
-    /// g-vector: g1 - (x_hat·g1) * x_hat — pure Hartree/Angstrom (Ha/Å)
+    /// g-vector: g1 - (x_hat·g1) * x_hat — pure Hartree/Angstrom (Ha/A)
     pub g_vec: DVector<f64>,
     /// Combined: f_vec + g_vec — mixed units, used for step direction only
     pub combined: DVector<f64>,
@@ -84,7 +84,7 @@ impl MecpGradient {
     /// # Arguments
     ///
     /// * `f_vec` - Energy-difference drive term in Hartree (Ha)
-    /// * `g_vec` - Perpendicular gradient in Hartree/Angstrom (Ha/Å)
+    /// * `g_vec` - Perpendicular gradient in Hartree/Angstrom (Ha/A)
     ///
     /// `combined` is automatically computed as `f_vec + g_vec`.
     pub fn new(f_vec: DVector<f64>, g_vec: DVector<f64>) -> Self {
@@ -101,14 +101,14 @@ impl MecpGradient {
 ///
 /// # Unit Conventions
 ///
-/// - **Geometry history** (`geom_history`): Coordinates in Angstrom (Å)
-/// - **Gradient history** (`grad_history`): Gradients in Hartree/Angstrom (Ha/Å)
+/// - **Geometry history** (`geom_history`): Coordinates in Angstrom (A)
+/// - **Gradient history** (`grad_history`): Gradients in Hartree/Angstrom (Ha/A)
 /// - **Energy history** (`energy_history`): Energy differences in Hartree (Ha)
-/// - **Displacement history** (`displacement_history`): Displacements in Angstrom (Å)
+/// - **Displacement history** (`displacement_history`): Displacements in Angstrom (A)
 ///
 /// These units match the internal storage conventions used throughout OpenMECP:
 /// - Coordinates are stored in Angstrom for compatibility with QM input files
-/// - Gradients are converted from native QM output (Ha/Bohr) to Ha/Å at the QM interface boundary
+/// - Gradients are converted from native QM output (Ha/Bohr) to Ha/A at the QM interface boundary
 ///
 /// # Capacity and History Management
 ///
@@ -127,18 +127,18 @@ pub struct OptimizationState {
     pub lambda_de: Option<f64>,
     /// Current constraint violations for extended gradient
     pub constraint_violations: DVector<f64>,
-    /// History of molecular geometries in Angstrom (Å) for DIIS methods.
+    /// History of molecular geometries in Angstrom (A) for DIIS methods.
     ///
     /// Each entry is a flattened coordinate vector [x1, y1, z1, x2, y2, z2, ...]
     /// representing the molecular geometry at a previous optimization step.
-    /// Units: Angstrom (Å) - matching the internal coordinate storage convention.
+    /// Units: Angstrom (A) - matching the internal coordinate storage convention.
     ///
     /// Validates: Requirement 7.1
     pub geom_history: VecDeque<DVector<f64>>,
-    /// History of MECP g-vectors (perpendicular component) in Ha/Å for DIIS.
+    /// History of MECP g-vectors (perpendicular component) in Ha/A for DIIS.
     ///
     /// This stores only the pure gradient component (g_vec), NOT the mixed
-    /// combined gradient. Units: Hartree/Angstrom (Ha/Å).
+    /// combined gradient. Units: Hartree/Angstrom (Ha/A).
     pub grad_history: VecDeque<DVector<f64>>,
     /// History of f-vectors (energy difference drive term) in Hartree (Ha).
     ///
@@ -148,14 +148,14 @@ pub struct OptimizationState {
     /// History of approximate inverse Hessian matrices in Ų/Ha for BFGS updates.
     ///
     /// Each entry is the inverse Hessian approximation at a previous step.
-    /// Units: Ų/Ha - produces Angstrom steps when multiplied by Ha/Å gradients.
+    /// Units: Ų/Ha - produces Angstrom steps when multiplied by Ha/A gradients.
     pub hess_history: VecDeque<DMatrix<f64>>,
     /// History of energy differences |E1 - E2| in Hartree (Ha) for GEDIIS.
     ///
     /// Used to weight interpolation coefficients toward geometries
     /// closer to the crossing seam (smaller energy difference).
     pub energy_history: VecDeque<f64>,
-    /// History of displacement norms in Angstrom (Å) for stuck detection.
+    /// History of displacement norms in Angstrom (A) for stuck detection.
     ///
     /// Tracks the magnitude of geometry changes between consecutive steps.
     pub displacement_history: VecDeque<f64>,
@@ -449,7 +449,7 @@ impl OptimizationState {
                 let dist = (&self.geom_history[i] - other_geom).norm();
                 min_dist = min_dist.min(dist);
             }
-            // If distance < 0.01 Å, points are redundant
+            // If distance < 0.01 A, points are redundant
             // Tighter threshold (was 0.03) to allow fine convergence
             if min_dist < 0.01 {
                 score += 1e7; // MASSIVE Penalty for redundancy (overrides gap protection)
@@ -461,7 +461,7 @@ impl OptimizationState {
             // DIIS assumes a local quadratic region. Distant points hurt convergence.
             let dist_to_head = (&self.geom_history[i] - head_geom).norm();
             if dist_to_head > 0.1 {
-                score += 100.0 * dist_to_head; // e.g. 0.5 Å -> +50 score
+                score += 100.0 * dist_to_head; // e.g. 0.5 A -> +50 score
             }
 
             // 5. Age penalty: preference for newer points
@@ -609,12 +609,12 @@ pub fn solve_constrained_step(
 ///
 /// This implementation matches the reference (adapted for Angstrom units):
 ///
-/// - **Input forces** (`state_a.forces`, `state_b.forces`): Ha/Å (converted from native QM output)
-/// - **f1, f2** (negated forces = gradients): Ha/Å
+/// - **Input forces** (`state_a.forces`, `state_b.forces`): Ha/A (converted from native QM output)
+/// - **f1, f2** (negated forces = gradients): Ha/A
 /// - **x_norm** (normalized gradient difference): dimensionless (unit vector)
 /// - **f-vector** = (E1 - E2) × x_norm: **Hartree** (energy × dimensionless)
-/// - **g-vector** = f1 - (x_norm · f1) × x_norm: **Ha/Å**
-/// - **Combined gradient**: Mixed units (Ha + Ha/Å)
+/// - **g-vector** = f1 - (x_norm · f1) × x_norm: **Ha/A**
+/// - **Combined gradient**: Mixed units (Ha + Ha/A)
 ///
 /// The mixed units are intentional in the Harvey algorithm:
 /// - The f-vector acts as a penalty term driving energy difference to zero
@@ -626,14 +626,14 @@ pub fn solve_constrained_step(
 ///
 /// # Arguments
 ///
-/// * `state_a` - Electronic state 1 (energy in Ha, forces in Ha/Å, geometry)
-/// * `state_b` - Electronic state 2 (energy in Ha, forces in Ha/Å, geometry)
+/// * `state_a` - Electronic state 1 (energy in Ha, forces in Ha/A, geometry)
+/// * `state_b` - Electronic state 2 (energy in Ha, forces in Ha/A, geometry)
 /// * `fixed_atoms` - List of atom indices to fix during optimization (0-based)
 ///
 /// # Returns
 ///
 /// Returns the MECP effective gradient as a `DVector<f64>` with length 3 × num_atoms.
-/// The gradient has mixed units (f-vector in Ha, g-vector in Ha/Å) matching
+/// The gradient has mixed units (f-vector in Ha, g-vector in Ha/A) matching
 /// the reference implementation.
 ///
 /// # Requirements
@@ -654,17 +654,17 @@ pub fn compute_mecp_gradient(
     state_b: &State,
     fixed_atoms: &[usize],
 ) -> MecpGradient {
-    // Forces are in Ha/Å (converted from native QM output in qm_interface)
+    // Forces are in Ha/A (converted from native QM output in qm_interface)
     // gradient = -force
     
-    let g1 = -state_a.forces.clone(); // Ha/Å
-    let g2 = -state_b.forces.clone(); // Ha/Å
+    let g1 = -state_a.forces.clone(); // Ha/A
+    let g2 = -state_b.forces.clone(); // Ha/A
     
     let de = state_a.energy - state_b.energy; // Ha
     
     // Gradient difference vector
-    let x = &g1 - &g2; // Ha/Å
-    let x_norm = x.norm(); // |x| in Ha/Å
+    let x = &g1 - &g2; // Ha/A
+    let x_norm = x.norm(); // |x| in Ha/A
     
     // Avoid division by zero
     if x_norm < 1e-10 {
@@ -680,9 +680,9 @@ pub fn compute_mecp_gradient(
     let mut f_vec = &x_hat * de;
     
     // g-vector (perpendicular component): minimizes energy on the seam
-    // g_vec = g1 - (x_hat · g1) * x_hat  [Ha/Å]
-    let dot = g1.dot(&x_hat); // (g1 · x_hat) in Ha/Å
-    let mut g_vec = &g1 - &x_hat * dot; // Ha/Å
+    // g_vec = g1 - (x_hat · g1) * x_hat  [Ha/A]
+    let dot = g1.dot(&x_hat); // (g1 · x_hat) in Ha/A
+    let mut g_vec = &g1 - &x_hat * dot; // Ha/A
     
     // Zero fixed atoms in both components
     for &atom_idx in fixed_atoms {
@@ -778,7 +778,7 @@ pub fn compute_mecp_gradient(
 ///    let step = &x_new - x0;
 ///    let step_norm = step.norm();
 ///
-///    // Debug: print step details for comparison with Python
+///    // Debug: print step details
 ///    let step_angstrom = step_norm * crate::config::BOHR_TO_ANGSTROM;
 ///    println!(
 ///        "BFGS: dk_norm={:.6}, dk_capped={:.6}, rho={}, raw_step={:.6} bohr ({:.6} Ang)",
@@ -805,22 +805,22 @@ pub fn compute_mecp_gradient(
 /// but operates in Angstrom-based units:
 /// - Uses **inverse Hessian** (Ų/Ha) for Newton step
 /// - Works in **Angstrom** for the Newton step computation
-/// - Two-stage step limiting: total norm, then max component (in Å)
+/// - Two-stage step limiting: total norm, then max component (in A)
 ///
 /// # Algorithm (from Fortran UpdateX subroutine, adapted for Angstrom)
 ///
 /// 1. First step: `ChgeX = -0.7 * G` (steepest descent with H_inv diagonal = 0.7)
 /// 2. Later steps: `ChgeX = -H_inv * G` (Newton step with BFGS-updated inverse Hessian)
-/// 3. Limit step: if `||ChgeX|| > 0.1*N` Å, scale down
-/// 4. Limit components: if `max(|ChgeX_i|) > 0.1` Å, scale down
+/// 3. Limit step: if `||ChgeX|| > 0.1*N` A, scale down
+/// 4. Limit components: if `max(|ChgeX_i|) > 0.1` A, scale down
 /// 5. Add Angstrom step to Angstrom coordinates
 ///
 /// # Units
 ///
 /// - Input coordinates (`x0`): Angstrom
-/// - Input gradient (`g0`): Ha/Å (converted from native QM output)
+/// - Input gradient (`g0`): Ha/A (converted from native QM output)
 /// - Inverse Hessian: Ų/Ha (initialized to 0.7 on diagonal)
-/// - Newton step: Å (H⁻¹ × g = Ų/Ha × Ha/Å = Å)
+/// - Newton step: A (H⁻¹ × g = Ų/Ha × Ha/A = A)
 /// - Output coordinates: Angstrom
 ///
 /// # Requirements
@@ -835,59 +835,59 @@ pub fn bfgs_step(
 ) -> DVector<f64> {
     // Unit analysis (Angstrom-based internal system):
     // - x0: Angstrom (internal coordinate storage)
-    // - g0: Ha/Å (converted from native QM output)
+    // - g0: Ha/A (converted from native QM output)
     // - inv_hessian: Ų/Ha (initialized to 0.7 diagonal)
     //
     // Newton step: step = -H⁻¹ × g
-    // Units: Ų/Ha × Ha/Å = Å
+    // Units: Ų/Ha × Ha/A = A
     
     let n = x0.len();
     
     // Compute Newton step: step = -H_inv * g
-    // Units: Ų/Ha × Ha/Å = Å
+    // Units: Ų/Ha × Ha/A = A
     let mut step: DVector<f64> = -(inv_hessian * g0);
     
     // Check for NaN/Inf in step
     if step.iter().any(|&v| !v.is_finite()) {
         println!("BFGS: Newton step contains NaN/Inf, falling back to steepest descent");
         // Fallback: steepest descent with step size 0.7 (matching Fortran initialization)
-        // Units: 0.7 Ų/Ha × Ha/Å = 0.7 Å per unit gradient
+        // Units: 0.7 Ų/Ha × Ha/A = 0.7 A per unit gradient
         step = -0.7 * g0;
     }
     
     // Step limiting (two stages) - all in Angstrom:
-    // 1. Limit total step norm to STPMX * N = 0.1 * N Å
-    let stpmx = 0.1_f64; // Max single component in Å
-    let stpmax = stpmx * (n as f64); // Max total norm in Å
+    // 1. Limit total step norm to STPMX * N = 0.1 * N A
+    let stpmx = 0.1_f64; // Max single component in A
+    let stpmax = stpmx * (n as f64); // Max total norm in A
     
     let step_norm = step.norm();
     if step_norm > stpmax {
         println!(
-            "BFGS: step norm {:.6} Å > stpmax {:.6} Å, scaling down",
+            "BFGS: step norm {:.6} A > stpmax {:.6} A, scaling down",
             step_norm, stpmax
         );
         step *= stpmax / step_norm;
     }
     
-    // 2. Limit max component to STPMX = 0.1 Å
+    // 2. Limit max component to STPMX = 0.1 A
     let max_component = step.iter().map(|v| v.abs()).fold(0.0_f64, f64::max);
     if max_component > stpmx {
         println!(
-            "BFGS: max component {:.6} Å > stpmx {:.6} Å, scaling down",
+            "BFGS: max component {:.6} A > stpmx {:.6} A, scaling down",
             max_component, stpmx
         );
         step *= stpmx / max_component;
     }
     
     // Apply rho scaling: matches propagationBFGS (rho=15)
-    // Applied AFTER capping dk to 0.1 Å, BEFORE final max_step_size cap.
+    // Applied AFTER capping dk to 0.1 A, BEFORE final max_step_size cap.
     // Amplifies small Newton steps so the optimizer escapes flat PES regions.
     step *= config.bfgs_rho;
     
     // Debug output
     let final_step_norm = step.norm();
     println!(
-        "BFGS: step = {:.6} Å (rho={:.1}), max_component = {:.6} Å",
+        "BFGS: step = {:.6} A (rho={:.1}), max_component = {:.6} A",
         final_step_norm, config.bfgs_rho,
         step.iter().map(|v| v.abs()).fold(0.0_f64, f64::max)
     );
@@ -896,7 +896,7 @@ pub fn bfgs_step(
     if final_step_norm > config.max_step_size {
         let scale = config.max_step_size / final_step_norm;
         println!(
-            "BFGS: applying config max_step_size: {:.6} -> {:.6} Å",
+            "BFGS: applying config max_step_size: {:.6} -> {:.6} A",
             final_step_norm, config.max_step_size
         );
         x0 + &step * scale
@@ -1023,7 +1023,7 @@ pub fn compute_adaptive_scale(
 ///
 /// The inverse Hessian is in Ų/Ha (Angstrom squared per Hartree).
 /// This matches the Angstrom-based unit system used throughout OpenMECP:
-/// - Newton step: H⁻¹ (Ų/Ha) × g (Ha/Å) = step (Å)
+/// - Newton step: H⁻¹ (Ų/Ha) × g (Ha/A) = step (A)
 /// - The 0.7 value provides reasonable initial step sizes for molecular systems
 ///
 /// # Requirements
@@ -1054,15 +1054,15 @@ pub fn initialize_inverse_hessian(n: usize) -> DMatrix<f64> {
 /// ```
 ///
 /// where:
-/// - DelX = X_new - X_old (step vector, in Å)
-/// - DelG = G_new - G_old (gradient difference, in Ha/Å)
+/// - DelX = X_new - X_old (step vector, in A)
+/// - DelG = G_new - G_old (gradient difference, in Ha/A)
 /// - fae = DelG · H_inv · DelG
 ///
 /// # Arguments
 ///
 /// * `h_inv` - Current inverse Hessian approximation (Ų/Ha)
-/// * `sk` - Step vector (x_new - x_old) in Å
-/// * `yk` - Gradient difference (g_new - g_old) in Ha/Å
+/// * `sk` - Step vector (x_new - x_old) in A
+/// * `yk` - Gradient difference (g_new - g_old) in Ha/A
 ///
 /// # Returns
 ///
@@ -1072,17 +1072,17 @@ pub fn initialize_inverse_hessian(n: usize) -> DMatrix<f64> {
 /// # Units
 ///
 /// - Input `h_inv`: Ų/Ha
-/// - Input `sk`: Å (step vector)
-/// - Input `yk`: Ha/Å (gradient difference)
+/// - Input `sk`: A (step vector)
+/// - Input `yk`: Ha/A (gradient difference)
 /// - Output: Ų/Ha (maintains inverse Hessian units)
 ///
 /// # Unit Analysis
 ///
 /// The BFGS update preserves units:
-/// - `fac = 1 / (yk · sk)` = 1 / (Ha/Å × Å) = 1/Ha
-/// - `fac * sk * sk^T` = 1/Ha × Å × Å = Ų/Ha ✓
-/// - `fad = 1 / (yk · H_inv · yk)` = 1 / (Ha/Å × Ų/Ha × Ha/Å) = Å/Ha
-/// - `fad * (H_inv·yk) * (H_inv·yk)^T` = Å/Ha × Å × Å = Å³/Ha (needs fae correction)
+/// - `fac = 1 / (yk · sk)` = 1 / (Ha/A × A) = 1/Ha
+/// - `fac * sk * sk^T` = 1/Ha × A × A = Ų/Ha ✓
+/// - `fad = 1 / (yk · H_inv · yk)` = 1 / (Ha/A × Ų/Ha × Ha/A) = A/Ha
+/// - `fad * (H_inv·yk) * (H_inv·yk)^T` = A/Ha × A × A = A³/Ha (needs fae correction)
 /// - `fae * w * w^T` corrects to maintain Ų/Ha
 ///
 /// # Requirements
@@ -1166,8 +1166,8 @@ pub fn update_hessian(
 /// # Arguments
 ///
 /// * `hessian` - Current Hessian matrix (Ha/Ų)
-/// * `delta_x` - Step vector (x_new - x_old) in Å
-/// * `delta_g` - Gradient difference (g_new - g_old) in Ha/Å
+/// * `delta_x` - Step vector (x_new - x_old) in A
+/// * `delta_g` - Gradient difference (g_new - g_old) in Ha/A
 /// * `method` - Update method to use
 ///
 /// # Returns
@@ -1444,14 +1444,14 @@ impl ConvergenceStatus {
 ///
 /// # Units
 ///
-/// - **Coordinates** (`x_old`, `x_new`): Angstrom (Å)
+/// - **Coordinates** (`x_old`, `x_new`): Angstrom (A)
 /// - **Gradient** (`grad`): Hartree/A (Ha/a₀)
-/// - **Displacement thresholds**: Angstrom (Å)
+/// - **Displacement thresholds**: Angstrom (A)
 /// - **Gradient thresholds**: Hartree/A (Ha/a₀)
 ///
 /// This function computes displacements in Angstrom (since coordinates are
 /// stored in Angstrom) and compares against Angstrom thresholds. Gradients
-/// are in Ha/Å (converted from native QM output) and compared against Ha/Å thresholds.
+/// are in Ha/A (converted from native QM output) and compared against Ha/A thresholds.
 ///
 /// # Arguments
 ///
@@ -1459,7 +1459,7 @@ impl ConvergenceStatus {
 /// * `e2` - Energy of state 2 in Hartree
 /// * `x_old` - Previous geometry coordinates in Angstrom
 /// * `x_new` - Current geometry coordinates in Angstrom
-/// * `grad` - Current MECP gradient in Ha/Å
+/// * `grad` - Current MECP gradient in Ha/A
 /// * `config` - Configuration with convergence thresholds
 ///
 /// # Returns
@@ -1470,17 +1470,17 @@ impl ConvergenceStatus {
 ///
 /// ## Default (Standard Precision)
 /// - Energy difference: 0.000050 Hartree (~0.00136 eV)
-/// - RMS gradient: 0.0005 Ha/Å
-/// - Max gradient: 0.0007 Ha/Å
-/// - RMS displacement: 0.0025 Å
-/// - Max displacement: 0.004 Å
+/// - RMS gradient: 0.0005 Ha/A
+/// - Max gradient: 0.0007 Ha/A
+/// - RMS displacement: 0.0025 A
+/// - Max displacement: 0.004 A
 ///
 /// ## Recommended for High-Precision MECP
 /// - Energy difference: 0.000010 Hartree (~0.00027 eV)
-/// - RMS gradient: 0.0001 Ha/Å
-/// - Max gradient: 0.0005 Ha/Å
-/// - RMS displacement: 0.001 Å
-/// - Max displacement: 0.002 Å
+/// - RMS gradient: 0.0001 Ha/A
+/// - Max gradient: 0.0005 Ha/A
+/// - RMS displacement: 0.001 A
+/// - Max displacement: 0.002 A
 ///
 /// # Implementation Notes
 ///
@@ -1502,7 +1502,7 @@ impl ConvergenceStatus {
 /// let e2 = -100.0001;
 /// let x_old = DVector::from_vec(vec![0.0, 0.0, 0.0]);  // Angstrom
 /// let x_new = DVector::from_vec(vec![0.001, 0.001, 0.001]);  // Angstrom
-/// let grad = DVector::from_vec(vec![0.0001, 0.0001, 0.0001]);  // Ha/Å
+/// let grad = DVector::from_vec(vec![0.0001, 0.0001, 0.0001]);  // Ha/A
 ///
 /// // let status = check_convergence(e1, e2, &x_old, &x_new, &grad, &config);
 /// // assert!(status.is_converged());
@@ -1538,7 +1538,7 @@ pub fn check_convergence(
         })
         .fold(0.0, f64::max);
 
-    // Gradient metrics in Ha/Å (converted from native QM output)
+    // Gradient metrics in Ha/A (converted from native QM output)
     // Validates: Requirement 5.4
     let rms_grad = grad.norm() / (grad.len() as f64).sqrt();
     
@@ -1558,10 +1558,10 @@ pub fn check_convergence(
 
     // Compare against thresholds in matching units:
     // - delta_e (Ha) vs thresholds.delta_e (Ha)
-    // - rms_grad (Ha/Å) vs thresholds.rms_grad (Ha/Å)
-    // - max_grad (Ha/Å) vs thresholds.max_grad (Ha/Å)
-    // - rms_disp (Å) vs thresholds.rms_dis (Å)
-    // - max_disp (Å) vs thresholds.max_dis (Å)
+    // - rms_grad (Ha/A) vs thresholds.rms_grad (Ha/A)
+    // - max_grad (Ha/A) vs thresholds.max_grad (Ha/A)
+    // - rms_disp (A) vs thresholds.rms_dis (A)
+    // - max_disp (A) vs thresholds.max_dis (A)
     ConvergenceStatus {
         de_converged: de < config.thresholds.delta_e,
         rms_grad_converged: rms_grad < config.thresholds.rms_grad,
@@ -1689,15 +1689,15 @@ fn build_b_matrix(errors: &[DVector<f64>]) -> DMatrix<f64> {
 ///
 /// # Unit Conventions
 ///
-/// - **Input geometries** (`geom_history`): Angstrom (Å)
-/// - **Input gradients** (`grad_history`): Hartree/Angstrom (Ha/Å)
-/// - **Interpolated geometry**: Angstrom (Å) - linear combination of Angstrom geometries
-/// - **Output geometry**: Angstrom (Å)
+/// - **Input geometries** (`geom_history`): Angstrom (A)
+/// - **Input gradients** (`grad_history`): Hartree/Angstrom (Ha/A)
+/// - **Interpolated geometry**: Angstrom (A) - linear combination of Angstrom geometries
+/// - **Output geometry**: Angstrom (A)
 ///
 /// The interpolation preserves units because it's a weighted sum of geometries
 /// with coefficients that sum to 1 (DIIS constraint). The correction step uses
-/// the mean Hessian (Ų/Ha) applied to the interpolated gradient (Ha/Å),
-/// producing a correction in Å that is implicitly handled by the algorithm.
+/// the mean Hessian (Ų/Ha) applied to the interpolated gradient (Ha/A),
+/// producing a correction in A that is implicitly handled by the algorithm.
 ///
 /// # Advantages over BFGS
 ///
@@ -1826,7 +1826,7 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     }
 
     // 2. Interpolate combined gradient for correction (option c)
-    // grad_history stores g_vec (Ha/Å), f_vec_history stores f_vec (Ha).
+    // grad_history stores g_vec (Ha/A), f_vec_history stores f_vec (Ha).
     let mut combined_prime = DVector::zeros(opt_state.grad_history[0].len());
     for (i, (g_vec, f_vec)) in opt_state
         .grad_history
@@ -1954,12 +1954,12 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
         );
     }
 
-    // CRITICAL: Combined gradients are in Ha/Å (g_vec) + Ha (f_vec)
+    // CRITICAL: Combined gradients are in Ha/A (g_vec) + Ha (f_vec)
     let threshold = config.thresholds.rms_grad * config.step_reduction_multiplier;
 
     if config.print_level >= 2 {
         println!(
-            "[DEBUG] Step reduction threshold: {:.8} (scaled for Ha/Å units)",
+            "[DEBUG] Step reduction threshold: {:.8} (scaled for Ha/A units)",
             threshold
         );
     }
@@ -2080,9 +2080,9 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
 ///
 /// # Unit Analysis
 ///
-/// - `g_i - g_j`: Gradient difference in Ha/Å
+/// - `g_i - g_j`: Gradient difference in Ha/A
 /// - `x_i - x_j`: Geometry difference in Angstrom
-/// - `B[i,j]`: Mixed units (Ha/Å × Å = Ha)
+/// - `B[i,j]`: Mixed units (Ha/A × A = Ha)
 ///
 /// The mixed units are acceptable because the B-matrix is only used to solve
 /// for dimensionless interpolation coefficients. The DIIS constraint (Σc_i = 1)
@@ -2090,7 +2090,7 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
 ///
 /// # Arguments
 ///
-/// * `grads` - History of gradient vectors in Ha/Å
+/// * `grads` - History of gradient vectors in Ha/A
 /// * `geoms` - History of geometry vectors in Angstrom
 ///
 /// # Returns
@@ -2127,8 +2127,8 @@ fn build_gediis_b_matrix(
     }
     h_mean /= n as f64;
 
-    // Error vectors: e_i = h_mean * (g_vec_i + f_vec_i) — Newton steps in Å
-    // Same formulation as GDIIS, giving well-conditioned entries [Å²].
+    // Error vectors: e_i = h_mean * (g_vec_i + f_vec_i) — Newton steps in A
+    // Same formulation as GDIIS, giving well-conditioned entries [A²].
     let errors: Vec<DVector<f64>> = grads
         .iter()
         .zip(f_vecs.iter())
@@ -2199,14 +2199,14 @@ fn build_gediis_b_matrix(
 ///
 /// # Unit Conventions
 ///
-/// - **Input geometries** (`geom_history`): Angstrom (Å)
-/// - **Input gradients** (`grad_history`): Hartree/Angstrom (Ha/Å)
+/// - **Input geometries** (`geom_history`): Angstrom (A)
+/// - **Input gradients** (`grad_history`): Hartree/Angstrom (Ha/A)
 /// - **Energy history** (`energy_history`): Hartree (Ha)
-/// - **Interpolated geometry**: Angstrom (Å)
-/// - **Output geometry**: Angstrom (Å)
+/// - **Interpolated geometry**: Angstrom (A)
+/// - **Output geometry**: Angstrom (A)
 ///
 /// The B-matrix computation uses `-(g_i - g_j) · (x_i - x_j)` which produces
-/// Hartree units (Ha/Å × Å = Ha). This is consistent because the B-matrix
+/// Hartree units (Ha/A × A = Ha). This is consistent because the B-matrix
 /// is used to solve for dimensionless interpolation coefficients that sum to 1.
 ///
 /// The step calculation `X_new = X_interp - G_interp` uses the gradient as a
@@ -2359,7 +2359,7 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
     }
 
     // 5. Calculate step: X_new = X_interp - H⁻¹·combined_interp (Newton correction)
-    // The combined gradient has mixed units (Ha + Ha/Å) and cannot be added directly
+    // The combined gradient has mixed units (Ha + Ha/A) and cannot be added directly
     // to coordinates. Use proper Newton correction via mean inverse Hessian, matching
     // the standard GDIIS approach (Fortran: X_new = X_interp + UH · ΣCi·DQQi).
     let mut h_mean = DMatrix::zeros(
@@ -2389,7 +2389,7 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
         .sum();
     let history_combined_norm = history_combined_norm_sq.sqrt();
 
-    // CRITICAL: Scale threshold for Ha/Å units
+    // CRITICAL: Scale threshold for Ha/A units
     let threshold = config.thresholds.rms_grad * config.step_reduction_multiplier;
     if history_combined_norm < threshold {
         if config.print_level >= 1 {
@@ -2505,8 +2505,8 @@ pub fn sequential_hybrid_gediis_step(
 ) -> DVector<f64> {
     // Li & Frisch JCTC 2006 sequential hybrid (Section II.B):
     // Phase 1: GDIIS (pre-optimizer, replaces paper's RFO)
-    // Phase 2: GEDIIS when RMS force < 10⁻² au (≈ 0.005 Ha/Å)
-    // Phase 3: GDIIS when RMS step < 2.5×10⁻³ au (≈ 0.001 Å)
+    // Phase 2: GEDIIS when RMS force < 10⁻² au (≈ 0.005 Ha/A)
+    // Phase 3: GDIIS when RMS step < 2.5×10⁻³ au (≈ 0.001 A)
 
     if !opt_state.has_enough_history() {
         println!("Sequential Hybrid: history insufficient, phase 1 GDIIS");
@@ -2517,12 +2517,12 @@ pub fn sequential_hybrid_gediis_step(
         }
     }
 
-    // RMS gradient (Ha/Å) — paper uses "root-mean-square force of the latest point"
+    // RMS gradient (Ha/A) — paper uses "root-mean-square force of the latest point"
     let last_grad = opt_state.grad_history.back().unwrap();
     let n_coords = last_grad.len() as f64;
     let rms_g = last_grad.norm() / n_coords.sqrt();
 
-    // RMS displacement (Å) — paper uses "root-mean-square RFO step"
+    // RMS displacement (A) — paper uses "root-mean-square RFO step"
     let last_disp = opt_state.displacement_history.back().copied().unwrap_or(1.0);
     let rms_disp = last_disp / n_coords.sqrt();
 
@@ -2701,8 +2701,8 @@ pub fn parse_hessian_update_method(s: &str) -> HessianUpdateMethod {
 /// # Arguments
 ///
 /// * `hessian` - Current Hessian matrix (direct or inverse depending on method)
-/// * `delta_x` - Step vector (x_new - x_old) in Å
-/// * `delta_g` - Gradient difference (g_new - g_old) in Ha/Å
+/// * `delta_x` - Step vector (x_new - x_old) in A
+/// * `delta_g` - Gradient difference (g_new - g_old) in Ha/A
 /// * `method` - Hessian update method to use
 ///
 /// # Returns
@@ -2732,7 +2732,7 @@ pub fn update_hessian_by_method(
 /// Initializes the direct Hessian matrix for direct Hessian BFGS optimization.
 ///
 /// Matches behavior: `Bk = numpy.eye(ncoord)` (identity matrix).
-/// The direct Hessian B has units Ha/Å² in the Angstrom-based system.
+/// The direct Hessian B has units Ha/A² in the Angstrom-based system.
 ///
 /// # Arguments
 ///
@@ -2744,7 +2744,7 @@ pub fn update_hessian_by_method(
 ///
 /// # Units
 ///
-/// The Hessian diagonal is 1.0 Ha/Å² (identity matrix).
+/// The Hessian diagonal is 1.0 Ha/A² (identity matrix).
 /// Newton step: B⁻¹ × g = I × g = g, so initial step equals gradient.
 pub fn initialize_direct_hessian(n: usize) -> DMatrix<f64> {
     DMatrix::identity(n, n)
@@ -2765,30 +2765,25 @@ pub fn initialize_direct_hessian(n: usize) -> DMatrix<f64> {
 /// ```
 ///
 /// where:
-/// - `sk` = x_new - x_old (step vector, in Å)
-/// - `yk` = g_new - g_old (gradient difference, in Ha/Å)
+/// - `sk` = x_new - x_old (step vector, in A)
+/// - `yk` = g_new - g_old (gradient difference, in Ha/A)
 ///
 /// # Arguments
 ///
-/// * `hessian` - Current Hessian approximation (Ha/Å²)
-/// * `sk` - Step vector (x_new - x_old) in Å
-/// * `yk` - Gradient difference (g_new - g_old) in Ha/Å
+/// * `hessian` - Current Hessian approximation (Ha/A²)
+/// * `sk` - Step vector (x_new - x_old) in A
+/// * `yk` - Gradient difference (g_new - g_old) in Ha/A
 ///
 /// # Returns
 ///
-/// Returns the updated Hessian matrix in Ha/Å².
+/// Returns the updated Hessian matrix in Ha/A².
 ///
 /// # Unit Analysis
 ///
-/// - `v = yk - B·sk` → Ha/Å - (Ha/Å²)(Å) = Ha/Å ✓
-/// - `v·sk^T` → (Ha/Å)(Å) = Ha (matrix outer product) → / Å² → Ha/Å² ✓
-/// - `sk^T·v` → Å·(Ha/Å) = Ha (scalar)
-/// - `sk·sk^T / (sk^T·sk)²` → Å²/Å⁴ = 1/Å² → × Ha → Ha/Å² ✓
-///
-/// # References
-///
-/// - lines 954-979 (HessianUpdator function)
-/// - Powell, M.J.D., "A new algorithm for unconstrained optimization" (1970)
+/// - `v = yk - B·sk` → Ha/A - (Ha/A²)(A) = Ha/A ✓
+/// - `v·sk^T` → (Ha/A)(A) = Ha (matrix outer product) → / A² → Ha/A² ✓
+/// - `sk^T·v` → A·(Ha/A) = Ha (scalar)
+/// - `sk·sk^T / (sk^T·sk)²` → A²/A⁴ = 1/A² → × Ha → Ha/A² ✓
 pub fn update_hessian_psb(
     hessian: &DMatrix<f64>,
     sk: &DVector<f64>,
@@ -2850,26 +2845,21 @@ pub fn update_hessian_psb(
 ///
 /// # Arguments
 ///
-/// * `x0` - Current geometry coordinates in Å
-/// * `g0` - Current MECP gradient (mixed units: Ha + Ha/Å)
-/// * `hessian` - Current direct Hessian matrix (Ha/Å²)
+/// * `x0` - Current geometry coordinates in A
+/// * `g0` - Current MECP gradient (mixed units: Ha + Ha/A)
+/// * `hessian` - Current direct Hessian matrix (Ha/A²)
 /// * `config` - Configuration with step size limits
 ///
 /// # Returns
 ///
-/// Returns the new geometry coordinates in Å.
+/// Returns the new geometry coordinates in A.
 ///
 /// # Units
 ///
-/// - `dk = B⁻¹ × g`: (Ha/Å²)⁻¹ × (Ha/Å) = Å (step in Angstrom)
-/// - Cap: `0.1` (matching Python's 0.1 — NOT in Bohr, operates in mixed-unit Newton space)
+/// - `dk = B⁻¹ × g`: (Ha/A²)⁻¹ × (Ha/A) = A (step in Angstrom)
+/// - Cap: `0.1` (NOT in Bohr, operates in mixed-unit Newton space)
 /// - rho: `15.0` (amplification factor)
-/// - MaxStep: `config.max_step_size` in Å (default: 0.1 Å)
-///
-/// # References
-///
-/// - lines 857-870 (propagationBFGS)
-/// - lines 802-815 (MaxStep)
+/// - MaxStep: `config.max_step_size` in A (default: 0.1 A)
 pub fn bfgs_step_direct(
     x0: &DVector<f64>,
     g0: &DVector<f64>,
@@ -2889,14 +2879,11 @@ pub fn bfgs_step_direct(
     });
 
     // Step 2: Cap dk magnitude
-    // Python: `if numpy.linalg.norm(dk) > 0.1: dk = dk * 0.1 / numpy.linalg.norm(dk)`
-    // The 0.1 is NOT in Bohr — it's the raw magnitude cap in Python's mixed-unit system.
-    // We use 0.1 here to match Python exactly.
     let dk_cap = 0.1_f64;
     let dk_norm = dk.norm();
     if dk_norm > dk_cap {
         println!(
-            "BFGS: dk norm {:.6} Å > cap {:.6} Å, scaling down",
+            "BFGS: dk norm {:.6} A > cap {:.6} A, scaling down",
             dk_norm, dk_cap
         );
         dk *= dk_cap / dk_norm;
@@ -2912,7 +2899,7 @@ pub fn bfgs_step_direct(
     let step_norm = step.norm();
     if step_norm > config.max_step_size {
         println!(
-            "BFGS: step {:.6} Å > max_step_size {:.6} Å, capping",
+            "BFGS: step {:.6} A > max_step_size {:.6} A, capping",
             step_norm, config.max_step_size
         );
         step *= config.max_step_size / step_norm;
@@ -2920,7 +2907,7 @@ pub fn bfgs_step_direct(
 
     let final_norm = step.norm();
     println!(
-        "BFGS: final step = {:.6} Å (rho={:.1})",
+        "BFGS: final step = {:.6} A (rho={:.1})",
         final_norm, config.bfgs_rho
     );
 
@@ -2929,11 +2916,7 @@ pub fn bfgs_step_direct(
 
 /// Performs a simplified GDIIS step matching exactly.
 ///
-/// This is a clean, minimal implementation of GDIIS that matches the
-/// 40-line Python version without defensive fallbacks. The simplicity
-/// is intentional — the Python version converges reliably without
-/// coefficient checks, stuck detection, or cascading NaN guards.
-///
+/// This is a clean, minimal implementation of GDIIS 
 /// # Algorithm  `propagationGDIIS()`)
 ///
 /// ```text
@@ -2953,7 +2936,7 @@ pub fn bfgs_step_direct(
 ///
 /// # Returns
 ///
-/// Returns the new geometry coordinates in Å.
+/// Returns the new geometry coordinates in A.
 ///
 /// # Key Differences from Complex GDIIS
 ///
@@ -2962,10 +2945,6 @@ pub fn bfgs_step_direct(
 /// - No adaptive step size multiplier
 /// - No cascading NaN fallbacks (single final check only)
 /// - Uses direct Hessian solve (not inverse multiply)
-///
-/// # References
-///
-/// - lines 872-913 (propagationGDIIS)
 pub fn gdiis_step_direct(
     opt_state: &mut OptimizationState,
     config: &Config,
@@ -3034,7 +3013,7 @@ pub fn gdiis_step_direct(
     }
 
     // Step 5: Interpolate geometry and combined gradient
-    // grad_history stores g_vec (pure Ha/Å); f_vec_history stores f_vec (Ha).
+    // grad_history stores g_vec (pure Ha/A); f_vec_history stores f_vec (Ha).
     // Combined = g_vec + f_vec is used for correction (option c).
     let mut x_prime = DVector::zeros(dim);
     let mut combined_prime = DVector::zeros(dim);
@@ -3074,7 +3053,7 @@ pub fn gdiis_step_direct(
     }
 
     // Step 6: Correction step: X_new = X' - solve(B_mean, combined')
-    // Using combined gradient for the correction preserves Python's mixed-unit
+    // Using combined gradient
     // step behavior (option c).
     let correction = lu.solve(&combined_prime).unwrap_or_else(|| {
         println!("GDIIS: Hessian solve failed for correction, using gradient");
@@ -3097,7 +3076,7 @@ pub fn gdiis_step_direct(
         .sum();
     let history_combined_norm = history_combined_norm_sq.sqrt();
 
-    // Combined gradient norm includes f_vec (Ha) + g_vec (Ha/Å)
+    // Combined gradient norm includes f_vec (Ha) + g_vec (Ha/A)
     let threshold = config.thresholds.rms_grad * config.step_reduction_multiplier;
     if history_combined_norm < threshold {
         if config.print_level >= 1 {
@@ -3208,120 +3187,9 @@ pub fn select_diis_step(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::geometry::{Geometry, State};
-
-    #[test]
-    fn test_force_sign_convention_matches_python() {
-        // Create test geometry (2 atoms)
-        let elements = vec!["H".to_string(), "H".to_string()];
-        let coords = vec![
-            0.0, 0.0, 0.0, // Atom 1 at origin
-            1.0, 0.0, 0.0, // Atom 2 at (1,0,0)
-        ];
-        let geometry = Geometry::new(elements, coords);
-
-        // Create test forces (positive values as extracted from Gaussian output)
-        // Python would NEGATE these before MECP gradient computation
-        let forces1 = DVector::from_vec(vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
-        let forces2 = DVector::from_vec(vec![0.2, 0.3, 0.4, 0.5, 0.6, 0.7]);
-
-        // Create states with positive forces (as extracted from Gaussian)
-        let state_a = State {
-            geometry: geometry.clone(),
-            energy: -100.0,
-            forces: forces1,
-        };
-
-        let state_b = State {
-            geometry,
-            energy: -99.0,
-            forces: forces2,
-        };
-
-        // Compute MECP gradient
-        let gradient = compute_mecp_gradient(&state_a, &state_b, &[]);
-
-        // Verify that forces were properly negated
-        // The gradient should reflect NEGATED forces 
-        // If forces weren't negated, gradient direction would be wrong
-
-        // Check that gradient has correct dimension
-        assert_eq!(gradient.combined.len(), 6);
-
-        // Check that gradient is not zero (forces should have effect)
-        assert!(gradient.combined.norm() > 1e-10);
-
-        // Manual verification: compute expected gradient with negated forces
-        let expected_f1 = -state_a.forces; // Ha/Å
-        let expected_f2 = -state_b.forces; // Ha/Å
-
-        let x_vec = &expected_f1 - &expected_f2;
-        let x_norm = if x_vec.norm().abs() < 1e-10 {
-            let n = x_vec.len() as f64;
-            &x_vec / (n.sqrt() * 1e-10)
-        } else {
-            &x_vec / x_vec.norm()
-        };
-
-        let de = state_a.energy - state_b.energy;
-        let expected_f_vec = x_norm.clone() * de;
-        let dot = expected_f1.dot(&x_norm);
-        let expected_g_vec = &expected_f1 - &x_norm * dot;
-        let expected_combined = expected_f_vec + expected_g_vec;
-
-        // Compare computed gradient with expected (allowing for numerical precision)
-        for i in 0..gradient.combined.len() {
-            assert!(
-                (gradient.combined[i] - expected_combined[i]).abs() < 1e-10,
-                "Gradient component {} mismatch: {} vs {}",
-                i,
-                gradient.combined[i],
-                expected_combined[i]
-            );
-        }
-    }
-
-    #[test]
-    fn test_force_negation_impact() {
-        // Demonstrate the critical importance of force negation
-        let elements = vec!["H".to_string(), "H".to_string()];
-        let coords = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0];
-        let geometry = Geometry::new(elements, coords);
-
-        // ZERO forces for both states
-        let forces = DVector::from_vec(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
-
-        let state_a = State {
-            geometry: geometry.clone(),
-            energy: -100.0,
-            forces: forces.clone(),
-        };
-
-        let state_b = State {
-            geometry,
-            energy: -100.0, // Same energy
-            forces: forces.clone(),
-        };
-
-        let gradient = compute_mecp_gradient(&state_a, &state_b, &[]);
-
-        // With zero forces and same energies, gradient should be zero
-        assert!(
-            gradient.combined.norm() < 1e-10,
-            "Expected zero gradient with zero forces, got {}",
-            gradient.combined.norm()
-        );
-    }
-}
-
 // ============================================================================
-// Python-faithful GDIIS_blend, GEDIIS_blend, and Hybrid implementations
+// GDIIS_blend, GEDIIS_blend, and Hybrid implementations
 // ============================================================================
-// These functions replicate the exact algorithms from optimizer.py lines 248-317
-// for experimental comparison with the existing Rust implementations.
 //
 // Key differences from existing Rust GDIIS/GEDIIS:
 // 1. Error vectors use INVERTED mean true Hessian: e_i = Hm^{-1} @ F_i
@@ -3329,29 +3197,18 @@ mod tests {
 // 2. GEDIIS B-matrix uses Taylor expansion: -(F_i-F_j).(X_i-X_j)
 //    (existing Rust uses GDIIS error vectors + energy diagonal coupling)
 // 3. true_hess_history stores TRUE Hessians (not inverse Hessians)
-// 4. Hybrid blend uses pure geometric average (Python line 295 has a broken
-//    `newF` variable — intended formula is likely (newX + tmpX) / 2):
+// 4. Hybrid blend uses pure geometric average of GDIIS and GEDIIS steps:
 //    x_new = (x_gdiis + x_ediis) / 2
 // ============================================================================
 
-/// Holds optimization state for the Python-faithful GDIIS_blend and
+/// Holds optimization state for the GDIIS_blend and
 /// GEDIIS_blend implementations.
-///
-/// # Python Origin
-///
-/// This struct matches the global variables and history lists used in
-/// `optimizer.py` `opt()` (lines 337-374):
-/// - `geom_history` <-> Xhist (geometries)
-/// - `true_hess_history` <-> Bhist/Hhist (TRUE Hessians)
-/// - `grad_history` + `f_vec_history` <-> Fhist (combined MECP force)
-/// - `e1_history` <-> Ehist (E1 energies)
-/// - `energy_history` <-> E1 - E2 (not in Python; stored for debugging)
 ///
 /// # Key Difference from [`OptimizationState`]
 ///
 /// The existing [`OptimizationState`] stores INVERSE Hessians in
 /// `hess_history`.  This struct stores TRUE Hessians in
-/// `true_hess_history`, matching Python's convention where
+/// `true_hess_history`, matching the convention where
 /// `Hm = mean(Hhist)` and `Hm^{-1}` is computed by inversion.
 ///
 /// # Note on naming
@@ -3365,35 +3222,31 @@ mod tests {
 pub struct OptimizationState_blend {
     /// History of geometries as column vectors.
     ///
-    /// Python: `Xhist` (list of 1xN row vectors stored as `numpy.mat`).
     pub geom_history: VecDeque<DVector<f64>>,
 
     /// History of TRUE Hessian matrices (NxN), NOT inverse Hessians.
     ///
-    /// Python: `Hhist`/`Bhist` (list of NxN matrices).
+    /// `Hhist`/`Bhist` (list of NxN matrices).
     /// Mean is inverted for error vectors: `error_i = H_mean^{-1} @ F_i`.
     pub true_hess_history: VecDeque<DMatrix<f64>>,
 
     /// History of MECP g-vectors (perpendicular component) in Ha/A.
     ///
-    /// Combined with `f_vec_history` to reconstruct Python's `Fhist`.
     pub grad_history: VecDeque<DVector<f64>>,
 
     /// History of f-vectors (energy difference drive term) in Hartree (Ha).
     ///
-    /// Combined with `grad_history` to reconstruct Python's `Fhist`.
     pub f_vec_history: VecDeque<DVector<f64>>,
 
     /// History of E1 energies (used as RHS for EDIIS: `y = [-E_hist, 1]`).
     ///
-    /// Python: `Ehist` stores `E1` directly (NOT `E1 - E2`).
     pub e1_history: VecDeque<f64>,
 
     /// History of E1 - E2 energy differences (stored for compatibility /
     /// debugging but NOT used in EDIIS RHS).
     pub energy_history: VecDeque<f64>,
 
-    /// Maximum number of history entries (Python keeps max 4).
+    /// Maximum number of history entries (keeps max 4).
     pub max_history: usize,
 
     /// E1 energy from the previous iteration (for trust-radius adjustment).
@@ -3407,15 +3260,6 @@ pub struct OptimizationState_blend {
 impl OptimizationState_blend {
     /// Creates a new empty optimization state for blend methods.
     ///
-    /// # Python Origin
-    ///
-    /// Matches `opt()` lines 337-340 where `Xhist, Bhist, Fhist, Ehist` are
-    /// initialized as empty lists.
-    ///
-    /// # Arguments
-    ///
-    /// * `max_history` - Maximum number of history entries (Python default: 4)
-    /// * `trust_radius` - Initial trust radius for step size control (typically `config.max_step_size`)
     pub fn new(max_history: usize, trust_radius: f64) -> Self {
         Self {
             geom_history: VecDeque::with_capacity(max_history),
@@ -3438,20 +3282,6 @@ impl OptimizationState_blend {
 
     /// Adds a new entry to all history deques with FIFO eviction.
     ///
-    /// # Python Origin
-    ///
-    /// Matches `opt()` lines 366-374 where `Xhist.append(newX)`,
-    /// `Bhist.append(newH)`, etc. with `pop(0)` when length > 3.
-    /// `e1` stores the raw E1 energy (Python: `Ehist.append(E1)`).
-    ///
-    /// # Arguments
-    ///
-    /// * `geom` - New geometry (Python: appended to `Xhist`)
-    /// * `grad` - MECP g-vector in Ha/Å (part of Python's `Fhist`)
-    /// * `f_vec` - f-vector in Ha (part of Python's `Fhist`)
-    /// * `true_hess` - Updated true Hessian (Python: appended to `Hhist`/`Bhist`)
-    /// * `e1` - E1 energy (Python: appended to `Ehist`)
-    /// * `energy_diff` - E1 - E2 energy difference
     pub fn add_to_history(
         &mut self,
         geom: DVector<f64>,
@@ -3480,21 +3310,12 @@ impl OptimizationState_blend {
 
 /// Creates an identity matrix as the initial true Hessian approximation.
 ///
-/// # Python Origin
-///
-/// `opt()` line 338: `oldH = numpy.eye(numpy.shape(oldX)[1])`
-///
-/// This matches Python's convention of starting with the identity matrix
-/// (vs. the existing Rust code which starts with `0.7 * I` as inverse Hessian).
 pub fn initialize_true_hessian(n: usize) -> DMatrix<f64> {
     DMatrix::identity(n, n)
 }
 
-/// Applies step size reduction and capping, matching Python's behavior.
+/// Applies step size reduction and capping.
 ///
-/// # Python Origin
-///
-/// `optimizer.py` `stepsize()` lines 178-186.
 #[allow(non_snake_case)]
 ///
 /// # Algorithm
@@ -3520,37 +3341,7 @@ pub fn stepsize_blend(
 
 /// Computes GDIIS error vectors by INVERTING the mean true Hessian.
 ///
-/// # Python Origin
-///
-/// `optimizer.py` `gdiis()` lines 256-258:
 #[allow(dead_code)]
-/// ```python
-/// Hm = sum(Hhist) / nX
-/// for i in range(nX):
-///     matrix_ene[i] = (Hm.I * numpy.mat(Fhist[i]).T).flatten()
-/// ```
-///
-/// # Key Difference from [`compute_error_vectors`]
-///
-/// The existing Rust version does:
-///   `error_i = h_mean @ F_i`  where `h_mean = mean(inverse_Hessians)`
-///
-/// This Python-faithful version does:
-///   `H_mean = mean(true_Hessians)`    (TRUE Hessians, not inverses)
-///   `error_i = H_mean^{-1} @ F_i`     (INVERT the mean true Hessian)
-///
-/// Note: `(mean(H))^{-1} != mean(H^{-1})`, so these give different results.
-///
-/// # Arguments
-///
-/// * `combined_forces` - Combined MECP forces (g_vec + f_vec) at each point.
-///                       Python: `Fhist` (list of combined MECP force vectors).
-/// * `true_hessians` - TRUE Hessian matrices at each point.
-///                     Python: `Hhist`/`Bhist`.
-///
-/// # Returns
-///
-/// Vector of error vectors: `e_i = H_mean^{-1} @ F_i`.
 fn compute_error_vectors_blend(
     combined_forces: &[DVector<f64>],
     true_hessians: &VecDeque<DMatrix<f64>>,
@@ -3561,7 +3352,6 @@ fn compute_error_vectors_blend(
     }
 
     // Compute mean of TRUE Hessians: Hm = sum(Hhist) / nX
-    // Python line 256: Hm = sum(Hhist) / nX
     let mut h_mean = DMatrix::zeros(
         true_hessians[0].nrows(),
         true_hessians[0].ncols(),
@@ -3572,8 +3362,6 @@ fn compute_error_vectors_blend(
     h_mean /= n as f64;
 
     // Compute error vectors by solving Hm @ e_i = F_i for each i.
-    // This is equivalent to Python's Hm.I @ F_i but avoids explicit inversion.
-    // Python lines 257-258: matrix_ene[i] = (Hm.I * Fhist[i].T).flatten()
     let lu = h_mean.lu();
     combined_forces
         .iter()
@@ -3587,18 +3375,6 @@ fn compute_error_vectors_blend(
 }
 
 /// Builds the GEDIIS B-matrix using the Taylor expansion formula.
-///
-/// # Python Origin
-///
-/// `optimizer.py` `gdiis()` lines 277-286 when `gediis=True`:
-/// ```python
-/// for i in range(nX):
-///     matrix_ene[i,i] = 0
-///     for j in range(i+1, nX):
-///         matrix_ene[i,j] = -numpy.dot(Fhist[i]-Fhist[j],
-///                                numpy.array(Xhist[i]-Xhist[j]).flatten())
-///         matrix_ene[j,i] = matrix_ene[i,j]
-/// ```
 ///
 /// # Formula
 ///
@@ -3626,9 +3402,8 @@ fn compute_error_vectors_blend(
 /// # Arguments
 ///
 /// * `combined_forces` - Effective MECP forces at each history point.
-///                       Python: `Fhist`.
-/// * `geoms` - Geometries at each history point.  Python: `Xhist`.
-/// * `_e1_history` - E1 energies at each history point.  Python: `Ehist`.
+/// * `geoms` - Geometries at each history point.
+/// * `_e1_history` - E1 energies at each history point.
 ///
 /// # Returns
 ///
@@ -3644,7 +3419,6 @@ fn build_gediis_b_matrix_taylor(
     }
 
     // Build Taylor E-matrix: E[i,j] = -(F_i - F_j).(X_i - X_j)
-    // Python lines 278-283
     let mut e_matrix = DMatrix::zeros(n, n);
     for i in 0..n {
         // E[i,i] = 0 (already initialized by zeros)
@@ -3658,7 +3432,6 @@ fn build_gediis_b_matrix_taylor(
     }
 
     // Build DIIS block matrix: [[E, 1], [1^T, 0]]
-    // Python lines 284-286
     let mut b = DMatrix::zeros(n + 1, n + 1);
     for i in 0..n {
         for j in 0..n {
@@ -3677,29 +3450,26 @@ fn build_gediis_b_matrix_taylor(
 /// GDIIS_blend step: interpolate geometry, apply Newton correction via
 /// INVERTED mean true Hessian, with step control.
 ///
-/// # Python Origin
-///
-/// `optimizer.py` `gdiis(gediis=False)` — lines 253-272 + 300-303 (GDIIS path only).
 #[allow(non_snake_case)]
 ///
 /// # Algorithm
 ///
-/// 1. Build combined forces: `F_i = g_vec_i + f_vec_i` (Python's `Fhist`)
-/// 2. Compute error vectors: `e_i = H_mean^{-1} @ F_i` (lines 256-258)
-/// 3. Build B-matrix: `B[i,j] = e_i . e_j` (lines 259-261)
-/// 4. Solve `[B 1; 1^T 0] . c = [0,...,0, 1]^T` (lines 262-264)
-/// 5. Interpolate: `X_interp = sum(c_i . X_i)` (line 269)
-///    and `F_interp = sum(c_i . F_i)` (line 270)
-/// 6. Newton correction: `X_new = X_interp - H_mean^{-1} @ F_interp` (line 272)
-/// 7. Step reduction: factor = 0.5 if ||F_hist|| < thresh * 10 (lines 300-302)
-/// 8. Step size cap via [`stepsize_blend`] (line 303)
+/// 1. Build combined forces: `F_i = g_vec_i + f_vec_i` (`Fhist`)
+/// 2. Compute error vectors: `e_i = H_mean^{-1} @ F_i` 
+/// 3. Build B-matrix: `B[i,j] = e_i . e_j`  
+/// 4. Solve `[B 1; 1^T 0] . c = [0,...,0, 1]^T`  
+/// 5. Interpolate: `X_interp = sum(c_i . X_i)` 
+///    and `F_interp = sum(c_i . F_i)`  
+/// 6. Newton correction: `X_new = X_interp - H_mean^{-1} @ F_interp`  
+/// 7. Step reduction: factor = 0.5 if ||F_hist|| < thresh * 10  
+/// 8. Step size cap via [`stepsize_blend`]  
 ///
 /// # Arguments
 ///
 /// * `opt_state` - Optimization state with history of geometries, combined
 ///   forces (via grad + f_vec), and true Hessians.
-/// * `max_step` - Maximum allowed step size (Python: `maxstep`).
-/// * `thresh_rms_g` - RMS gradient threshold for step reduction (Python: `conver[4]`).
+/// * `max_step` - Maximum allowed step size (`maxstep`).
+/// * `thresh_rms_g` - RMS gradient threshold for step reduction (`conver[4]`).
 /// * `reduced_factor` - Step reduction factor when activated.
 ///
 /// # Returns
@@ -3720,12 +3490,12 @@ pub fn gdiis_blend_step(
         return opt_state.geom_history.back().cloned().unwrap_or_default();
     }
 
-    // Build combined forces: F_i = g_vec_i + f_vec_i (Python's Fhist)
+    // Build combined forces: F_i = g_vec_i + f_vec_i (Fhist)
     let combined_forces: Vec<DVector<f64>> = (0..n)
         .map(|i| &opt_state.grad_history[i] + &opt_state.f_vec_history[i])
         .collect();
 
-    // Step 1: Compute error vectors: e_i = H_m^{-1} @ F_i (Python lines 256-258)
+    // Step 1: Compute error vectors: e_i = H_m^{-1} @ F_i  
     let h_mean = {
         let mut hm = DMatrix::zeros(
             opt_state.true_hess_history[0].nrows(),
@@ -3745,7 +3515,7 @@ pub fn gdiis_blend_step(
         .map(|f| lu.solve(f).unwrap_or_else(|| f.clone()))
         .collect();
 
-    // Step 2: Build B-matrix and solve for coefficients (Python lines 259-264)
+    // Step 2: Build B-matrix and solve for coefficients  
     let b_matrix = build_b_matrix(&errors);
     let mut rhs = DVector::zeros(n + 1);
     rhs[n] = 1.0;
@@ -3759,10 +3529,10 @@ pub fn gdiis_blend_step(
         fallback
     });
 
-    // Extract coefficients (drop the Lagrange multiplier, Python line 264)
+    // Extract coefficients (drop the Lagrange multiplier)
     let coeffs = solution.rows(0, n).clone_owned();
 
-    // Step 3: Interpolate geometry, force, and Hessian (Python lines 265-271)
+    // Step 3: Interpolate geometry, force, and Hessian 
     let mut x_interp = DVector::zeros(opt_state.geom_history[0].len());
     let mut f_interp = DVector::zeros(combined_forces[0].len());
     for i in 0..n {
@@ -3770,7 +3540,7 @@ pub fn gdiis_blend_step(
         f_interp += &combined_forces[i] * coeffs[i];
     }
 
-    // Step 4: Newton correction (Python line 272)
+    // Step 4: Newton correction 
     // X_new = X_interp - H_mean^{-1} @ F_interp
     let correction = lu.solve(&f_interp).unwrap_or_else(|| {
         // Fallback: use pre-computed mean Hessian inverse
@@ -3781,7 +3551,7 @@ pub fn gdiis_blend_step(
     });
     let mut x_new = x_interp - &correction;
 
-    // Step 5: Step reduction check (Python lines 300-302)
+    // Step 5: Step reduction check 
     let history_norm_sq: f64 = combined_forces
         .iter()
         .map(|f| f.norm_squared())
@@ -3802,7 +3572,7 @@ pub fn gdiis_blend_step(
         1.0
     };
 
-    // Apply step reduction and size cap (Python line 303)
+    // Apply step reduction and size cap 
     let last_geom = opt_state.geom_history.back().unwrap();
     x_new = stepsize_blend(last_geom, &x_new, max_step, factor);
 
@@ -3811,19 +3581,16 @@ pub fn gdiis_blend_step(
 
 /// GEDIIS_blend step: pure interpolation using Taylor expansion B-matrix.
 ///
-/// # Python Origin
-///
-/// `optimizer.py` `gdiis()` lines 274-294 when `gediis=True` (EDIIS portion).
 #[allow(non_snake_case)]
 ///
 /// # Algorithm
 ///
-/// 1. Build combined forces: `F_i = g_vec_i + f_vec_i` (Python's `Fhist`)
-/// 2. Build Taylor E-matrix: `E[i,j] = -(F_i-F_j).(X_i-X_j)` (lines 277-283)
-/// 3. Build block matrix: `[[E, 1], [1^T, 0]]` (lines 284-286)
-/// 4. RHS: `[-E_hist[0], ..., -E_hist[n-1], 1]^T` (line 287)
-/// 5. Solve for coefficients, drop last (lines 288-289)
-/// 6. Interpolate geometry and force (lines 290-294)
+/// 1. Build combined forces: `F_i = g_vec_i + f_vec_i`
+/// 2. Build Taylor E-matrix: `E[i,j] = -(F_i-F_j).(X_i-X_j)` 
+/// 3. Build block matrix: `[[E, 1], [1^T, 0]]` 
+/// 4. RHS: `[-E_hist[0], ..., -E_hist[n-1], 1]^T` 
+/// 5. Solve for coefficients, drop last 
+/// 6. Interpolate geometry and force 
 ///
 /// # Key Difference from [`gdiis_blend_step`]
 ///
@@ -3847,26 +3614,26 @@ pub fn gediis_blend_step(
         return opt_state.geom_history.back().cloned().unwrap_or_default();
     }
 
-    // Build combined forces: F_i = g_vec_i + f_vec_i (Python's Fhist)
+    // Build combined forces: F_i = g_vec_i + f_vec_i (Fhist)
     let combined_forces: Vec<DVector<f64>> = (0..n)
         .map(|i| &opt_state.grad_history[i] + &opt_state.f_vec_history[i])
         .collect();
 
-    // Step 1: Build Taylor E-matrix and block matrix (Python lines 277-286)
+    // Step 1: Build Taylor E-matrix and block matrix  
     let b_matrix = build_gediis_b_matrix_taylor(
         &combined_forces,
         &opt_state.geom_history,
         &opt_state.e1_history,
     );
 
-    // Step 2: Build RHS: [-E_hist, 1] (Python line 287)
+    // Step 2: Build RHS: [-E_hist, 1] 
     let mut rhs = DVector::zeros(n + 1);
     for i in 0..n {
         rhs[i] = -opt_state.e1_history[i];
     }
     rhs[n] = 1.0;
 
-    // Step 3: Solve for coefficients (Python line 288)
+    // Step 3: Solve for coefficients 
     let solution = b_matrix.lu().solve(&rhs).unwrap_or_else(|| {
         // Fallback: uniform coefficients
         let mut fallback = DVector::zeros(n + 1);
@@ -3876,12 +3643,10 @@ pub fn gediis_blend_step(
         fallback
     });
 
-    // Drop last coefficient (Lagrange multiplier, Python line 289)
+    // Drop last coefficient (Lagrange multiplier)
     let coeffs = solution.rows(0, n).clone_owned();
 
-    // Step 4: Interpolate geometry (Python lines 290-294)
-    // Note: tmpF is computed in Python but NEVER used (it shadows GDIIS tmpF).
-    // We only interpolate geometry.
+    // Step 4: Interpolate geometry 
     let mut x_interp = DVector::zeros(opt_state.geom_history[0].len());
     for i in 0..n {
         x_interp += &opt_state.geom_history[i] * coeffs[i];
@@ -3890,32 +3655,26 @@ pub fn gediis_blend_step(
     x_interp
 }
 
-/// Python-faithful hybrid GEDIIS/GDIIS step.
+/// Hybrid GEDIIS/GDIIS step.
 ///
-/// # Python Origin
-///
-/// `optimizer.py` `gdiis(gediis=True)` full function, lines 248-317.
 #[allow(non_snake_case)]
 /// Combines GDIIS_blend and GEDIIS_blend into one step with blend.
 ///
 /// # Algorithm
 ///
-/// **Phase 1 — GDIIS** (lines 253-272):
+/// **Phase 1 — GDIIS**:
 /// - Error vectors via inverted mean true Hessian
 /// - Newton correction on interpolated geometry
 ///
-/// **Phase 2 — EDIIS** (lines 274-294):
+/// **Phase 2 — EDIIS**:
 /// - Taylor expansion B-matrix with energy RHS
 /// - Pure interpolation, NO Newton correction
 ///
-/// **Phase 3 — Hybrid blend** (line 295, newF is undefined):
+/// **Phase 3 — Hybrid blend** :
 /// ```text
 /// x_new = (x_gdiis + x_ediis) / 2
 /// ```
-/// Python line 295 uses `newF` which is UNDEFINED (NameError — broken variable).
-/// We interpret the intended formula as a pure geometric average, ignoring newF.
-///
-/// **Phase 4 — Step control** (lines 300-303):
+/// **Phase 4 — Step control**:
 /// - Factor = 0.5 if `||F_hist|| < thresh_rms_g * 10`
 /// - Step capped to `max_step`
 ///
@@ -3923,8 +3682,8 @@ pub fn gediis_blend_step(
 ///
 /// * `opt_state` - Optimization state with geometry, force, Hessian, and
 ///   energy history.
-/// * `max_step` - Maximum allowed step size (Python: `maxstep`).
-/// * `thresh_rms_g` - RMS gradient threshold (Python: `conver[4]`).
+/// * `max_step` - Maximum allowed step size (`maxstep`).
+/// * `thresh_rms_g` - RMS gradient threshold (`conver[4]`).
 /// * `reduced_factor` - Step reduction factor when activated.
 ///
 /// # Returns
@@ -3943,15 +3702,13 @@ pub fn fixed_blend_step(
         return opt_state.geom_history.back().cloned().unwrap_or_default();
     }
 
-    // Build combined forces: F_i = g_vec_i + f_vec_i (Python's Fhist)
+    // Build combined forces: F_i = g_vec_i + f_vec_i (Fhist)
     let combined_forces: Vec<DVector<f64>> = (0..n)
         .map(|i| &opt_state.grad_history[i] + &opt_state.f_vec_history[i])
         .collect();
 
     // =================== Phase 1: GDIIS ===================
-    // Python lines 253-272
-
-    // Compute error vectors: e_i = H_m^{-1} @ F_i (Python lines 256-258)
+    // Compute error vectors: e_i = H_m^{-1} @ F_i
     let h_mean = {
         let mut hm = DMatrix::zeros(
             opt_state.true_hess_history[0].nrows(),
@@ -3971,7 +3728,7 @@ pub fn fixed_blend_step(
         .map(|f| lu.solve(f).unwrap_or_else(|| f.clone()))
         .collect();
 
-    // Build GDIIS B-matrix and solve (Python lines 259-264)
+    // Build GDIIS B-matrix and solve 
     let b_gdiis = build_b_matrix(&errors);
     let mut rhs_gdiis = DVector::zeros(n + 1);
     rhs_gdiis[n] = 1.0;
@@ -3985,7 +3742,7 @@ pub fn fixed_blend_step(
     });
     let c_gdiis = solution_gdiis.rows(0, n).clone_owned();
 
-    // Interpolate geometry and force (Python lines 265-271)
+    // Interpolate geometry and force
     let mut x_interp_gdiis = DVector::zeros(opt_state.geom_history[0].len());
     let mut f_interp_gdiis = DVector::zeros(combined_forces[0].len());
     for i in 0..n {
@@ -3993,7 +3750,7 @@ pub fn fixed_blend_step(
         f_interp_gdiis += &combined_forces[i] * c_gdiis[i];
     }
 
-    // Newton correction (Python line 272)
+    // Newton correction
     let correction = lu.solve(&f_interp_gdiis).unwrap_or_else(|| {
         // Fallback: use pre-computed mean Hessian inverse
         h_mean_inv
@@ -4004,23 +3761,22 @@ pub fn fixed_blend_step(
     let x_gdiis = x_interp_gdiis - &correction;
 
     // =================== Phase 2: EDIIS ===================
-    // Python lines 274-294
 
-    // Build Taylor E-matrix (Python lines 277-286)
+    // Build Taylor E-matrix
     let b_ediis = build_gediis_b_matrix_taylor(
         &combined_forces,
         &opt_state.geom_history,
         &opt_state.e1_history,
     );
 
-    // RHS: [-E_hist, 1] (Python line 287)
+    // RHS: [-E_hist, 1]
     let mut rhs_ediis = DVector::zeros(n + 1);
     for i in 0..n {
         rhs_ediis[i] = -opt_state.e1_history[i];
     }
     rhs_ediis[n] = 1.0;
 
-    // Solve (Python line 288)
+    // Solve 
     let solution_ediis = b_ediis.lu().solve(&rhs_ediis).unwrap_or_else(|| {
         let mut fallback = DVector::zeros(n + 1);
         for i in 0..n {
@@ -4030,25 +3786,18 @@ pub fn fixed_blend_step(
     });
     let c_ediis = solution_ediis.rows(0, n).clone_owned();
 
-    // Interpolate geometry (Python lines 292-294)
+    // Interpolate geometry 
     let mut x_ediis = DVector::zeros(opt_state.geom_history[0].len());
     for i in 0..n {
         x_ediis += &opt_state.geom_history[i] * c_ediis[i];
     }
 
     // =================== Phase 3: Hybrid Blend ===================
-    // Python line 295: newX = (newX + tmpX + newF) / 2
-    //                    ^GDIIS  ^EDIIS  ^newF is UNDEFINED (broken variable)
     //
-    // Python's `newF` is undefined at this point (NameError).
-    // We interpret the intended formula as ignoring newF:
-    //   newX = (GDIIS_geom + EDIIS_geom) / 2
     let mut x_new = (&x_gdiis + &x_ediis) / 2.0;
 
     // =================== Phase 4: Step Control ===================
-    // Python lines 300-303
 
-    // Step reduction check (Python lines 300-302)
     let history_norm_sq: f64 = combined_forces
         .iter()
         .map(|f| f.norm_squared())
@@ -4069,7 +3818,7 @@ pub fn fixed_blend_step(
         1.0
     };
 
-    // Apply step reduction and size cap (Python line 303)
+    // Apply step reduction and size cap 
     let last_geom = opt_state.geom_history.back().unwrap();
     x_new = stepsize_blend(last_geom, &x_new, max_step, factor);
 
@@ -4116,7 +3865,7 @@ pub fn gradient_blend_step(
         return opt_state.geom_history.back().cloned().unwrap_or_default();
     }
 
-    // Build combined forces: F_i = g_vec_i + f_vec_i (Python's Fhist)
+    // Build combined forces: F_i = g_vec_i + f_vec_i (Fhist)
     let combined_forces: Vec<DVector<f64>> = (0..n)
         .map(|i| &opt_state.grad_history[i] + &opt_state.f_vec_history[i])
         .collect();
@@ -4449,7 +4198,7 @@ pub fn select_blend_step(
     };
     if config.print_level >= 1 {
         println!(
-            "Using {} optimizer (step {}, trust_radius = {:.3} Å)",
+            "Using {} optimizer (step {}, trust_radius = {:.3} A)",
             mode_label, step, blend_state.trust_radius
         );
     }

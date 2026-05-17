@@ -41,9 +41,13 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            ~/.cargo/bin
             target
           key: ${{ runner.os }}-cargo-doc-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-doc-
+
+      - name: Install mdbook-katex
+        run: cargo install mdbook-katex
 
       - name: Copy assets into mdBook source
         run: |

@@ -202,12 +202,12 @@ H     -1.274400    1.129883   -0.660641
 H     -2.379567    1.780215   -1.879473
 *
 
-*tail1
-# Additional Gaussian keywords for state 1
+*tail_a
+# Additional Gaussian keywords for state a
 *
 
-*tail2
-# Additional Gaussian keywords for state 2
+*tail_b
+# Additional Gaussian keywords for state b
 *
 
 program = gaussian

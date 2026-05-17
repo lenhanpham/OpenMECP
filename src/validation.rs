@@ -63,7 +63,7 @@ impl std::error::Error for ValidationError {}
 
 /// Validates run mode compatibility with the selected QM program and configuration.
 ///
-/// This function performs comprehensive validation following the Python MECP.py logic
+/// This function performs comprehensive validation 
 /// and provides detailed error messages and suggestions for fixing issues.
 ///
 /// # Arguments

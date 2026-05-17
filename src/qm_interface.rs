@@ -295,8 +295,6 @@ impl QMInterface for GaussianInterface {
                 }
             }
             // === 2. TD-DFT / CIS / TDA Energy ===
-            // CRITICAL: For MECP compatibility, always return ground-state energy
-            // Python MECP.py ignores state parameter and always uses ground state
             else if line.contains("E(TD-HF/TD-DFT)") || line.contains("E(CIS/TDA)") {
                 // Only parse ground state energy for MECP compatibility
                 if line.contains("E(TD-HF/TD-DFT)") {
@@ -311,7 +309,7 @@ impl QMInterface for GaussianInterface {
             }
             // === 3. MP2 Archive Line ===
             else if self.mp2 && trimmed.starts_with('\\') {
-                // Handle multi-line archive entries (Python compatibility)
+                // Handle multi-line archive entries 
                 if !archive_part.is_empty() {
                     archive_part.push('\n'); // Add newline for continuation
                 }
@@ -341,7 +339,6 @@ impl QMInterface for GaussianInterface {
             } else if in_geom {
                 if let Some(caps) = GEOM_RE.captures(line) {
                     // CRITICAL: Do NOT rebuild elements to preserve atom order
-                    // Python keeps original input order, constraints depend on this
                     geom_coords.push(caps[2].parse().unwrap_or(0.0));
                     geom_coords.push(caps[3].parse().unwrap_or(0.0));
                     geom_coords.push(caps[4].parse().unwrap_or(0.0));

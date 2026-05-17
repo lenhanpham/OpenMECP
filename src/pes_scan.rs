@@ -1,7 +1,6 @@
 //! PES (Potential Energy Surface) scanning functionality.
 //!
 //! This module implements comprehensive PES scanning capabilities following
-//! the Python MECP.py implementation exactly. It supports:
 //!
 //! - 1D and 2D potential energy surface scans
 //! - Automatic scan grid generation
@@ -32,7 +31,7 @@ pub struct ScanPointResult {
     pub geometry: Geometry,
 }
 
-/// Analyzes and collects PES scan results following Python MECP.py logic.
+/// Analyzes and collects PES scan results.
 ///
 /// This function implements scan result analysis capabilities including:
 /// - Energy surface data collection

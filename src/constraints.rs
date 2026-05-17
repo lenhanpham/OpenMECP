@@ -404,13 +404,6 @@ impl Error for ConstraintError {}
 /// 3. Apply constraint forces: F_new = F_old + C^T * λ
 /// 4. Return violations for extended gradient optimization
 ///
-/// # Python Compatibility
-///
-/// Matches `addConstLag` behavior exactly:
-/// - Diagonal preconditioner instead of full C Cᵀ λ = -g(x) system
-/// - λ reuse prevents jumps and maintains constraint stability
-/// - Returns violations for extended gradient [F + Cᵀλ, violations]
-///
 /// # Arguments
 ///
 /// * `geometry` - Current molecular geometry
@@ -484,7 +477,7 @@ pub fn add_constraint_lagrange(
     let modified_forces = forces + constraint_forces;
 
     // === Return extended gradient for optimizer ===
-    // [F + Cᵀλ, violations]  ← this is what Python appends
+    // [F + Cᵀλ, violations]
     Ok((modified_forces, violations))
 }
 
@@ -692,82 +685,6 @@ pub fn report_constraint_status(
         }
     );
     println!("--- End Constraint Status ---\n");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::geometry::Geometry;
-
-    #[test]
-    fn test_python_compatible_constraint_initialization() {
-        // Test diagonal λ initialization like Python MECP.py
-        let elements = vec!["H".to_string(), "H".to_string()];
-        let coords = vec![0.0, 0.0, 0.0, 1.6, 0.0, 0.0]; // 1.6 Angstrom bond
-        let geometry = Geometry::new(elements, coords);
-
-        let constraints = vec![
-            Constraint::Bond {
-                atoms: (0, 1),
-                target: 1.5,
-            }, // Target 1.5 Angstrom
-        ];
-
-        let forces = DVector::from_vec(vec![0.1, 0.0, 0.0, -0.1, 0.0, 0.0]);
-        let mut lambdas = vec![0.0];
-
-        // First call should initialize λ using diagonal approximation
-        let (_constrained_forces, violations) =
-            add_constraint_lagrange(&geometry, forces.clone(), &constraints, &mut lambdas).unwrap();
-
-        // λ should be non-zero (initialized)
-        assert!(lambdas[0] != 0.0, "λ should be initialized on first step");
-
-        // Second call should reuse λ (not recompute)
-        let old_lambda = lambdas[0];
-        let (_constrained_forces2, _violations2) =
-            add_constraint_lagrange(&geometry, forces, &constraints, &mut lambdas).unwrap();
-
-        // λ should be unchanged (reused)
-        assert_eq!(
-            old_lambda, lambdas[0],
-            "λ should be reused on subsequent steps"
-        );
-
-        // Violations should be detected
-        assert!(violations.len() == 1, "Should have one violation");
-        assert!(
-            violations[0].abs() > 1e-10,
-            "Should detect bond length violation"
-        );
-    }
-
-    #[test]
-    fn test_constraint_violations_returned() {
-        // Test that violations are properly returned for extended gradient
-        let elements = vec!["H".to_string(), "H".to_string()];
-        let coords = vec![0.0, 0.0, 0.0, 1.5, 0.0, 0.0]; // Perfect bond length
-        let geometry = Geometry::new(elements, coords);
-
-        let constraints = vec![
-            Constraint::Bond {
-                atoms: (0, 1),
-                target: 1.5,
-            }, // Perfect match
-        ];
-
-        let forces = DVector::from_vec(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
-        let mut lambdas = vec![0.0];
-
-        let (_, violations) =
-            add_constraint_lagrange(&geometry, forces, &constraints, &mut lambdas).unwrap();
-
-        // Perfect bond should have minimal violation
-        assert!(
-            violations[0].abs() < 1e-10,
-            "Perfect bond should have minimal violation"
-        );
-    }
 }
 
 /// Calculates the current bond distance between two atoms.

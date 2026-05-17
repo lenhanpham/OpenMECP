@@ -106,8 +106,6 @@ impl Default for Thresholds {
             rms_dis: 0.0025,
             max_dis: 0.004,
             // All gradients are in Ha/Å (standardized internal unit).
-            // Python KST48 reference uses Ha/Bohr (0.0007 / 0.0005).
-            // Converted: 0.0007 × 1.8897 = 0.001323, 0.0005 × 1.8897 = 0.000945
             max_grad: 0.001323,
             rms_grad: 0.000945,
         }
@@ -262,7 +260,7 @@ pub struct Config {
     /// - >= max_steps: Use BFGS only (no DIIS)
     /// - Other values: Switch from BFGS to DIIS at specified step
     pub switch_step: usize,
-    /// Scaling factor for BFGS step (rho in Python MECP.py)
+    /// Scaling factor for BFGS step 
     pub bfgs_rho: f64,
     /// Maximum number of history entries for DIIS optimizers (GDIIS/GEDIIS)
     ///
@@ -321,7 +319,7 @@ pub struct Config {
     ///
     /// When `use_robust_diis = false` (standard mode):
     /// - "sequential" (default): Standard GDIIS/GEDIIS using mean inverse Hessian
-    /// - "blend": New Python-faithful GDIIS_blend using mean true Hessian inversion
+    /// - "blend": New GDIIS_blend using mean true Hessian inversion
     ///
     /// Also settable via `use_gediis = blend` / `use_gediis = sequential` in input.
     ///
@@ -487,8 +485,6 @@ impl Default for Config {
         Self {
             thresholds: Thresholds::default(),
             max_steps: 100,
-            // Python MAX_STEP_SIZE = 0.1 — this is in ANGSTROM (not Bohr!)
-            // Verified: Python log shows step = 0.1 Å, RMS = 0.1/sqrt(3N) in Å
             max_step_size: 0.1,
             reduced_factor: 0.5,
             nprocs: 1,
@@ -530,7 +526,7 @@ impl Default for Config {
             gediis_switch_step: 0.001, // 2.5×10⁻³ Bohr → Å for phase 2→3 switch
             switch_step: 3,          // Default to current behavior (BFGS for first 3 steps)
             bfgs_rho: 15.0,
-            max_history: 4, // Match Python's history size (keeps max 4 gradients)
+            max_history: 4, // History size (keeps max 4 gradients)
             print_checkpoint: false, // Default to saving checkpoints for backward compatibility
             smart_history: false, // Default to traditional FIFO history management
             print_level: 1,      // Default: normal output level
@@ -560,7 +556,7 @@ impl Default for Config {
 impl Config {
     /// Returns `true` when the GEDIIS variant is set to `"blend"`.
     ///
-    /// `"blend"` activates the new Python-faithful GDIIS_blend implementation
+    /// `"blend"` activates the new GDIIS_blend implementation
     /// with blended mean Hessian error vectors and trust-region step control.
     pub fn gediis_variant_is_blend(&self) -> bool {
         self.gediis_variant == "blend"
@@ -639,7 +635,6 @@ pub enum RunMode {
     ///
     /// - Recommended for most calculations
     /// - Balanced between speed and robustness
-    /// - Follows the exact Python MECP.py workflow
     Normal,
     /// Restart from existing checkpoint file
     ///

@@ -6,9 +6,9 @@
 
 **OpenMECP** is a high-performance Rust implementation of the MECP (Minimum Energy Crossing Point)
 optimizer for locating crossing points between two potential energy surfaces (PES) in quantum
-chemistry calculations.
+chemistry calculations. OpenMECP is developed and maintained by Dr. Le Nhan Pham.
 
-> **Status**: Beta testing phase — OpenMECP is robust and ready for production MECP calculations.
+> **Status**: Beta testing phase — OpenMECP is highly robust and ready for production MECP calculations.
 > All supported features are actively tested and improved.
 
 ## What is an MECP?
@@ -63,8 +63,6 @@ $$\hat{\mathbf{x}} = \frac{\mathbf{f}_1 - \mathbf{f}_2}{|\mathbf{f}_1 - \mathbf{
 
 ## Citation
 
-If you use OpenMECP in your research, please cite the original MECP algorithm:
+If you use OpenMECP in your research, please cite this preprint:
 
-> Harvey, J. N.; Aschi, M.; Schwarz, H.; Koch, W.
-> *The singlet and triplet states of phenyl cation. A hybrid approach for locating minimum energy crossing points between non-interacting potential energy surfaces.*
-> **Theor. Chem. Acc.** 1998, **99**, 95–99.
+>Pham, Le Nhan. OpenMECP: *A High-Performance Rust Implementation for the Rigorous Location of Minimum Energy Crossing Points in Chemical Dynamics.* 2026, https://doi.org/10.13140/RG.2.2.21309.73443.

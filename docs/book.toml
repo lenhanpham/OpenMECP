@@ -6,11 +6,13 @@ src = "src"
 language = "en"
 
 [output.html]
+mathjax-support = true
 site-url = "/OpenMECP/"
 git-repository-url = "https://github.com/lenhanpham/OpenMECP"
 git-repository-icon = "fa-github"
 edit-url-template = "https://github.com/lenhanpham/OpenMECP/edit/main/docs/{path}"
 additional-css = []
+additional-js = ["theme/nav-title-link.js"]
 no-section-label = false
 fold.enable = true
 fold.level = 1

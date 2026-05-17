@@ -19,9 +19,11 @@
 
 A high-performance Rust implementation of the MECP (Minimum Energy Crossing Point) optimizer for locating crossing points between two potential energy surfaces in quantum chemistry calculations.
 
-## Important Note
+## Note
 
-### **The program is under active development. All supported features are being tested and improved.**
+- **OpenMECP is highly robust and ready for production runs to locate MECPs now.** 
+
+- **The program is under active development. All supported features are being tested and improved.**
 
 **Status**: Beta testing phase
 
@@ -551,13 +553,13 @@ hessian = bofill
 
 #### Convergence Thresholds
 
-| Keyword     | Type  | Default      | Description                                    |
-| ----------- | ----- | ------------ | ---------------------------------------------- |
-| `delta_e`   | float | `0.000050`   | Energy difference threshold (hartree)          |
-| `rms_dis`   | float | `0.0025`     | RMS displacement threshold (Å)                 |
-| `max_dis`   | float | `0.004`      | Max displacement threshold (Å)                 |
-| `max_grad`  | float | `0.001323`   | Max gradient threshold (hartree/Å)             |
-| `rms_grad`  | float | `0.000945`   | RMS gradient threshold (hartree/Å)             |
+| Keyword    | Type  | Default    | Description                           |
+| ---------- | ----- | ---------- | ------------------------------------- |
+| `delta_e`  | float | `0.000050` | Energy difference threshold (hartree) |
+| `rms_dis`  | float | `0.0025`   | RMS displacement threshold (Å)        |
+| `max_dis`  | float | `0.004`    | Max displacement threshold (Å)        |
+| `max_grad` | float | `0.001323` | Max gradient threshold (hartree/Å)    |
+| `rms_grad` | float | `0.000945` | RMS gradient threshold (hartree/Å)    |
 
 #### Constraints and Fixed Atoms
 
@@ -584,10 +586,10 @@ hessian = bofill
 
 #### Program Commands
 
-| Keyword       | Type   | Default   | Description      |
-| ------------- | ------ | --------- | ---------------- |
-| `gau_comm`    | string | `"g16"`   | Gaussian command |
-| `orca_comm`   | string | `"orca"`  | ORCA command     |
+| Keyword     | Type   | Default  | Description      |
+| ----------- | ------ | -------- | ---------------- |
+| `gau_comm`  | string | `"g16"`  | Gaussian command |
+| `orca_comm` | string | `"orca"` | ORCA command     |
 
 #### ONIOM-Specific
 
@@ -601,7 +603,7 @@ hessian = bofill
 
 | Keyword                 | Type    | Default | Description                             |
 | ----------------------- | ------- | ------- | --------------------------------------- |
-| `charge_b`               | integer | —       | Separate charge for state B             |
+| `charge_b`              | integer | —       | Separate charge for state B             |
 | `basis`                 | string  | `""`    | Basis set specification                 |
 | `solvent`               | string  | `""`    | Solvent model specification             |
 | `dispersion`            | string  | `""`    | Dispersion correction                   |

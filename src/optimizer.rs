@@ -3339,41 +3339,6 @@ pub fn stepsize_blend(
     old_x + d_x
 }
 
-/// Computes GDIIS error vectors by INVERTING the mean true Hessian.
-///
-#[allow(dead_code)]
-fn compute_error_vectors_blend(
-    combined_forces: &[DVector<f64>],
-    true_hessians: &VecDeque<DMatrix<f64>>,
-) -> Vec<DVector<f64>> {
-    let n = combined_forces.len();
-    if n == 0 || true_hessians.is_empty() {
-        return Vec::new();
-    }
-
-    // Compute mean of TRUE Hessians: Hm = sum(Hhist) / nX
-    let mut h_mean = DMatrix::zeros(
-        true_hessians[0].nrows(),
-        true_hessians[0].ncols(),
-    );
-    for hess in true_hessians {
-        h_mean += hess;
-    }
-    h_mean /= n as f64;
-
-    // Compute error vectors by solving Hm @ e_i = F_i for each i.
-    let lu = h_mean.lu();
-    combined_forces
-        .iter()
-        .map(|f| {
-            lu.solve(f).unwrap_or_else(|| {
-                // Fallback if Hessian is singular: return force itself
-                f.clone()
-            })
-        })
-        .collect()
-}
-
 /// Builds the GEDIIS B-matrix using the Taylor expansion formula.
 ///
 /// # Formula

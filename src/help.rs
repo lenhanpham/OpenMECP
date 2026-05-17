@@ -916,7 +916,7 @@ pub const FEATURES: &[FeatureInfo] = &[
 
 /// Print global help
 pub fn print_global_help() {
-    println!("**** OpenMECP: Minimum Energy Crossing Point Optimizer****");
+    println!("**** OpenMECP: Minimum Energy Crossing Point Optimizer ****");
     println!(
         "              Version {}  Release date: 2026",
         env!("CARGO_PKG_VERSION")

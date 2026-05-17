@@ -65,4 +65,4 @@ $$\hat{\mathbf{x}} = \frac{\mathbf{f}_1 - \mathbf{f}_2}{|\mathbf{f}_1 - \mathbf{
 
 If you use OpenMECP in your research, please cite this preprint:
 
->Pham, Le Nhan. OpenMECP: *A High-Performance Rust Implementation for the Rigorous Location of Minimum Energy Crossing Points in Chemical Dynamics.* 2026, https://doi.org/10.13140/RG.2.2.21309.73443.
+>**Pham, Le Nhan**. *OpenMECP: A High-Performance Rust Implementation for the Rigorous Location of Minimum Energy Crossing Points in Chemical Dynamics.* 2026, https://doi.org/10.13140/RG.2.2.21309.73443.

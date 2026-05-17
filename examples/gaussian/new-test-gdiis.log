@@ -10,7 +10,7 @@
  # 2026, https://doi.org/10.13140/RG.2.2.21309.73443                             #
  #-------------------------------------------------------------------------------#
 
-[2026-05-16T13:29:13.962Z INFO  omecp::settings] Configuration loaded from: built-in defaults (no configuration file found)
+[2026-05-17T00:41:13.608Z INFO  omecp::settings] Configuration loaded from: built-in defaults (no configuration file found)
 ============================================================================
 CONFIGURATION AND SETTINGS
 ============================================================================
@@ -40,6 +40,8 @@ Input File Parameters:
     Switch Step:              3
     BFGS Rho:                 15
     Reduced Factor:           0.5
+    Step Reduction Multiplier:10
+    Steepest Descent Step:    0.01
     Smart History:            false (default)
     Print Checkpoint:         false
   BAGEL Model:                model.inp

@@ -96,14 +96,14 @@ fn print_convergence_status(
     println!(
         "  1. Energy difference             {:>12.8}      {:>12.8}       {}   ",
         de,
-        config.thresholds.de,
+        config.thresholds.delta_e,
         if conv.de_converged { "YES" } else { "NO " }
     );
 
     println!(
         "  2. RMS gradient                  {:>12.8}      {:>12.8}       {}   ",
         rms_grad,
-        config.thresholds.rms_g,
+        config.thresholds.rms_grad,
         if conv.rms_grad_converged {
             "YES"
         } else {
@@ -114,7 +114,7 @@ fn print_convergence_status(
     println!(
         "  3. Max gradient                  {:>12.8}      {:>12.8}       {}   ",
         max_grad,
-        config.thresholds.max_g,
+        config.thresholds.max_grad,
         if conv.max_grad_converged {
             "YES"
         } else {
@@ -125,7 +125,7 @@ fn print_convergence_status(
     println!(
         "  4. RMS displacement              {:>12.8}      {:>12.8}       {}   ",
         rms_disp,
-        config.thresholds.rms, 
+        config.thresholds.rms_dis, 
         if conv.rms_disp_converged {
             "YES"
         } else {
@@ -923,20 +923,20 @@ fn print_configuration(
     println!("Convergence Thresholds:");
     println!(
         "  Energy Difference (dE):     {:>12.8} hartree ",
-        input_config.thresholds.de
+        input_config.thresholds.delta_e
     );
     println!(
         "  RMS Gradient:               {:>12.8} hartree/A ",
-        input_config.thresholds.rms_g
+        input_config.thresholds.rms_grad
     );
     println!(
         "  Max Gradient:               {:>12.8} hartree/A ",
-        input_config.thresholds.max_g
+        input_config.thresholds.max_grad
     );
     // Displacement thresholds: stored in Angstrom
     println!(
         "  RMS Displacement:           {:>12.8} angstrom ",
-        input_config.thresholds.rms
+        input_config.thresholds.rms_dis
     );
     println!(
         "  Max Displacement:           {:>12.8} angstrom ",
@@ -1182,7 +1182,7 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Check if LST interpolation is requested
-    if input_data.lst1.is_some() && input_data.lst2.is_some() {
+    if input_data.lst_a.is_some() && input_data.lst_b.is_some() {
         return run_lst_interpolation(input_data, &*qm, job_dir);
     }
 
@@ -1274,13 +1274,13 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         qm.write_input(
             &input_data.geometry,
             &pre_header_a,
-            &input_data.tail1,
+            &input_data.tail_a,
             Path::new(&pre_a_path),
         )?;
         qm.write_input(
             &input_data.geometry,
             &pre_header_b,
-            &input_data.tail2,
+            &input_data.tail_b,
             Path::new(&pre_b_path),
         )?;
 
@@ -1549,13 +1549,13 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     qm.write_input(
         &geometry,
         &header_a,
-        &input_data.tail1,
+        &input_data.tail_a,
         Path::new(&initial_a_path),
     )?;
     qm.write_input(
         &geometry,
         &header_b,
-        &input_data.tail2,
+        &input_data.tail_b,
         Path::new(&initial_b_path),
     )?;
 
@@ -1735,13 +1735,13 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 qm.write_input(
                     &geometry,
                     &header_a,
-                    &input_data.tail1,
+                    &input_data.tail_a,
                     Path::new(&step_name_a),
                 )?;
                 qm.write_input(
                     &geometry,
                     &header_b,
-                    &input_data.tail2,
+                    &input_data.tail_b,
                     Path::new(&step_name_b),
                 )?;
 
@@ -1756,8 +1756,8 @@ fn run_mecp(input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
                     step,
                     &header_a,
                     &header_b,
-                    &input_data.tail1,
-                    &input_data.tail2,
+                    &input_data.tail_a,
+                    &input_data.tail_b,
                     qm.as_ref(),
                 )?;
             }
@@ -2189,8 +2189,8 @@ fn run_pes_scan(
                 config,
                 &mut geometry,
                 &constraints,
-                &input_data.tail1,
-                &input_data.tail2,
+                &input_data.tail_a,
+                &input_data.tail_b,
                 &input_data.fixed_atoms,
                 qm,
                 job_dir,
@@ -2314,8 +2314,8 @@ fn create_scan_constraint(scan_type: &config::ScanType, value: f64) -> constrain
 /// * `config` - Configuration parameters
 /// * `geometry` - Starting geometry for this scan point
 /// * `constraints` - All constraints including scan constraints
-/// * `tail1` - Tail section for state A
-/// * `tail2` - Tail section for state B
+/// * `tail_a` - Tail section for state A
+/// * `tail_b` - Tail section for state B
 /// * `fixed_atoms` - List of fixed atom indices
 /// * `qm` - QM interface for running calculations
 ///
@@ -2327,8 +2327,8 @@ fn execute_pes_scan_point(
     config: &config::Config,
     geometry: &mut geometry::Geometry,
     constraints: &[constraints::Constraint],
-    tail1: &str,
-    tail2: &str,
+    tail_a: &str,
+    tail_b: &str,
     fixed_atoms: &[usize],
     qm: &dyn qm_interface::QMInterface,
     job_dir: &str,
@@ -2345,8 +2345,8 @@ fn execute_pes_scan_point(
         config,
         geometry,
         constraints,
-        tail1,
-        tail2,
+        tail_a,
+        tail_b,
         fixed_atoms,
         qm,
         job_dir,
@@ -2561,8 +2561,8 @@ fn run_single_optimization(
     config: &config::Config,
     geometry: &mut geometry::Geometry,
     constraints: &[constraints::Constraint],
-    tail1: &str,
-    tail2: &str,
+    tail_a: &str,
+    tail_b: &str,
     fixed_atoms: &[usize],
     qm: &dyn qm_interface::QMInterface,
     job_dir: &str,
@@ -2603,8 +2603,8 @@ fn run_single_optimization(
         let pre_a_path = format!("{}/pre_A.{}", job_dir, ext);
         let pre_b_path = format!("{}/pre_B.{}", job_dir, ext);
 
-        qm.write_input(geometry, &pre_header_a, tail1, Path::new(&pre_a_path))?;
-        qm.write_input(geometry, &pre_header_b, tail2, Path::new(&pre_b_path))?;
+        qm.write_input(geometry, &pre_header_a, tail_a, Path::new(&pre_a_path))?;
+        qm.write_input(geometry, &pre_header_b, tail_b, Path::new(&pre_b_path))?;
 
         println!("Running pre-point calculation for state B...");
         qm.run_calculation(Path::new(&pre_b_path))?;
@@ -2710,8 +2710,8 @@ fn run_single_optimization(
     let initial_a_path = format!("{}/0_A.{}", job_dir, ext);
     let initial_b_path = format!("{}/0_B.{}", job_dir, ext);
 
-    qm.write_input(geometry, &header_a, tail1, Path::new(&initial_a_path))?;
-    qm.write_input(geometry, &header_b, tail2, Path::new(&initial_b_path))?;
+    qm.write_input(geometry, &header_a, tail_a, Path::new(&initial_a_path))?;
+    qm.write_input(geometry, &header_b, tail_b, Path::new(&initial_b_path))?;
     qm.run_calculation(Path::new(&initial_a_path))?;
     qm.run_calculation(Path::new(&initial_b_path))?;
 
@@ -2818,8 +2818,8 @@ fn run_single_optimization(
         let step_a_path = format!("job_dir/{}_A.{}", step, ext);
         let step_b_path = format!("job_dir/{}_B.{}", step, ext);
 
-        qm.write_input(geometry, &header_a, tail1, Path::new(&step_a_path))?;
-        qm.write_input(geometry, &header_b, tail2, Path::new(&step_b_path))?;
+        qm.write_input(geometry, &header_a, tail_a, Path::new(&step_a_path))?;
+        qm.write_input(geometry, &header_b, tail_b, Path::new(&step_b_path))?;
         qm.run_calculation(Path::new(&step_a_path))?;
         qm.run_calculation(Path::new(&step_b_path))?;
 
@@ -2929,8 +2929,8 @@ fn run_lst_interpolation(
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n****Running Advanced LST Interpolation****");
 
-    let geom1 = input_data.lst1.as_ref().unwrap();
-    let geom2 = input_data.lst2.as_ref().unwrap();
+    let geom1 = input_data.lst_a.as_ref().unwrap();
+    let geom2 = input_data.lst_b.as_ref().unwrap();
     let config = &input_data.config;
 
     // Choose interpolation method
@@ -3002,8 +3002,8 @@ fn run_lst_interpolation(
         let step_a_path = format!("job_dir/{}_A.{}", num, ext);
         let step_b_path = format!("job_dir/{}_B.{}", num, ext);
 
-        qm.write_input(geom, &header_a, &input_data.tail1, Path::new(&step_a_path))?;
-        qm.write_input(geom, &header_b, &input_data.tail2, Path::new(&step_b_path))?;
+        qm.write_input(geom, &header_a, &input_data.tail_a, Path::new(&step_a_path))?;
+        qm.write_input(geom, &header_b, &input_data.tail_b, Path::new(&step_b_path))?;
     }
 
     println!(
@@ -3237,7 +3237,7 @@ fn run_pre_point_gaussian(
     qm.write_input(
         geometry,
         header_b,
-        &input_data.tail2,
+        &input_data.tail_b,
         Path::new(&pre_b_path),
     )?;
     qm.run_calculation(Path::new(&pre_b_path))?;
@@ -3283,7 +3283,7 @@ fn run_pre_point_gaussian(
         qm.write_input(
             geometry,
             &header_a_modified,
-            &input_data.tail1,
+            &input_data.tail_a,
             Path::new(&pre_a_path),
         )?;
     } else {
@@ -3292,7 +3292,7 @@ fn run_pre_point_gaussian(
         qm.write_input(
             geometry,
             header_a,
-            &input_data.tail1,
+            &input_data.tail_a,
             Path::new(&pre_a_path),
         )?;
     }
@@ -3325,7 +3325,7 @@ fn run_pre_point_orca(
     qm.write_input(
         geometry,
         header_b,
-        &input_data.tail2,
+        &input_data.tail_b,
         Path::new("job_dir/pre_B.inp"),
     )?;
     qm.run_calculation(Path::new("job_dir/pre_B.inp"))?;
@@ -3384,7 +3384,7 @@ fn run_pre_point_orca(
     qm.write_input(
         geometry,
         header_a,
-        &input_data.tail1,
+        &input_data.tail_a,
         Path::new("job_dir/pre_A.inp"),
     )?;
     qm.run_calculation(Path::new("job_dir/pre_A.inp"))?;
@@ -3438,13 +3438,13 @@ fn run_pre_point_xtb(
     qm.write_input(
         geometry,
         header_a,
-        &input_data.tail1,
+        &input_data.tail_a,
         Path::new("job_dir/pre_A.xyz"),
     )?;
     qm.write_input(
         geometry,
         header_b,
-        &input_data.tail2,
+        &input_data.tail_b,
         Path::new("job_dir/pre_B.xyz"),
     )?;
 
@@ -3700,8 +3700,8 @@ fn run_xtb_step(
     step: usize,
     header_a: &str,
     header_b: &str,
-    tail1: &str,
-    tail2: &str,
+    tail_a: &str,
+    tail_b: &str,
     qm: &dyn qm_interface::QMInterface,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // XTB uses XYZ format 
@@ -3709,8 +3709,8 @@ fn run_xtb_step(
     let step_name_b = format!("job_dir/{}_B.xyz", step);
 
     // Write XYZ input files
-    qm.write_input(geometry, header_a, tail1, Path::new(&step_name_a))?;
-    qm.write_input(geometry, header_b, tail2, Path::new(&step_name_b))?;
+    qm.write_input(geometry, header_a, tail_a, Path::new(&step_name_a))?;
+    qm.write_input(geometry, header_b, tail_b, Path::new(&step_name_b))?;
 
     // Run XTB calculations (following order: B first, then A)
     qm.run_calculation(Path::new(&step_name_b))?;
@@ -3829,7 +3829,7 @@ fn run_restart(
         qm.write_input(
             &geometry,
             &header_a,
-            &input_data.tail1,
+            &input_data.tail_a,
             Path::new(&step_name_a),
         )?;
         qm.run_calculation(Path::new(&step_name_a))?;
@@ -3838,7 +3838,7 @@ fn run_restart(
         qm.write_input(
             &geometry,
             &header_b,
-            &input_data.tail2,
+            &input_data.tail_b,
             Path::new(&step_name_b),
         )?;
         qm.run_calculation(Path::new(&step_name_b))?;
@@ -4078,8 +4078,8 @@ fn run_coordinate_driving(
         let drive_a_path = format!("job_dir/drive_{}_A.{}", step, ext);
         let drive_b_path = format!("job_dir/drive_{}_B.{}", step, ext);
 
-        qm.write_input(geom, &header_a, &input_data.tail1, Path::new(&drive_a_path))?;
-        qm.write_input(geom, &header_b, &input_data.tail2, Path::new(&drive_b_path))?;
+        qm.write_input(geom, &header_a, &input_data.tail_a, Path::new(&drive_a_path))?;
+        qm.write_input(geom, &header_b, &input_data.tail_b, Path::new(&drive_b_path))?;
 
         // Run calculations
         qm.run_calculation(Path::new(&drive_a_path))?;
@@ -4221,8 +4221,8 @@ fn run_path_optimization(
         let neb_a_path = format!("job_dir/neb_{}_A.{}", step, ext);
         let neb_b_path = format!("job_dir/neb_{}_B.{}", step, ext);
 
-        qm.write_input(geom, &header_a, &input_data.tail1, Path::new(&neb_a_path))?;
-        qm.write_input(geom, &header_b, &input_data.tail2, Path::new(&neb_b_path))?;
+        qm.write_input(geom, &header_a, &input_data.tail_a, Path::new(&neb_a_path))?;
+        qm.write_input(geom, &header_b, &input_data.tail_b, Path::new(&neb_b_path))?;
 
         // Run calculations
         qm.run_calculation(Path::new(&neb_a_path))?;

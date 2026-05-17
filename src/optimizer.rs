@@ -1557,16 +1557,16 @@ pub fn check_convergence(
         .fold(0.0_f64, f64::max);
 
     // Compare against thresholds in matching units:
-    // - de (Ha) vs thresholds.de (Ha)
-    // - rms_grad (Ha/Å) vs thresholds.rms_g (Ha/Å)
-    // - max_grad (Ha/Å) vs thresholds.max_g (Ha/Å)
-    // - rms_disp (Å) vs thresholds.rms (Å)
+    // - delta_e (Ha) vs thresholds.delta_e (Ha)
+    // - rms_grad (Ha/Å) vs thresholds.rms_grad (Ha/Å)
+    // - max_grad (Ha/Å) vs thresholds.max_grad (Ha/Å)
+    // - rms_disp (Å) vs thresholds.rms_dis (Å)
     // - max_disp (Å) vs thresholds.max_dis (Å)
     ConvergenceStatus {
-        de_converged: de < config.thresholds.de,
-        rms_grad_converged: rms_grad < config.thresholds.rms_g,
-        max_grad_converged: max_grad < config.thresholds.max_g,
-        rms_disp_converged: rms_disp < config.thresholds.rms,
+        de_converged: de < config.thresholds.delta_e,
+        rms_grad_converged: rms_grad < config.thresholds.rms_grad,
+        max_grad_converged: max_grad < config.thresholds.max_grad,
+        rms_disp_converged: rms_disp < config.thresholds.rms_dis,
         max_disp_converged: max_disp < config.thresholds.max_dis,
     }
 }
@@ -1955,7 +1955,7 @@ pub fn gdiis_step(opt_state: &mut OptimizationState, config: &Config) -> DVector
     }
 
     // CRITICAL: Combined gradients are in Ha/Å (g_vec) + Ha (f_vec)
-    let threshold = config.thresholds.rms_g * config.step_reduction_multiplier;
+    let threshold = config.thresholds.rms_grad * config.step_reduction_multiplier;
 
     if config.print_level >= 2 {
         println!(
@@ -2390,7 +2390,7 @@ pub fn gediis_step(opt_state: &mut OptimizationState, config: &Config) -> DVecto
     let history_combined_norm = history_combined_norm_sq.sqrt();
 
     // CRITICAL: Scale threshold for Ha/Å units
-    let threshold = config.thresholds.rms_g * config.step_reduction_multiplier;
+    let threshold = config.thresholds.rms_grad * config.step_reduction_multiplier;
     if history_combined_norm < threshold {
         if config.print_level >= 1 {
             println!(
@@ -2575,7 +2575,7 @@ pub fn sequential_hybrid_gediis_step(
 ///
 ///    // step reduction for hybrid final step
 ///    let last_grad_norm = opt_state.grad_history.back().unwrap().norm();
-///    if last_grad_norm < config.thresholds.rms_g * 10.0 {
+///    if last_grad_norm < config.thresholds.rms_grad * 10.0 {
 ///        let last_geom = opt_state.geom_history.back().unwrap().clone();
 ///        let mut hybrid_step = &hybrid_result - &last_geom;
 ///        hybrid_step *= config.reduced_factor;
@@ -3098,7 +3098,7 @@ pub fn gdiis_step_direct(
     let history_combined_norm = history_combined_norm_sq.sqrt();
 
     // Combined gradient norm includes f_vec (Ha) + g_vec (Ha/Å)
-    let threshold = config.thresholds.rms_g * config.step_reduction_multiplier;
+    let threshold = config.thresholds.rms_grad * config.step_reduction_multiplier;
     if history_combined_norm < threshold {
         if config.print_level >= 1 {
             println!(
@@ -4263,7 +4263,7 @@ pub fn sequential_blend_step(
         if config.print_level >= 1 {
             println!("Sequential blend: history insufficient, phase 1 GDIIS");
         }
-        return gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level, config.reduced_factor, config.step_reduction_multiplier);
+        return gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_grad, config.print_level, config.reduced_factor, config.step_reduction_multiplier);
     }
 
     let last_grad = opt_state.grad_history.back().unwrap();
@@ -4288,7 +4288,7 @@ pub fn sequential_blend_step(
         gradient_blend_step(
             opt_state,
             opt_state.trust_radius,
-            config.thresholds.rms_g,
+            config.thresholds.rms_grad,
             config.gediis_switch_rms,
             config.print_level,
             config.reduced_factor,
@@ -4302,7 +4302,7 @@ pub fn sequential_blend_step(
                 println!("Sequential blend: phase 3 GDIIS (rms_disp={:.6})", rms_disp);
             }
         }
-        gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level, config.reduced_factor, config.step_reduction_multiplier)
+        gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_grad, config.print_level, config.reduced_factor, config.step_reduction_multiplier)
     }
 }
 
@@ -4332,7 +4332,7 @@ pub fn fixed_sequential_blend_step(
         if config.print_level >= 1 {
             println!("Fixed Sequential blend: history insufficient, using 50/50 blend");
         }
-        return fixed_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level, config.reduced_factor, config.step_reduction_multiplier);
+        return fixed_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_grad, config.print_level, config.reduced_factor, config.step_reduction_multiplier);
     }
 
     let last_grad = opt_state.grad_history.back().unwrap();
@@ -4354,7 +4354,7 @@ pub fn fixed_sequential_blend_step(
                 rms_disp, config.gediis_switch_step
             );
         }
-        gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level, config.reduced_factor, config.step_reduction_multiplier)
+        gdiis_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_grad, config.print_level, config.reduced_factor, config.step_reduction_multiplier)
     } else {
         if config.print_level >= 1 {
             println!(
@@ -4362,7 +4362,7 @@ pub fn fixed_sequential_blend_step(
                 rms_disp
             );
         }
-        fixed_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_g, config.print_level, config.reduced_factor, config.step_reduction_multiplier)
+        fixed_blend_step(opt_state, opt_state.trust_radius, config.thresholds.rms_grad, config.print_level, config.reduced_factor, config.step_reduction_multiplier)
     }
 }
 
@@ -4460,17 +4460,17 @@ pub fn select_blend_step(
             "gradient" => gradient_blend_step(
                 blend_state,
                 blend_state.trust_radius,
-                config.thresholds.rms_g,
+                config.thresholds.rms_grad,
                 config.gediis_switch_rms,
                 config.print_level,
                 config.reduced_factor,
                 config.step_reduction_multiplier,
             ),
             "sequential" => sequential_blend_step(blend_state, config),
-            _ => fixed_blend_step(blend_state, blend_state.trust_radius, config.thresholds.rms_g, config.print_level, config.reduced_factor, config.step_reduction_multiplier),
+            _ => fixed_blend_step(blend_state, blend_state.trust_radius, config.thresholds.rms_grad, config.print_level, config.reduced_factor, config.step_reduction_multiplier),
         }
     } else {
-        gdiis_blend_step(blend_state, blend_state.trust_radius, config.thresholds.rms_g, config.print_level, config.reduced_factor, config.step_reduction_multiplier)
+        gdiis_blend_step(blend_state, blend_state.trust_radius, config.thresholds.rms_grad, config.print_level, config.reduced_factor, config.step_reduction_multiplier)
     }
 }
 

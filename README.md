@@ -350,18 +350,18 @@ H     -2.379567    1.780215   -1.879473
 *
 ```
 
-#### *TAIL1 and *TAIL2 Sections
+#### *TAIL_a and *TAIL_b Sections
 
 Additional keywords for each state:
 
 ```
-*TAIL1
+*TAIL_a
 # Gaussian: Additional route section keywords
 # ORCA: Additional input blocks
 *
 
-*TAIL2
-# Same format as TAIL1
+*TAIL_b
+# Same format as TAIL_a
 *
 ```
 
@@ -380,17 +380,17 @@ s a 1 2 3 90 10 5     # Scan angle from 90° to 135° (10 points)
 *
 ```
 
-#### *LST1 and *LST2 Sections
+#### *LST_a and *LST_b Sections
 
 For LST interpolation:
 
 ```
-*LST1
+*LST_a
 C  0.0  0.0  0.0
 H  1.0  0.0  0.0
 *
 
-*LST2
+*LST_b
 C  0.0  0.0  0.5
 H  1.2  0.0  0.5
 *
@@ -553,11 +553,11 @@ hessian = bofill
 
 | Keyword          | Type  | Default    | Description                           |
 | ---------------- | ----- | ---------- | ------------------------------------- |
-| `de_thresh`      | float | `0.000050` | Energy difference threshold (hartree) |
-| `rms_thresh`     | float | `0.0025`   | RMS displacement threshold (angstrom) |
-| `max_dis_thresh` | float | `0.004`    | Max displacement threshold (angstrom) |
-| `max_g_thresh`   | float | `0.0007`   | Max gradient threshold (hartree/bohr) |
-| `rms_g_thresh`   | float | `0.0005`   | RMS gradient threshold (hartree/bohr) |
+| `delta_e`      | float | `0.000050` | Energy difference threshold (hartree) |
+| `rms_dis`     | float | `0.0025`   | RMS displacement threshold (angstrom) |
+| `max_dis` | float | `0.004`    | Max displacement threshold (angstrom) |
+| `max_grad`   | float | `0.0007`   | Max gradient threshold (hartree/bohr) |
+| `rms_grad`   | float | `0.0005`   | RMS gradient threshold (hartree/bohr) |
 
 #### Constraints and Fixed Atoms
 
@@ -588,9 +588,6 @@ hessian = bofill
 | ------------- | ------ | --------- | ---------------- |
 | `gau_comm`    | string | `"g16"`   | Gaussian command |
 | `orca_comm`   | string | `"orca"`  | ORCA command     |
-| `xtb_comm`    | string | `"xtb"`   | XTB command      |
-| `bagel_comm`  | string | `"bagel"` | BAGEL command    |
-| `bagel_model` | string | `""`      | BAGEL model file |
 
 #### ONIOM-Specific
 
@@ -604,7 +601,7 @@ hessian = bofill
 
 | Keyword                 | Type    | Default | Description                             |
 | ----------------------- | ------- | ------- | --------------------------------------- |
-| `charge2`               | integer | —       | Separate charge for state B             |
+| `charge_b`               | integer | —       | Separate charge for state B             |
 | `basis`                 | string  | `""`    | Basis set specification                 |
 | `solvent`               | string  | `""`    | Solvent model specification             |
 | `dispersion`            | string  | `""`    | Dispersion correction                   |
@@ -736,14 +733,14 @@ td_b = TD(nstates=5,root=2)
 program = orca
 method = B3LYP def2-SVP
 
-*TAIL1
+*TAIL_a
 %tddft
   nroots 5
   iroot 1
 end
 *
 
-*TAIL2
+*TAIL_b
 %tddft
   nroots 5
   iroot 2
@@ -847,12 +844,12 @@ s a 1 2 3 90 5 10     # Second dimension: angle
 Generate initial MECP guess by interpolating between two geometries:
 
 ```
-*LST1
+*LST_a
 C  0.0  0.0  0.0
 H  1.0  0.0  0.0
 *
 
-*LST2
+*LST_b
 C  0.0  0.0  0.5
 H  1.2  0.0  0.5
 *
@@ -1183,7 +1180,7 @@ All five criteria must be satisfied:
 | ---------------- | ------------------ | ------------------------------ |
 | ΔE               | < 0.000050 hartree | Energy difference              |
 | RMS gradient     | < 0.000945         | Root mean square gradient      |
-| Max gradient     | < 0.000945         | Maximum gradient component     |
+| Max gradient     | < 0.001323         | Maximum gradient component     |
 | RMS displacement | < 0.0025           | Root mean square displacement  |
 | Max displacement | < 0.004            | Maximum displacement component |
 
@@ -1207,10 +1204,10 @@ H      1.907833    1.518644    2.675008
 H      1.907848    2.992783    1.956802
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1238,10 +1235,10 @@ H      1.907833    1.518644    2.675008
 H      1.907848    2.992783    1.956802
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1281,13 +1278,13 @@ H     3.124215000000     -2.058494000000     -0.161005000000
 H     3.861645000000      0.140669000000     -0.519951000000
 *
 
-*TAIL1
+*TAIL_a
 %scf
   maxiter 200
 end
 *
 
-*TAIL2
+*TAIL_b
 %scf
   maxiter 200
 end
@@ -1317,10 +1314,10 @@ s r 1 2 1.0 20 0.05    # Scan O-H bond
 R 1 3 1.1              # Fix other O-H bond
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1335,22 +1332,22 @@ mult_b = 3
 ### Example 5: LST Interpolation
 
 ```
-*LST1
+*LST_a
 O      0.074139    0.074139    0.000000
 H      1.136608   -0.210747    0.000000
 H     -0.210747    1.136608    0.000000
 *
 
-*LST2
+*LST_b
 O      0.074139    0.074139    0.000000
 H      1.136608   -0.210747    0.000000
 H     -0.210747    1.136608    0.000000
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1379,10 +1376,10 @@ H    -2.150882000000     -1.241812000000      0.000000000000
 H    -2.150882000000      1.241812000000      0.000000000000
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1410,16 +1407,16 @@ H      1.924574    0.930562   -0.000000
 H      1.924574   -0.930562    0.000000
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
 method = B3LYP/6-31G*
-td1 = TD(nstates=5,root=1)
-td2 = TD(nstates=5,root=2)
+td_a = TD(nstates=5,root=1)
+td_b = TD(nstates=5,root=2)
 state_a = 1
 state_b = 2
 nprocs = 8
@@ -1441,10 +1438,10 @@ H      1.924574    0.930562   -0.000000
 H      1.924574   -0.930562    0.000000
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1473,10 +1470,10 @@ H      1.924574    0.930562   -0.000000
 H      1.924574   -0.930562    0.000000
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1506,10 +1503,10 @@ H      1.924574    0.930562   -0.000000
 H      1.924574   -0.930562    0.000000
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1530,10 +1527,10 @@ fix_de = 0.1
 @my_molecule.xyz
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1568,11 +1565,11 @@ H     -3.073701    0.307432    1.020403 L
 H     -3.658665    1.559733   -0.106302 L
 *
 
-*TAIL1
+*TAIL_a
 ONIOM(B3LYP/6-31G*:AM1)
 *
 
-*TAIL2
+*TAIL_b
 ONIOM(B3LYP/6-31G*:AM1)
 *
 
@@ -1613,10 +1610,10 @@ D 1 2 8 10 180.0    # Fix dihedral angle
 R 1 2 1.5          # Fix bond length
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1643,10 +1640,10 @@ H      1.924574    0.930562   -0.000000
 H      1.924574   -0.930562    0.000000
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1677,10 +1674,10 @@ H      1.924574    0.930562   -0.000000
 H      1.924574   -0.930562    0.000000
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1717,10 +1714,10 @@ H    -2.150882000000     -1.241812000000      0.000000000000
 H    -2.150882000000      1.241812000000      0.000000000000
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1756,10 +1753,10 @@ H    -2.150882000000     -1.241812000000      0.000000000000
 H    -2.150882000000      1.241812000000      0.000000000000
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1796,10 +1793,10 @@ H    -2.150882000000     -1.241812000000      0.000000000000
 H    -2.150882000000      1.241812000000      0.000000000000
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian
@@ -1836,10 +1833,10 @@ H    -2.150882000000     -1.241812000000      0.000000000000
 H    -2.150882000000      1.241812000000      0.000000000000
 *
 
-*TAIL1
+*TAIL_a
 *
 
-*TAIL2
+*TAIL_b
 *
 
 program = gaussian

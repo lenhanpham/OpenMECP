@@ -259,43 +259,43 @@ pub const KEYWORDS: &[Keyword] = &[
 
     // CONVERGENCE THRESHOLDS
     Keyword {
-        name: "de_thresh",
+        name: "delta_e",
         category: KeywordCategory::Convergence,
         description: "Energy difference threshold (|E1-E2|) for convergence (in Hartree)",
         default_value: Some("0.000050"),
-        example: Some("de_thresh = 0.000050"),
+        example: Some("delta_e = 0.000050"),
         required: false,
     },
     Keyword {
-        name: "rms_thresh",
+        name: "rms_dis",
         category: KeywordCategory::Convergence,
         description: "RMS displacement threshold for convergence (in Angstrom)",
         default_value: Some("0.0025"),
-        example: Some("rms_thresh = 0.0025"),
+        example: Some("rms_dis = 0.0025"),
         required: false,
     },
     Keyword {
-        name: "max_dis_thresh",
+        name: "max_dis",
         category: KeywordCategory::Convergence,
         description: "Maximum atomic displacement threshold for convergence (in Angstrom)",
         default_value: Some("0.004"),
-        example: Some("max_dis_thresh = 0.004"),
+        example: Some("max_dis = 0.004"),
         required: false,
     },
     Keyword {
-        name: "max_g_thresh",
+        name: "max_grad",
         category: KeywordCategory::Convergence,
         description: "Maximum gradient component threshold for convergence (Hartree/Angstrom)",
         default_value: Some("0.001323"),
-        example: Some("max_g_thresh = 0.001323"),
+        example: Some("max_grad = 0.001323"),
         required: false,
     },
     Keyword {
-        name: "rms_g_thresh",
+        name: "rms_grad",
         category: KeywordCategory::Convergence,
         description: "RMS gradient threshold for convergence (Hartree/Angstrom)",
         default_value: Some("0.000945"),
-        example: Some("rms_g_thresh = 0.000945"),
+        example: Some("rms_grad = 0.000945"),
         required: false,
     },
     Keyword {
@@ -659,11 +659,11 @@ pub const KEYWORDS: &[Keyword] = &[
         required: false,
     },
     Keyword {
-        name: "charge2",
+        name: "charge_b",
         category: KeywordCategory::Advanced,
         description: "Separate molecular charge for state B (defaults to charge value)",
         default_value: None,
-        example: Some("charge = 1\ncharge2 = -1  # State B has different charge"),
+        example: Some("charge = 1\ncharge_b = -1  # State B has different charge"),
         required: false,
     },
 ];
@@ -1250,8 +1250,8 @@ pub fn print_examples() {
     println!("mode = normal");
     println!();
     println!("# Optional convergence thresholds");
-    println!("de_thresh = 0.000050");
-    println!("rms_thresh = 0.0025");
+    println!("delta_e = 0.000050");
+    println!("rms_dis = 0.0025");
     println!("max_history = 4");
     println!();
     println!("# Program settings");

@@ -11,17 +11,17 @@ method = B3LYP 6-31G(d,p) VeryTightSCF     # QM method: n method/basis keywords 
 td_state_a =                 # TD-DFT keywords for state A (Gaussian). Short: td_a
 td_state_b =                 # TD-DFT keywords for state B (Gaussian). Short: td_b
 mp2 = false                  # true for MP2 or double-hybrid in Gaussian
-charge = 1                   # molecular charge (same for both states unless charge2)
+charge = 1                   # molecular charge (same for both states unless charge_b)
 mult_state_a = 3             # multiplicity of state A. Short: mult_a
 mult_state_b = 1             # multiplicity of state B. Short: mult_b
 mode = normal                # normal | read | noread | stable | inter_read
 
 #===== Convergence Thresholds ==================================================
-dE_thresh = 0.000050         # energy difference convergence (hartree)
-rms_thresh = 0.0025          # RMS displacement convergence (angstrom)
-max_dis_thresh = 0.004       # max displacement convergence (angstrom)
-max_g_thresh = 0.001323      # max gradient convergence (hartree/angstrom)
-rms_g_thresh = 0.000945      # RMS gradient convergence (hartree/angstrom)
+delta_e = 0.000050         	# energy difference convergence (hartree)
+rms_dis = 0.0025          	# RMS displacement convergence (angstrom)
+max_dis = 0.004       		# max displacement convergence (angstrom)
+max_grad = 0.001323      	# max gradient convergence (hartree/angstrom)
+rms_grad = 0.000945      	# RMS gradient convergence (hartree/angstrom)
 
 #===== Optimization Control ====================================================
 max_steps = 100              # maximum optimization steps
@@ -78,7 +78,7 @@ bagel_model = model.inp      # BAGEL model file
 #basis =                     # basis set (for programs separating method/basis)
 #solvent =                   # solvent model
 #dispersion =                # dispersion correction
-#charge2 =                   # separate charge for state B (default: same as charge)
+#charge_b =                   # separate charge for state B (default: same as charge)
 #fixedatoms = 1,3,5-7        # comma/hyphen ranges of fixed atoms (1-based)
 
 #===== ONIOM (QM/MM) ===========================================================
@@ -103,13 +103,13 @@ bagel_model = model.inp      # BAGEL model file
 #===============================================================================
 # Tail sections: extra keywords appended to QM input files
 #===============================================================================
-*tail1
+*tail_a
 # Extra keywords for state A (e.g., SCF convergence, basis sets)
 # For Gaussian: TD(NStates=5,Root=1)
 # For ORCA: %tddft nroots 5 end
 *
 
-*tail2
+*tail_b
 # Extra keywords for state B (e.g., SCF convergence, basis sets)
 *
 

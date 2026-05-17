@@ -87,29 +87,29 @@ pub struct ScanSpec {
 /// - RMS gradient: 0.000945 Ha/Å
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Thresholds {
-    /// Energy difference threshold (ΔE < de) in Hartree.
-    pub de: f64,
+    /// Energy difference threshold (ΔE < delta_e) in Hartree.
+    pub delta_e: f64,
     /// RMS displacement threshold in Angstrom (Å).
-    pub rms: f64,
+    pub rms_dis: f64,
     /// Maximum displacement threshold in Angstrom (Å).
     pub max_dis: f64,
     /// Maximum gradient threshold in Hartree/Angstrom (Ha/Å).
-    pub max_g: f64,
+    pub max_grad: f64,
     /// RMS gradient threshold in Hartree/Angstrom (Ha/Å).
-    pub rms_g: f64,
+    pub rms_grad: f64,
 }
 
 impl Default for Thresholds {
     fn default() -> Self {
         Self {
-            de: 0.000050,
-            rms: 0.0025,
+            delta_e: 0.000050,
+            rms_dis: 0.0025,
             max_dis: 0.004,
             // All gradients are in Ha/Å (standardized internal unit).
             // Python KST48 reference uses Ha/Bohr (0.0007 / 0.0005).
             // Converted: 0.0007 × 1.8897 = 0.001323, 0.0005 × 1.8897 = 0.000945
-            max_g: 0.001323,
-            rms_g: 0.000945,
+            max_grad: 0.001323,
+            rms_grad: 0.000945,
         }
     }
 }
@@ -168,8 +168,10 @@ pub struct Config {
     pub nprocs: usize,
     /// Memory allocation (e.g., "4GB", "8GB")
     pub mem: String,
-    /// Charge for system
+    /// Charge for system (shared for both states)
     pub charge: i32,
+    /// Separate charge for state B (None = same as charge)
+    pub charge_b: Option<i32>,
     /// Spin multiplicity for state A (2S+1, where S is total spin)
     pub mult_state_a: usize,
     /// Spin multiplicity for state B
@@ -492,6 +494,7 @@ impl Default for Config {
             nprocs: 1,
             mem: "1GB".to_string(),
             charge: 0,
+            charge_b: None,
             mult_state_a: 1,
             mult_state_b: 1,
             method: String::new(),

@@ -117,12 +117,12 @@
 //! H  1.0  0.0  0.0
 //! *
 //!
-//! *TAIL1
-//! # Additional keywords for state 1
+//! *TAIL_a
+//! # Additional keywords for state A
 //! *
 //!
-//! *TAIL2
-//! # Additional keywords for state 2
+//! *TAIL_b
+//! # Additional keywords for state B
 //! *
 //!
 //! program = gaussian

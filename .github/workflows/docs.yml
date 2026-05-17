@@ -58,7 +58,7 @@ jobs:
         run: mdbook build docs
 
       - name: Build Rust API documentation
-        run: cargo doc --no-deps --all-features --document-private-items
+        run: RUSTDOCFLAGS="--html-before-content=docs/api-header.html" cargo doc --no-deps --all-features --document-private-items
 
       - name: Nest API docs inside the book output
         run: |

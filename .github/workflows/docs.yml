@@ -47,7 +47,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-doc-
 
       - name: Install mdbook-katex
-        run: cargo install mdbook-katex
+        run: command -v mdbook-katex || cargo install mdbook-katex
 
       - name: Copy assets into mdBook source
         run: |

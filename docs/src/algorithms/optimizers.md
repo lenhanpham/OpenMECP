@@ -1,7 +1,7 @@
 # Optimizers
 
 OpenMECP provides several geometry optimizers. All optimizers work on the MECP
-effective gradient described in the [MECP Algorithm](README.md) chapter.
+effective gradient described in the [MECP Algorithm](mecp-algorithm.md) chapter.
 
 ## BFGS (Initial Steps)
 

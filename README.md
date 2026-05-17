@@ -551,13 +551,13 @@ hessian = bofill
 
 #### Convergence Thresholds
 
-| Keyword          | Type  | Default    | Description                           |
-| ---------------- | ----- | ---------- | ------------------------------------- |
-| `delta_e`      | float | `0.000050` | Energy difference threshold (hartree) |
-| `rms_dis`     | float | `0.0025`   | RMS displacement threshold (angstrom) |
-| `max_dis` | float | `0.004`    | Max displacement threshold (angstrom) |
-| `max_grad`   | float | `0.0007`   | Max gradient threshold (hartree/bohr) |
-| `rms_grad`   | float | `0.0005`   | RMS gradient threshold (hartree/bohr) |
+| Keyword     | Type  | Default      | Description                                    |
+| ----------- | ----- | ------------ | ---------------------------------------------- |
+| `delta_e`   | float | `0.000050`   | Energy difference threshold (hartree)          |
+| `rms_dis`   | float | `0.0025`     | RMS displacement threshold (Å)                 |
+| `max_dis`   | float | `0.004`      | Max displacement threshold (Å)                 |
+| `max_grad`  | float | `0.001323`   | Max gradient threshold (hartree/Å)             |
+| `rms_grad`  | float | `0.000945`   | RMS gradient threshold (hartree/Å)             |
 
 #### Constraints and Fixed Atoms
 

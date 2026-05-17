@@ -19,6 +19,9 @@
 
 A high-performance Rust implementation of the MECP (Minimum Energy Crossing Point) optimizer for locating crossing points between two potential energy surfaces in quantum chemistry calculations.
 
+## Online document
+[https://lenhanpham.github.io/OpenMECP](https://lenhanpham.github.io/OpenMECP)
+
 ## Note
 
 - **OpenMECP is highly robust and ready for production runs to locate MECPs now.** 

@@ -5,8 +5,9 @@ description = "High-performance Rust implementation of the MECP optimizer for qu
 src = "src"
 language = "en"
 
+[preprocessor.katex]
+
 [output.html]
-mathjax-support = true
 site-url = "/OpenMECP/"
 git-repository-url = "https://github.com/lenhanpham/OpenMECP"
 git-repository-icon = "fa-github"

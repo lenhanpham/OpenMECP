@@ -1929,7 +1929,64 @@ use_hybrid_gediis = false  # default for blend, can be omitted
 
 **Symptoms**: Many optimization steps required
 
-**Solutions**: add more steps; try other optimizers
+**Solutions**: 
+- Add more steps:
+```
+max_steps = 300              # maximum optimization steps
+```
+- Try other optimizers, for examples:
+```
+#===== Pure GDIIS: blend mode but zero contribution of GEDIIS ===================================
+switch_step = 3              # 0=DIIS-only, 3=BFGS→DIIS (default), >=max_steps=BFGS-only
+hessian = direct_psb         # direct_psb (default) | inverse_bfgs | bofill | powell | bfgs_powell_mix
+                             # Note: blend mode requires a direct Hessian method.
+use_gediis = blend           # options: false/none=GDIIS (default), true/sequential=GEDIIS,
+                             #           blend=GDIIS_blend with trust region
+use_hybrid_gediis = false    # activated when use_gediis = true or blend
+                             # options: true/false
+gediis_blend_mode = fixed_sequential # activated when use_gediis = blend AND use_hybrid_gediis = true
+                              # options: fixed, fixed_sequential (default), gradient, sequential
+
+```
+
+```
+#===== Blend mode with hybrid GDIIS/GEDIIS sequential ===================================
+switch_step = 3                 # 0=DIIS-only, 3=BFGS→DIIS (default), >=max_steps=BFGS-only
+hessian = direct_psb            # direct_psb (default) | inverse_bfgs | bofill | powell | bfgs_powell_mix
+                                # Note: blend mode requires a direct Hessian method.
+use_gediis = blend              # options: false/none=GDIIS (default), true/sequential=GEDIIS,
+                                #           blend=GDIIS_blend with trust region
+use_hybrid_gediis = true        # activated when use_gediis = true or blend
+                                # options: true/false
+gediis_blend_mode = sequential  # activated when use_gediis = blend AND use_hybrid_gediis = true
+                                # options: fixed, fixed_sequential (default), gradient, sequential
+
+```
+```
+#===== Blend mode with hybrid GDIIS/GEDIIS fixed_sequential ===================================
+switch_step = 3                 # 0=DIIS-only, 3=BFGS→DIIS (default), >=max_steps=BFGS-only
+hessian = direct_psb            # direct_psb (default) | inverse_bfgs | bofill | powell | bfgs_powell_mix
+                                # Note: blend mode requires a direct Hessian method.
+use_gediis = blend              # options: false/none=GDIIS (default), true/sequential=GEDIIS,
+                                #           blend=GDIIS_blend with trust region
+use_hybrid_gediis = true        # activated when use_gediis = true or blend
+                                # options: true/false
+gediis_blend_mode = fixed_sequential # activated when use_gediis = blend AND use_hybrid_gediis = true
+                                # options: fixed, fixed_sequential (default), gradient, sequential
+```
+
+#===== Blend mode with hybrid GDIIS/GEDIIS gradient ===================================
+switch_step = 3                 # 0=DIIS-only, 3=BFGS→DIIS (default), >=max_steps=BFGS-only
+hessian = direct_psb            # direct_psb (default) | inverse_bfgs | bofill | powell | bfgs_powell_mix
+                                # Note: blend mode requires a direct Hessian method.
+use_gediis = blend              # options: false/none=GDIIS (default), true/sequential=GEDIIS,
+                                #           blend=GDIIS_blend with trust region
+use_hybrid_gediis = true        # activated when use_gediis = true or blend
+                                # options: true/false
+gediis_blend_mode = gradient    # activated when use_gediis = blend AND use_hybrid_gediis = true
+                                # options: fixed, fixed_sequential (default), gradient, sequential
+```
+
 
 ## Cite
 

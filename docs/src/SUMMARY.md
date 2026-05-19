@@ -61,3 +61,9 @@
 - [Run Modes](run-modes.md)
 - [Configuration File](configuration.md)
 - [API Reference](api-reference.md)
+
+---
+
+# Troubleshooting
+
+- [Troubleshooting](troubleshooting.md)

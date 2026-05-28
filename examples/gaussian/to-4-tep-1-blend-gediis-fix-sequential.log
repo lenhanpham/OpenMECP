@@ -1,0 +1,1763 @@
+**** OpenMECP: Minimum Energy Crossing Point Optimizer****
+              Version 0.0.4  Release date: 2026
+               ****Developer Le Nhan Pham****             
+           https://github.com/lenhanpham/OpenMECP        
+
+ Please cite this preprint if you use OpenMECP for your research:
+ #-------------------------------------------------------------------------------#
+ # L.N Pham, "OpenMECP: A High-Performance Rust Implementation for               #
+ # the Rigorous Location of Minimum Energy Crossing Points in Chemical Dynamics" #
+ # 2026, https://doi.org/10.13140/RG.2.2.21309.73443                             #
+ #-------------------------------------------------------------------------------#
+
+[2026-05-17T00:41:10.473Z INFO  omecp::settings] Configuration loaded from: built-in defaults (no configuration file found)
+============================================================================
+CONFIGURATION AND SETTINGS
+============================================================================
+
+Settings Configuration:
+  Source: built-in defaults (no configuration file found)
+
+Input File Parameters:
+  Program:                    Gaussian
+  Method:                     n scf(maxcycle=300,xqc) UWB97XD/DEF2SVPP scrf(smd,solvent=Benzene)
+  Memory:                     190GB
+  Processors:                 48
+  Charge of system:           1
+  Multiplicity (State A):     3
+  Multiplicity (State B):     1
+  Run Mode:                   Normal
+  Max Steps:                  100
+  Max Step Size (A):          0.100000
+  Max History:                4 
+
+  Optimizers:
+    Optimizer Mode:           GDIIS_blend (fixed_sequential)
+    Hessian Method:           direct_psb (default)
+    Use GEDIIS:               blend
+    Use Hybrid GEDIIS:        true (enables GDIIS+EDIIS blend)
+    GEDIIS Blend Mode:        fixed_sequential
+    Trust Reduction Factor:   0.5
+    Trust Increase Factor:    1.2
+    Trust Inc Threshold:      0.0001
+    Trust Dec Threshold:      0.0001
+    Trust Min Radius:         0.01
+    Trust Max Radius:         1
+    GEDIIS Switch RMS:        0.005
+    GEDIIS Switch Step:       0.001
+    Use Robust DIIS:          false (default)
+    Switch Step:              3
+    BFGS Rho:                 15
+    Reduced Factor:           0.5
+    Step Reduction Multiplier:10
+    Steepest Descent Step:    0.01
+    Smart History:            false (default)
+    Print Checkpoint:         false
+  BAGEL Model:                model.inp
+
+Advanced Parameters:
+  MP2 Method:               false (default)
+  Fix dE (eV):              0.0 (default)
+  Program Commands:         4 custom commands
+
+File Management:
+  Checkpoint File:          <job_name>.json (auto-generated from input filename)
+  Restart Mode:             false (default)
+
+Scanning:
+  Number of Scans:          0 (default)
+Convergence Thresholds:
+  Energy Difference (dE):       0.00005000 hartree 
+  RMS Gradient:                 0.00094500 hartree/A 
+  Max Gradient:                 0.00132300 hartree/A 
+  RMS Displacement:             0.00250000 angstrom 
+  Max Displacement:             0.00400000 angstrom 
+Configuration File Settings (omecp_config.cfg):
+  Output File Extensions:
+    Gaussian:                  log
+    ORCA:                      out
+  General Settings:
+    Max Memory:                4GB
+    Default Processors:        4
+    Print Level:               1
+  Cleanup Settings:
+    Enabled:                   true
+    Verbose:                   1
+    Cleanup Frequency:         5 steps 
+  Logging Settings:
+    Level:                     info
+    File Logging Enabled:      false
+
+================================================================================
+
+Parsed 29 atoms
+Program: Gaussian, Mode: Normal
+
+
+****Configuration Guidance****
+Normal Mode: Balanced speed and robustness with checkpoint reading
+****End Configuration Guidance****
+
+****Normal Mode: Phase 1 - Pre-point calculations to generate checkpoint files****
+Pre-point headers (raw, no modifications):
+State A: %mem=190GB
+State B: %mem=190GB
+Running pre-point calculation for state B...
+Running pre-point calculation for state A...
+ Pre-point calculations completed successfully
+Checking Gaussian checkpoint files...
+ Gaussian checkpoint files found: to-4-tep-1-blend-gediis-fix-sequential_state_A.chk and to-4-tep-1-blend-gediis-fix-sequential_state_B.chk
+****Normal Mode: Phase 2 - Main optimization loop with checkpoint reading****
+****Mode Transition: Normal -> Read****
+Reason: Pre-point calculations completed successfully, switching to read mode for main optimization
+****Mode Transition Complete****
+
+Headers rebuilt for read mode with force and guess=read
+
+****Running initial calculations****
+
+****Step 1****
+Using BFGS optimizer (step 1 < switch point 3)
+BFGS: step 0.214511 Å > max_step_size 0.100000 Å, capping
+BFGS: final step = 0.100000 Å (rho=15.0)
+Displacement norm = 0.100000000000000 Å
+Trust radius = 0.100 Å
+E1 = -2106.30876011, E2 = -2106.31080700, dE = 0.00204689
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00204689        0.00005000       NO    
+  2. RMS gradient                    0.01252586        0.00094500       NO    
+  3. Max gradient                    0.06268814        0.00132300       NO    
+  4. RMS displacement                0.01072113        0.00250000       NO    
+  5. Max displacement                0.05525995        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 2****
+Using BFGS optimizer (step 2 < switch point 3)
+BFGS: dk norm 0.168035 Å > cap 0.100000 Å, scaling down
+BFGS: step 1.500000 Å > max_step_size 0.100000 Å, capping
+BFGS: final step = 0.100000 Å (rho=15.0)
+Displacement norm = 0.100000000000000 Å
+Trust radius = 0.100 Å
+E1 = -2106.31258747, E2 = -2106.32239965, dE = 0.00981218
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00981218        0.00005000       NO    
+  2. RMS gradient                    0.00708454        0.00094500       NO    
+  3. Max gradient                    0.03023362        0.00132300       NO    
+  4. RMS displacement                0.01072113        0.00250000       NO    
+  5. Max displacement                0.06202472        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy decreased by 0.003827, increasing to 0.120000
+
+****Step 3****
+Using BFGS optimizer (step 3 < switch point 3)
+BFGS: dk norm 0.485430 Å > cap 0.100000 Å, scaling down
+BFGS: step 1.500000 Å > max_step_size 0.100000 Å, capping
+BFGS: final step = 0.100000 Å (rho=15.0)
+Displacement norm = 0.100000000000000 Å
+Trust radius = 0.120 Å
+E1 = -2106.31011512, E2 = -2106.32750549, dE = 0.01739037
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.01739037        0.00005000       NO    
+  2. RMS gradient                    0.00529136        0.00094500       NO    
+  3. Max gradient                    0.02283545        0.00132300       NO    
+  4. RMS displacement                0.01072113        0.00250000       NO    
+  5. Max displacement                0.05892249        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy increased by -0.002472, reducing to 0.060000
+
+****Step 4****
+Using Fixed Sequential GEDIIS_blend optimizer (step 4, trust_radius = 0.060 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.010721)
+Displacement norm = 0.060000000000000 Å
+Trust radius = 0.060 Å
+E1 = -2106.30461058, E2 = -2106.32160697, dE = 0.01699639
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.01699639        0.00005000       NO    
+  2. RMS gradient                    0.01953990        0.00094500       NO    
+  3. Max gradient                    0.07872465        0.00132300       NO    
+  4. RMS displacement                0.00643268        0.00250000       NO    
+  5. Max displacement                0.02638307        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy increased by -0.005505, reducing to 0.030000
+
+****Step 5****
+Using Fixed Sequential GEDIIS_blend optimizer (step 5, trust_radius = 0.030 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.006433)
+Displacement norm = 0.030000000000000 Å
+Trust radius = 0.030 Å
+E1 = -2106.30670351, E2 = -2106.32147976, dE = 0.01477625
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.01477625        0.00005000       NO    
+  2. RMS gradient                    0.01782328        0.00094500       NO    
+  3. Max gradient                    0.07092002        0.00132300       NO    
+  4. RMS displacement                0.00321634        0.00250000       NO    
+  5. Max displacement                0.01664856        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy decreased by 0.002093, increasing to 0.036000
+
+****Step 6****
+Using Fixed Sequential GEDIIS_blend optimizer (step 6, trust_radius = 0.036 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.003216)
+Displacement norm = 0.036000000000000 Å
+Trust radius = 0.036 Å
+E1 = -2106.30874726, E2 = -2106.32079257, dE = 0.01204531
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.01204531        0.00005000       NO    
+  2. RMS gradient                    0.01610849        0.00094500       NO    
+  3. Max gradient                    0.06838184        0.00132300       NO    
+  4. RMS displacement                0.00385961        0.00250000       NO    
+  5. Max displacement                0.02131669        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy decreased by 0.002044, increasing to 0.043200
+
+****Step 7****
+Using Fixed Sequential GEDIIS_blend optimizer (step 7, trust_radius = 0.043 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.003860)
+Displacement norm = 0.043200000000000 Å
+Trust radius = 0.043 Å
+E1 = -2106.31113953, E2 = -2106.32005252, dE = 0.00891299
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00891299        0.00005000       NO    
+  2. RMS gradient                    0.01211707        0.00094500       NO    
+  3. Max gradient                    0.05564970        0.00132300       NO    
+  4. RMS displacement                0.00463153        0.00250000       NO    
+  5. Max displacement                0.02309879        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy decreased by 0.002392, increasing to 0.051840
+
+****Step 8****
+Using Fixed Sequential GEDIIS_blend optimizer (step 8, trust_radius = 0.052 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.004632)
+Displacement norm = 0.051840000000000 Å
+Trust radius = 0.052 Å
+E1 = -2106.31240084, E2 = -2106.31740890, dE = 0.00500806
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00500806        0.00005000       NO    
+  2. RMS gradient                    0.00884378        0.00094500       NO    
+  3. Max gradient                    0.03815593        0.00132300       NO    
+  4. RMS displacement                0.00555783        0.00250000       NO    
+  5. Max displacement                0.02886141        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy decreased by 0.001261, increasing to 0.062208
+
+****Step 9****
+Using Fixed Sequential GEDIIS_blend optimizer (step 9, trust_radius = 0.062 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.005558)
+Displacement norm = 0.055283597407848 Å
+Trust radius = 0.062 Å
+E1 = -2106.31291385, E2 = -2106.31379250, dE = 0.00087865
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00087865        0.00005000       NO    
+  2. RMS gradient                    0.00374916        0.00094500       NO    
+  3. Max gradient                    0.01685471        0.00132300       NO    
+  4. RMS displacement                0.00592702        0.00250000       NO    
+  5. Max displacement                0.02976305        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy decreased by 0.000513, increasing to 0.074650
+
+****Step 10****
+Using Fixed Sequential GEDIIS_blend optimizer (step 10, trust_radius = 0.075 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.005927)
+Displacement norm = 0.036823335033522 Å
+Trust radius = 0.075 Å
+E1 = -2106.31336120, E2 = -2106.31679225, dE = 0.00343105
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00343105        0.00005000       NO    
+  2. RMS gradient                    0.00280552        0.00094500       NO    
+  3. Max gradient                    0.01394121        0.00132300       NO    
+  4. RMS displacement                0.00394788        0.00250000       NO    
+  5. Max displacement                0.02103587        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy decreased by 0.000447, increasing to 0.089580
+
+****Step 11****
+Using Fixed Sequential GEDIIS_blend optimizer (step 11, trust_radius = 0.090 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.003948)
+Displacement norm = 0.013196295788708 Å
+Trust radius = 0.090 Å
+E1 = -2106.31319770, E2 = -2106.31595563, dE = 0.00275793
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00275793        0.00005000       NO    
+  2. RMS gradient                    0.00378517        0.00094500       NO    
+  3. Max gradient                    0.01411820        0.00132300       NO    
+  4. RMS displacement                0.00141479        0.00250000       YES   
+  5. Max displacement                0.00547683        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy increased by -0.000164, reducing to 0.044790
+
+****Step 12****
+Using Fixed Sequential GEDIIS_blend optimizer (step 12, trust_radius = 0.045 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001415)
+Displacement norm = 0.010995059432257 Å
+Trust radius = 0.045 Å
+E1 = -2106.31339076, E2 = -2106.31670060, dE = 0.00330984
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00330984        0.00005000       NO    
+  2. RMS gradient                    0.00250881        0.00094500       NO    
+  3. Max gradient                    0.01095074        0.00132300       NO    
+  4. RMS displacement                0.00117879        0.00250000       YES   
+  5. Max displacement                0.00560068        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy decreased by 0.000193, increasing to 0.053748
+
+****Step 13****
+Using Fixed Sequential GEDIIS_blend optimizer (step 13, trust_radius = 0.054 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001179)
+Displacement norm = 0.006359060662223 Å
+Trust radius = 0.054 Å
+E1 = -2106.31347665, E2 = -2106.31687362, dE = 0.00339697
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00339697        0.00005000       NO    
+  2. RMS gradient                    0.00127756        0.00094500       NO    
+  3. Max gradient                    0.00465091        0.00132300       NO    
+  4. RMS displacement                0.00068176        0.00250000       YES   
+  5. Max displacement                0.00316354        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 14****
+Using Fixed Sequential GEDIIS_blend optimizer (step 14, trust_radius = 0.054 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000682 < 0.001000)
+Displacement norm = 0.017125572452346 Å
+Trust radius = 0.054 Å
+E1 = -2106.31354522, E2 = -2106.31771040, dE = 0.00416518
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00416518        0.00005000       NO    
+  2. RMS gradient                    0.00107216        0.00094500       NO    
+  3. Max gradient                    0.00401443        0.00132300       NO    
+  4. RMS displacement                0.00183605        0.00250000       YES   
+  5. Max displacement                0.00804480        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 15****
+Using Fixed Sequential GEDIIS_blend optimizer (step 15, trust_radius = 0.054 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001836)
+Displacement norm = 0.003821641605649 Å
+Trust radius = 0.054 Å
+E1 = -2106.31356024, E2 = -2106.31794439, dE = 0.00438415
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00438415        0.00005000       NO    
+  2. RMS gradient                    0.00089982        0.00094500       YES   
+  3. Max gradient                    0.00340465        0.00132300       NO    
+  4. RMS displacement                0.00040972        0.00250000       YES   
+  5. Max displacement                0.00175848        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 16****
+Using Fixed Sequential GEDIIS_blend optimizer (step 16, trust_radius = 0.054 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000410 < 0.001000)
+Displacement norm = 0.029206347425938 Å
+Trust radius = 0.054 Å
+E1 = -2106.31338335, E2 = -2106.31577246, dE = 0.00238911
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00238911        0.00005000       NO    
+  2. RMS gradient                    0.00148068        0.00094500       NO    
+  3. Max gradient                    0.00612302        0.00132300       NO    
+  4. RMS displacement                0.00313125        0.00250000       NO    
+  5. Max displacement                0.01587825        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy increased by -0.000177, reducing to 0.026874
+
+****Step 17****
+Using Fixed Sequential GEDIIS_blend optimizer (step 17, trust_radius = 0.027 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.003131)
+Displacement norm = 0.011090161984355 Å
+Trust radius = 0.027 Å
+E1 = -2106.31347464, E2 = -2106.31642757, dE = 0.00295293
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00295293        0.00005000       NO    
+  2. RMS gradient                    0.00061028        0.00094500       YES   
+  3. Max gradient                    0.00238794        0.00132300       NO    
+  4. RMS displacement                0.00118899        0.00250000       YES   
+  5. Max displacement                0.00437668        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 18****
+Using Fixed Sequential GEDIIS_blend optimizer (step 18, trust_radius = 0.027 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001189)
+Displacement norm = 0.006453366071547 Å
+Trust radius = 0.027 Å
+E1 = -2106.31349293, E2 = -2106.31668684, dE = 0.00319391
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00319391        0.00005000       NO    
+  2. RMS gradient                    0.00088746        0.00094500       YES   
+  3. Max gradient                    0.00316007        0.00132300       NO    
+  4. RMS displacement                0.00069187        0.00250000       YES   
+  5. Max displacement                0.00329923        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 19****
+Using Fixed Sequential GEDIIS_blend optimizer (step 19, trust_radius = 0.027 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000692 < 0.001000)
+Displacement norm = 0.021854483607589 Å
+Trust radius = 0.027 Å
+E1 = -2106.31332595, E2 = -2106.31489540, dE = 0.00156945
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00156945        0.00005000       NO    
+  2. RMS gradient                    0.00077036        0.00094500       YES   
+  3. Max gradient                    0.00334947        0.00132300       NO    
+  4. RMS displacement                0.00234305        0.00250000       YES   
+  5. Max displacement                0.01155783        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy increased by -0.000167, reducing to 0.013437
+
+****Step 20****
+Using Fixed Sequential GEDIIS_blend optimizer (step 20, trust_radius = 0.013 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.002343)
+Displacement norm = 0.013436928000000 Å
+Trust radius = 0.013 Å
+E1 = -2106.31343992, E2 = -2106.31600827, dE = 0.00256835
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00256835        0.00005000       NO    
+  2. RMS gradient                    0.00071102        0.00094500       YES   
+  3. Max gradient                    0.00294981        0.00132300       NO    
+  4. RMS displacement                0.00144059        0.00250000       YES   
+  5. Max displacement                0.00654746        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy decreased by 0.000114, increasing to 0.016124
+
+****Step 21****
+Using Fixed Sequential GEDIIS_blend optimizer (step 21, trust_radius = 0.016 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001441)
+Displacement norm = 0.016124313600000 Å
+Trust radius = 0.016 Å
+E1 = -2106.31352398, E2 = -2106.31719946, dE = 0.00367548
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00367548        0.00005000       NO    
+  2. RMS gradient                    0.00076674        0.00094500       YES   
+  3. Max gradient                    0.00244267        0.00132300       NO    
+  4. RMS displacement                0.00172871        0.00250000       YES   
+  5. Max displacement                0.00742461        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 22****
+Using Fixed Sequential GEDIIS_blend optimizer (step 22, trust_radius = 0.016 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001729)
+Displacement norm = 0.009432430935593 Å
+Trust radius = 0.016 Å
+E1 = -2106.31348161, E2 = -2106.31672121, dE = 0.00323960
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00323960        0.00005000       NO    
+  2. RMS gradient                    0.00123886        0.00094500       NO    
+  3. Max gradient                    0.00442984        0.00132300       NO    
+  4. RMS displacement                0.00101126        0.00250000       YES   
+  5. Max displacement                0.00379463        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 23****
+Using Fixed Sequential GEDIIS_blend optimizer (step 23, trust_radius = 0.016 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001011)
+Displacement norm = 0.008868391868586 Å
+Trust radius = 0.016 Å
+E1 = -2106.31351155, E2 = -2106.31690050, dE = 0.00338895
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00338895        0.00005000       NO    
+  2. RMS gradient                    0.00081843        0.00094500       YES   
+  3. Max gradient                    0.00271984        0.00132300       NO    
+  4. RMS displacement                0.00095079        0.00250000       YES   
+  5. Max displacement                0.00423074        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 24****
+Using Fixed Sequential GEDIIS_blend optimizer (step 24, trust_radius = 0.016 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000951 < 0.001000)
+Displacement norm = 0.016124313600000 Å
+Trust radius = 0.016 Å
+E1 = -2106.31341732, E2 = -2106.31576172, dE = 0.00234440
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00234440        0.00005000       NO    
+  2. RMS gradient                    0.00119193        0.00094500       NO    
+  3. Max gradient                    0.00449629        0.00132300       NO    
+  4. RMS displacement                0.00172871        0.00250000       YES   
+  5. Max displacement                0.00738448        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 25****
+Using Fixed Sequential GEDIIS_blend optimizer (step 25, trust_radius = 0.016 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001729)
+Displacement norm = 0.005669628775454 Å
+Trust radius = 0.016 Å
+E1 = -2106.31340836, E2 = -2106.31568722, dE = 0.00227886
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00227886        0.00005000       NO    
+  2. RMS gradient                    0.00125391        0.00094500       NO    
+  3. Max gradient                    0.00524964        0.00132300       NO    
+  4. RMS displacement                0.00060785        0.00250000       YES   
+  5. Max displacement                0.00267489        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 26****
+Using Fixed Sequential GEDIIS_blend optimizer (step 26, trust_radius = 0.016 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000608 < 0.001000)
+Displacement norm = 0.016124313600000 Å
+Trust radius = 0.016 Å
+E1 = -2106.31344727, E2 = -2106.31635448, dE = 0.00290721
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00290721        0.00005000       NO    
+  2. RMS gradient                    0.00186738        0.00094500       NO    
+  3. Max gradient                    0.00667355        0.00132300       NO    
+  4. RMS displacement                0.00172871        0.00250000       YES   
+  5. Max displacement                0.00765402        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 27****
+Using Fixed Sequential GEDIIS_blend optimizer (step 27, trust_radius = 0.016 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001729)
+Displacement norm = 0.016124313600000 Å
+Trust radius = 0.016 Å
+E1 = -2106.31341842, E2 = -2106.31561952, dE = 0.00220110
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00220110        0.00005000       NO    
+  2. RMS gradient                    0.00071622        0.00094500       YES   
+  3. Max gradient                    0.00268168        0.00132300       NO    
+  4. RMS displacement                0.00172871        0.00250000       YES   
+  5. Max displacement                0.00810956        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 28****
+Using Fixed Sequential GEDIIS_blend optimizer (step 28, trust_radius = 0.016 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001729)
+Displacement norm = 0.013351455933621 Å
+Trust radius = 0.016 Å
+E1 = -2106.31325158, E2 = -2106.31442300, dE = 0.00117142
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00117142        0.00005000       NO    
+  2. RMS gradient                    0.00178480        0.00094500       NO    
+  3. Max gradient                    0.00705222        0.00132300       NO    
+  4. RMS displacement                0.00143143        0.00250000       YES   
+  5. Max displacement                0.00744800        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy increased by -0.000167, reducing to 0.010000
+
+****Step 29****
+Using Fixed Sequential GEDIIS_blend optimizer (step 29, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001431)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31335190, E2 = -2106.31512388, dE = 0.00177198
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00177198        0.00005000       NO    
+  2. RMS gradient                    0.00114139        0.00094500       NO    
+  3. Max gradient                    0.00372540        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00543755        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy decreased by 0.000100, increasing to 0.012000
+
+****Step 30****
+Using Fixed Sequential GEDIIS_blend optimizer (step 30, trust_radius = 0.012 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.012000000000000 Å
+Trust radius = 0.012 Å
+E1 = -2106.31345627, E2 = -2106.31610178, dE = 0.00264551
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00264551        0.00005000       NO    
+  2. RMS gradient                    0.00085177        0.00094500       YES   
+  3. Max gradient                    0.00317273        0.00132300       NO    
+  4. RMS displacement                0.00128654        0.00250000       YES   
+  5. Max displacement                0.00576195        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy decreased by 0.000104, increasing to 0.014400
+
+****Step 31****
+Using Fixed Sequential GEDIIS_blend optimizer (step 31, trust_radius = 0.014 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001287)
+Displacement norm = 0.009176623936650 Å
+Trust radius = 0.014 Å
+E1 = -2106.31342791, E2 = -2106.31590320, dE = 0.00247529
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00247529        0.00005000       NO    
+  2. RMS gradient                    0.00139393        0.00094500       NO    
+  3. Max gradient                    0.00529339        0.00132300       NO    
+  4. RMS displacement                0.00098384        0.00250000       YES   
+  5. Max displacement                0.00359267        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 32****
+Using Fixed Sequential GEDIIS_blend optimizer (step 32, trust_radius = 0.014 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000984 < 0.001000)
+Displacement norm = 0.014400000000000 Å
+Trust radius = 0.014 Å
+E1 = -2106.31334000, E2 = -2106.31487226, dE = 0.00153226
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00153226        0.00005000       NO    
+  2. RMS gradient                    0.00098735        0.00094500       NO    
+  3. Max gradient                    0.00558281        0.00132300       NO    
+  4. RMS displacement                0.00154384        0.00250000       YES   
+  5. Max displacement                0.00712186        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 33****
+Using Fixed Sequential GEDIIS_blend optimizer (step 33, trust_radius = 0.014 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001544)
+Displacement norm = 0.008271658763591 Å
+Trust radius = 0.014 Å
+E1 = -2106.31334280, E2 = -2106.31501322, dE = 0.00167042
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00167042        0.00005000       NO    
+  2. RMS gradient                    0.00125216        0.00094500       NO    
+  3. Max gradient                    0.00631806        0.00132300       NO    
+  4. RMS displacement                0.00088681        0.00250000       YES   
+  5. Max displacement                0.00447161        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 34****
+Using Fixed Sequential GEDIIS_blend optimizer (step 34, trust_radius = 0.014 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000887 < 0.001000)
+Displacement norm = 0.014400000000000 Å
+Trust radius = 0.014 Å
+E1 = -2106.31326333, E2 = -2106.31420073, dE = 0.00093740
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00093740        0.00005000       NO    
+  2. RMS gradient                    0.00113350        0.00094500       NO    
+  3. Max gradient                    0.00608778        0.00132300       NO    
+  4. RMS displacement                0.00154384        0.00250000       YES   
+  5. Max displacement                0.00639478        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 35****
+Using Fixed Sequential GEDIIS_blend optimizer (step 35, trust_radius = 0.014 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001544)
+Displacement norm = 0.014400000000000 Å
+Trust radius = 0.014 Å
+E1 = -2106.31336594, E2 = -2106.31510017, dE = 0.00173423
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00173423        0.00005000       NO    
+  2. RMS gradient                    0.00082716        0.00094500       YES   
+  3. Max gradient                    0.00353740        0.00132300       NO    
+  4. RMS displacement                0.00154384        0.00250000       YES   
+  5. Max displacement                0.00568388        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy decreased by 0.000103, increasing to 0.017280
+
+****Step 36****
+Using Fixed Sequential GEDIIS_blend optimizer (step 36, trust_radius = 0.017 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001544)
+Displacement norm = 0.006941836961196 Å
+Trust radius = 0.017 Å
+E1 = -2106.31333144, E2 = -2106.31475292, dE = 0.00142148
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00142148        0.00005000       NO    
+  2. RMS gradient                    0.00086574        0.00094500       YES   
+  3. Max gradient                    0.00351409        0.00132300       NO    
+  4. RMS displacement                0.00074424        0.00250000       YES   
+  5. Max displacement                0.00283227        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 37****
+Using Fixed Sequential GEDIIS_blend optimizer (step 37, trust_radius = 0.017 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000744 < 0.001000)
+Displacement norm = 0.017280000000000 Å
+Trust radius = 0.017 Å
+E1 = -2106.31322644, E2 = -2106.31375136, dE = 0.00052492
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00052492        0.00005000       NO    
+  2. RMS gradient                    0.00063422        0.00094500       YES   
+  3. Max gradient                    0.00298245        0.00132300       NO    
+  4. RMS displacement                0.00185261        0.00250000       YES   
+  5. Max displacement                0.00718617        0.00400000       NO    
+----------------------------------------------------------------------------
+
+    Trust radius: energy increased by -0.000105, reducing to 0.010000
+
+****Step 38****
+Using Fixed Sequential GEDIIS_blend optimizer (step 38, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001853)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31328644, E2 = -2106.31427806, dE = 0.00099162
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00099162        0.00005000       NO    
+  2. RMS gradient                    0.00054930        0.00094500       YES   
+  3. Max gradient                    0.00243100        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00421797        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 39****
+Using Fixed Sequential GEDIIS_blend optimizer (step 39, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31333304, E2 = -2106.31478316, dE = 0.00145012
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00145012        0.00005000       NO    
+  2. RMS gradient                    0.00081675        0.00094500       YES   
+  3. Max gradient                    0.00312695        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00480428        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 40****
+Using Fixed Sequential GEDIIS_blend optimizer (step 40, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.004932839834903 Å
+Trust radius = 0.010 Å
+E1 = -2106.31331087, E2 = -2106.31454170, dE = 0.00123083
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00123083        0.00005000       NO    
+  2. RMS gradient                    0.00068892        0.00094500       YES   
+  3. Max gradient                    0.00305573        0.00132300       NO    
+  4. RMS displacement                0.00052886        0.00250000       YES   
+  5. Max displacement                0.00202657        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 41****
+Using Fixed Sequential GEDIIS_blend optimizer (step 41, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000529 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31324702, E2 = -2106.31393939, dE = 0.00069237
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00069237        0.00005000       NO    
+  2. RMS gradient                    0.00058838        0.00094500       YES   
+  3. Max gradient                    0.00239950        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00409856        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 42****
+Using Fixed Sequential GEDIIS_blend optimizer (step 42, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31328865, E2 = -2106.31439817, dE = 0.00110952
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00110952        0.00005000       NO    
+  2. RMS gradient                    0.00090368        0.00094500       YES   
+  3. Max gradient                    0.00362070        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00478528        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 43****
+Using Fixed Sequential GEDIIS_blend optimizer (step 43, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31335569, E2 = -2106.31504509, dE = 0.00168940
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00168940        0.00005000       NO    
+  2. RMS gradient                    0.00094662        0.00094500       NO    
+  3. Max gradient                    0.00416371        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00407433        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 44****
+Using Fixed Sequential GEDIIS_blend optimizer (step 44, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.004323479671604 Å
+Trust radius = 0.010 Å
+E1 = -2106.31339128, E2 = -2106.31540248, dE = 0.00201120
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00201120        0.00005000       NO    
+  2. RMS gradient                    0.00099763        0.00094500       NO    
+  3. Max gradient                    0.00416376        0.00132300       NO    
+  4. RMS displacement                0.00046353        0.00250000       YES   
+  5. Max displacement                0.00244021        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 45****
+Using Fixed Sequential GEDIIS_blend optimizer (step 45, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000464 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31334381, E2 = -2106.31482375, dE = 0.00147994
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00147994        0.00005000       NO    
+  2. RMS gradient                    0.00073505        0.00094500       YES   
+  3. Max gradient                    0.00265294        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00416814        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 46****
+Using Fixed Sequential GEDIIS_blend optimizer (step 46, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31342672, E2 = -2106.31567594, dE = 0.00224922
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00224922        0.00005000       NO    
+  2. RMS gradient                    0.00075098        0.00094500       YES   
+  3. Max gradient                    0.00256029        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00565876        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 47****
+Using Fixed Sequential GEDIIS_blend optimizer (step 47, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31348370, E2 = -2106.31642781, dE = 0.00294411
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00294411        0.00005000       NO    
+  2. RMS gradient                    0.00082221        0.00094500       YES   
+  3. Max gradient                    0.00374928        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00479972        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 48****
+Using Fixed Sequential GEDIIS_blend optimizer (step 48, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31351464, E2 = -2106.31685664, dE = 0.00334200
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00334200        0.00005000       NO    
+  2. RMS gradient                    0.00081671        0.00094500       YES   
+  3. Max gradient                    0.00352666        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00461827        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 49****
+Using Fixed Sequential GEDIIS_blend optimizer (step 49, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31347669, E2 = -2106.31630305, dE = 0.00282636
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00282636        0.00005000       NO    
+  2. RMS gradient                    0.00089416        0.00094500       YES   
+  3. Max gradient                    0.00391249        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00417436        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 50****
+Using Fixed Sequential GEDIIS_blend optimizer (step 50, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.009105610865178 Å
+Trust radius = 0.010 Å
+E1 = -2106.31344221, E2 = -2106.31592960, dE = 0.00248739
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00248739        0.00005000       NO    
+  2. RMS gradient                    0.00112131        0.00094500       NO    
+  3. Max gradient                    0.00397949        0.00132300       NO    
+  4. RMS displacement                0.00097622        0.00250000       YES   
+  5. Max displacement                0.00372672        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 51****
+Using Fixed Sequential GEDIIS_blend optimizer (step 51, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000976 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31339682, E2 = -2106.31529780, dE = 0.00190098
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00190098        0.00005000       NO    
+  2. RMS gradient                    0.00078591        0.00094500       YES   
+  3. Max gradient                    0.00323074        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00458656        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 52****
+Using Fixed Sequential GEDIIS_blend optimizer (step 52, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31344550, E2 = -2106.31585586, dE = 0.00241036
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00241036        0.00005000       NO    
+  2. RMS gradient                    0.00075270        0.00094500       YES   
+  3. Max gradient                    0.00242540        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00424614        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 53****
+Using Fixed Sequential GEDIIS_blend optimizer (step 53, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31347736, E2 = -2106.31628519, dE = 0.00280783
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00280783        0.00005000       NO    
+  2. RMS gradient                    0.00078210        0.00094500       YES   
+  3. Max gradient                    0.00253652        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00459969        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 54****
+Using Fixed Sequential GEDIIS_blend optimizer (step 54, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31345278, E2 = -2106.31592136, dE = 0.00246858
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00246858        0.00005000       NO    
+  2. RMS gradient                    0.00067402        0.00094500       YES   
+  3. Max gradient                    0.00286700        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00455851        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 55****
+Using Fixed Sequential GEDIIS_blend optimizer (step 55, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.003286494871505 Å
+Trust radius = 0.010 Å
+E1 = -2106.31343596, E2 = -2106.31574859, dE = 0.00231263
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00231263        0.00005000       NO    
+  2. RMS gradient                    0.00080014        0.00094500       YES   
+  3. Max gradient                    0.00322272        0.00132300       NO    
+  4. RMS displacement                0.00035235        0.00250000       YES   
+  5. Max displacement                0.00161146        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 56****
+Using Fixed Sequential GEDIIS_blend optimizer (step 56, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000352 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31340124, E2 = -2106.31531206, dE = 0.00191082
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00191082        0.00005000       NO    
+  2. RMS gradient                    0.00069805        0.00094500       YES   
+  3. Max gradient                    0.00282942        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00471601        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 57****
+Using Fixed Sequential GEDIIS_blend optimizer (step 57, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.007978258891396 Å
+Trust radius = 0.010 Å
+E1 = -2106.31345565, E2 = -2106.31591657, dE = 0.00246092
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00246092        0.00005000       NO    
+  2. RMS gradient                    0.00055665        0.00094500       YES   
+  3. Max gradient                    0.00241557        0.00132300       NO    
+  4. RMS displacement                0.00085536        0.00250000       YES   
+  5. Max displacement                0.00401238        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 58****
+Using Fixed Sequential GEDIIS_blend optimizer (step 58, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000855 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31341652, E2 = -2106.31543430, dE = 0.00201778
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00201778        0.00005000       NO    
+  2. RMS gradient                    0.00044021        0.00094500       YES   
+  3. Max gradient                    0.00200997        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00446761        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 59****
+Using Fixed Sequential GEDIIS_blend optimizer (step 59, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.007777963120045 Å
+Trust radius = 0.010 Å
+E1 = -2106.31345732, E2 = -2106.31597490, dE = 0.00251758
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00251758        0.00005000       NO    
+  2. RMS gradient                    0.00065038        0.00094500       YES   
+  3. Max gradient                    0.00279525        0.00132300       NO    
+  4. RMS displacement                0.00083389        0.00250000       YES   
+  5. Max displacement                0.00368913        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 60****
+Using Fixed Sequential GEDIIS_blend optimizer (step 60, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000834 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31341588, E2 = -2106.31546454, dE = 0.00204866
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00204866        0.00005000       NO    
+  2. RMS gradient                    0.00057044        0.00094500       YES   
+  3. Max gradient                    0.00256232        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00438736        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 61****
+Using Fixed Sequential GEDIIS_blend optimizer (step 61, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.004983548488603 Å
+Trust radius = 0.010 Å
+E1 = -2106.31343688, E2 = -2106.31577433, dE = 0.00233745
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00233745        0.00005000       NO    
+  2. RMS gradient                    0.00080405        0.00094500       YES   
+  3. Max gradient                    0.00361539        0.00132300       NO    
+  4. RMS displacement                0.00053429        0.00250000       YES   
+  5. Max displacement                0.00203721        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 62****
+Using Fixed Sequential GEDIIS_blend optimizer (step 62, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000534 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31339275, E2 = -2106.31523989, dE = 0.00184714
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00184714        0.00005000       NO    
+  2. RMS gradient                    0.00069285        0.00094500       YES   
+  3. Max gradient                    0.00316661        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00435577        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 63****
+Using Fixed Sequential GEDIIS_blend optimizer (step 63, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.009291353041098 Å
+Trust radius = 0.010 Å
+E1 = -2106.31343946, E2 = -2106.31577645, dE = 0.00233699
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00233699        0.00005000       NO    
+  2. RMS gradient                    0.00073405        0.00094500       YES   
+  3. Max gradient                    0.00261415        0.00132300       NO    
+  4. RMS displacement                0.00099614        0.00250000       YES   
+  5. Max displacement                0.00382796        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 64****
+Using Fixed Sequential GEDIIS_blend optimizer (step 64, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000996 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31339708, E2 = -2106.31527894, dE = 0.00188186
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00188186        0.00005000       NO    
+  2. RMS gradient                    0.00068317        0.00094500       YES   
+  3. Max gradient                    0.00229122        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00452181        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 65****
+Using Fixed Sequential GEDIIS_blend optimizer (step 65, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31343757, E2 = -2106.31578940, dE = 0.00235183
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00235183        0.00005000       NO    
+  2. RMS gradient                    0.00093173        0.00094500       YES   
+  3. Max gradient                    0.00364915        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00444091        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 66****
+Using Fixed Sequential GEDIIS_blend optimizer (step 66, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.007641065272027 Å
+Trust radius = 0.010 Å
+E1 = -2106.31348317, E2 = -2106.31633324, dE = 0.00285007
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00285007        0.00005000       NO    
+  2. RMS gradient                    0.00062642        0.00094500       YES   
+  3. Max gradient                    0.00215448        0.00132300       NO    
+  4. RMS displacement                0.00081921        0.00250000       YES   
+  5. Max displacement                0.00352922        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 67****
+Using Fixed Sequential GEDIIS_blend optimizer (step 67, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000819 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31343775, E2 = -2106.31575526, dE = 0.00231751
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00231751        0.00005000       NO    
+  2. RMS gradient                    0.00067487        0.00094500       YES   
+  3. Max gradient                    0.00304021        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00412852        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 68****
+Using Fixed Sequential GEDIIS_blend optimizer (step 68, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.009070518600027 Å
+Trust radius = 0.010 Å
+E1 = -2106.31347994, E2 = -2106.31631044, dE = 0.00283050
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00283050        0.00005000       NO    
+  2. RMS gradient                    0.00070621        0.00094500       YES   
+  3. Max gradient                    0.00227593        0.00132300       NO    
+  4. RMS displacement                0.00097246        0.00250000       YES   
+  5. Max displacement                0.00356042        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 69****
+Using Fixed Sequential GEDIIS_blend optimizer (step 69, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000972 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31343674, E2 = -2106.31574587, dE = 0.00230913
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00230913        0.00005000       NO    
+  2. RMS gradient                    0.00067209        0.00094500       YES   
+  3. Max gradient                    0.00212356        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00403965        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 70****
+Using Fixed Sequential GEDIIS_blend optimizer (step 70, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.008088909463794 Å
+Trust radius = 0.010 Å
+E1 = -2106.31346725, E2 = -2106.31609875, dE = 0.00263150
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00263150        0.00005000       NO    
+  2. RMS gradient                    0.00065683        0.00094500       YES   
+  3. Max gradient                    0.00229388        0.00132300       NO    
+  4. RMS displacement                0.00086722        0.00250000       YES   
+  5. Max displacement                0.00355386        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 71****
+Using Fixed Sequential GEDIIS_blend optimizer (step 71, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000867 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31342277, E2 = -2106.31553583, dE = 0.00211306
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00211306        0.00005000       NO    
+  2. RMS gradient                    0.00056180        0.00094500       YES   
+  3. Max gradient                    0.00190932        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00402423        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 72****
+Using Fixed Sequential GEDIIS_blend optimizer (step 72, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31347370, E2 = -2106.31626294, dE = 0.00278924
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00278924        0.00005000       NO    
+  2. RMS gradient                    0.00071516        0.00094500       YES   
+  3. Max gradient                    0.00308590        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00461505        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 73****
+Using Fixed Sequential GEDIIS_blend optimizer (step 73, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.002133915446502 Å
+Trust radius = 0.010 Å
+E1 = -2106.31346708, E2 = -2106.31620729, dE = 0.00274021
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00274021        0.00005000       NO    
+  2. RMS gradient                    0.00082985        0.00094500       YES   
+  3. Max gradient                    0.00389703        0.00132300       NO    
+  4. RMS displacement                0.00022878        0.00250000       YES   
+  5. Max displacement                0.00080137        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 74****
+Using Fixed Sequential GEDIIS_blend optimizer (step 74, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000229 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31342706, E2 = -2106.31565054, dE = 0.00222348
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00222348        0.00005000       NO    
+  2. RMS gradient                    0.00064327        0.00094500       YES   
+  3. Max gradient                    0.00296168        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00400060        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 75****
+Using Fixed Sequential GEDIIS_blend optimizer (step 75, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.007451699025789 Å
+Trust radius = 0.010 Å
+E1 = -2106.31346052, E2 = -2106.31607731, dE = 0.00261679
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00261679        0.00005000       NO    
+  2. RMS gradient                    0.00070199        0.00094500       YES   
+  3. Max gradient                    0.00239320        0.00132300       NO    
+  4. RMS displacement                0.00079891        0.00250000       YES   
+  5. Max displacement                0.00290523        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 76****
+Using Fixed Sequential GEDIIS_blend optimizer (step 76, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000799 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31342976, E2 = -2106.31565949, dE = 0.00222973
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00222973        0.00005000       NO    
+  2. RMS gradient                    0.00057662        0.00094500       YES   
+  3. Max gradient                    0.00208571        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00400779        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 77****
+Using Fixed Sequential GEDIIS_blend optimizer (step 77, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.009277780368394 Å
+Trust radius = 0.010 Å
+E1 = -2106.31346381, E2 = -2106.31612923, dE = 0.00266542
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00266542        0.00005000       NO    
+  2. RMS gradient                    0.00074963        0.00094500       YES   
+  3. Max gradient                    0.00342446        0.00132300       NO    
+  4. RMS displacement                0.00099468        0.00250000       YES   
+  5. Max displacement                0.00539546        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 78****
+Using Fixed Sequential GEDIIS_blend optimizer (step 78, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000995 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31341982, E2 = -2106.31553307, dE = 0.00211325
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00211325        0.00005000       NO    
+  2. RMS gradient                    0.00058063        0.00094500       YES   
+  3. Max gradient                    0.00262452        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00390305        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 79****
+Using Fixed Sequential GEDIIS_blend optimizer (step 79, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.008855104219055 Å
+Trust radius = 0.010 Å
+E1 = -2106.31343299, E2 = -2106.31603904, dE = 0.00260605
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00260605        0.00005000       NO    
+  2. RMS gradient                    0.00135505        0.00094500       NO    
+  3. Max gradient                    0.00613029        0.00132300       NO    
+  4. RMS displacement                0.00094937        0.00250000       YES   
+  5. Max displacement                0.00417350        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 80****
+Using Fixed Sequential GEDIIS_blend optimizer (step 80, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000949 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31341819, E2 = -2106.31590760, dE = 0.00248941
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00248941        0.00005000       NO    
+  2. RMS gradient                    0.00129545        0.00094500       NO    
+  3. Max gradient                    0.00517133        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00384616        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 81****
+Using Fixed Sequential GEDIIS_blend optimizer (step 81, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31346782, E2 = -2106.31633788, dE = 0.00287006
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00287006        0.00005000       NO    
+  2. RMS gradient                    0.00086554        0.00094500       YES   
+  3. Max gradient                    0.00335826        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00442279        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 82****
+Using Fixed Sequential GEDIIS_blend optimizer (step 82, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31344114, E2 = -2106.31598542, dE = 0.00254428
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00254428        0.00005000       NO    
+  2. RMS gradient                    0.00119899        0.00094500       NO    
+  3. Max gradient                    0.00407949        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00406261        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 83****
+Using Fixed Sequential GEDIIS_blend optimizer (step 83, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.009664540082382 Å
+Trust radius = 0.010 Å
+E1 = -2106.31345843, E2 = -2106.31600423, dE = 0.00254580
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00254580        0.00005000       NO    
+  2. RMS gradient                    0.00062970        0.00094500       YES   
+  3. Max gradient                    0.00226062        0.00132300       NO    
+  4. RMS displacement                0.00103615        0.00250000       YES   
+  5. Max displacement                0.00329753        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 84****
+Using Fixed Sequential GEDIIS_blend optimizer (step 84, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001036)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31345235, E2 = -2106.31597733, dE = 0.00252498
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00252498        0.00005000       NO    
+  2. RMS gradient                    0.00069636        0.00094500       YES   
+  3. Max gradient                    0.00242153        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00345061        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 85****
+Using Fixed Sequential GEDIIS_blend optimizer (step 85, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.008830923611868 Å
+Trust radius = 0.010 Å
+E1 = -2106.31347146, E2 = -2106.31635491, dE = 0.00288345
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00288345        0.00005000       NO    
+  2. RMS gradient                    0.00118462        0.00094500       NO    
+  3. Max gradient                    0.00449601        0.00132300       NO    
+  4. RMS displacement                0.00094677        0.00250000       YES   
+  5. Max displacement                0.00427412        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 86****
+Using Fixed Sequential GEDIIS_blend optimizer (step 86, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000947 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31343484, E2 = -2106.31579637, dE = 0.00236153
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00236153        0.00005000       NO    
+  2. RMS gradient                    0.00093494        0.00094500       YES   
+  3. Max gradient                    0.00347252        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00511207        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 87****
+Using Fixed Sequential GEDIIS_blend optimizer (step 87, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31343341, E2 = -2106.31591978, dE = 0.00248637
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00248637        0.00005000       NO    
+  2. RMS gradient                    0.00123747        0.00094500       NO    
+  3. Max gradient                    0.00492596        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00329216        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 88****
+Using Fixed Sequential GEDIIS_blend optimizer (step 88, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31343542, E2 = -2106.31600080, dE = 0.00256538
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00256538        0.00005000       NO    
+  2. RMS gradient                    0.00122885        0.00094500       NO    
+  3. Max gradient                    0.00545400        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00351112        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 89****
+Using Fixed Sequential GEDIIS_blend optimizer (step 89, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31338377, E2 = -2106.31537775, dE = 0.00199398
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00199398        0.00005000       NO    
+  2. RMS gradient                    0.00129762        0.00094500       NO    
+  3. Max gradient                    0.00574443        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00407896        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 90****
+Using Fixed Sequential GEDIIS_blend optimizer (step 90, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.009050530053974 Å
+Trust radius = 0.010 Å
+E1 = -2106.31342434, E2 = -2106.31567071, dE = 0.00224637
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00224637        0.00005000       NO    
+  2. RMS gradient                    0.00089327        0.00094500       YES   
+  3. Max gradient                    0.00320131        0.00132300       NO    
+  4. RMS displacement                0.00097032        0.00250000       YES   
+  5. Max displacement                0.00508160        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 91****
+Using Fixed Sequential GEDIIS_blend optimizer (step 91, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000970 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31337389, E2 = -2106.31497915, dE = 0.00160526
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00160526        0.00005000       NO    
+  2. RMS gradient                    0.00055298        0.00094500       YES   
+  3. Max gradient                    0.00171389        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00431388        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 92****
+Using Fixed Sequential GEDIIS_blend optimizer (step 92, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31341537, E2 = -2106.31550287, dE = 0.00208750
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00208750        0.00005000       NO    
+  2. RMS gradient                    0.00082014        0.00094500       YES   
+  3. Max gradient                    0.00368388        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00424622        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 93****
+Using Fixed Sequential GEDIIS_blend optimizer (step 93, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.004305041443383 Å
+Trust radius = 0.010 Å
+E1 = -2106.31338749, E2 = -2106.31519711, dE = 0.00180962
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00180962        0.00005000       NO    
+  2. RMS gradient                    0.00096846        0.00094500       NO    
+  3. Max gradient                    0.00351706        0.00132300       NO    
+  4. RMS displacement                0.00046155        0.00250000       YES   
+  5. Max displacement                0.00205773        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 94****
+Using Fixed Sequential GEDIIS_blend optimizer (step 94, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000462 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31332870, E2 = -2106.31449410, dE = 0.00116540
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00116540        0.00005000       NO    
+  2. RMS gradient                    0.00069062        0.00094500       YES   
+  3. Max gradient                    0.00264907        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00446325        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 95****
+Using Fixed Sequential GEDIIS_blend optimizer (step 95, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31338645, E2 = -2106.31519569, dE = 0.00180924
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00180924        0.00005000       NO    
+  2. RMS gradient                    0.00075648        0.00094500       YES   
+  3. Max gradient                    0.00355500        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00496294        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 96****
+Using Fixed Sequential GEDIIS_blend optimizer (step 96, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31337331, E2 = -2106.31538368, dE = 0.00201037
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00201037        0.00005000       NO    
+  2. RMS gradient                    0.00109072        0.00094500       NO    
+  3. Max gradient                    0.00428296        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00543873        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 97****
+Using Fixed Sequential GEDIIS_blend optimizer (step 97, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.007314101394261 Å
+Trust radius = 0.010 Å
+E1 = -2106.31338473, E2 = -2106.31529018, dE = 0.00190545
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00190545        0.00005000       NO    
+  2. RMS gradient                    0.00098736        0.00094500       NO    
+  3. Max gradient                    0.00397483        0.00132300       NO    
+  4. RMS displacement                0.00078415        0.00250000       YES   
+  5. Max displacement                0.00402402        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 98****
+Using Fixed Sequential GEDIIS_blend optimizer (step 98, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000784 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31333457, E2 = -2106.31469831, dE = 0.00136374
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00136374        0.00005000       NO    
+  2. RMS gradient                    0.00112888        0.00094500       NO    
+  3. Max gradient                    0.00558153        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00426032        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****Step 99****
+Using Fixed Sequential GEDIIS_blend optimizer (step 99, trust_radius = 0.010 Å)
+Fixed Sequential blend: using 50/50 fixed blend (rms_disp=0.001072)
+Displacement norm = 0.003206529526752 Å
+Trust radius = 0.010 Å
+E1 = -2106.31334095, E2 = -2106.31469387, dE = 0.00135292
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00135292        0.00005000       NO    
+  2. RMS gradient                    0.00081330        0.00094500       YES   
+  3. Max gradient                    0.00337904        0.00132300       NO    
+  4. RMS displacement                0.00034378        0.00250000       YES   
+  5. Max displacement                0.00136407        0.00400000       YES   
+----------------------------------------------------------------------------
+
+
+****Step 100****
+Using Fixed Sequential GEDIIS_blend optimizer (step 100, trust_radius = 0.010 Å)
+Fixed Sequential blend: switching to GDIIS (rms_disp=0.000344 < 0.001000)
+Displacement norm = 0.010000000000000 Å
+Trust radius = 0.010 Å
+E1 = -2106.31331701, E2 = -2106.31450629, dE = 0.00118928
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00118928        0.00005000       NO    
+  2. RMS gradient                    0.00066808        0.00094500       YES   
+  3. Max gradient                    0.00241688        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00539814        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+****WARNING: MECP optimization did not converge after 100 steps****
+
+Final convergence status:
+ Criteria                            Current           Threshold        Pass
+----------------------------------------------------------------------------
+  1. Energy difference               0.00118928        0.00005000       NO    
+  2. RMS gradient                    0.00066808        0.00094500       YES   
+  3. Max gradient                    0.00241688        0.00132300       NO    
+  4. RMS displacement                0.00107211        0.00250000       YES   
+  5. Max displacement                0.00539814        0.00400000       NO    
+----------------------------------------------------------------------------
+
+
+Suggestions:
+  - Energy difference (0.001189) is still large. The states may not be close to crossing.
+  - Gradients are still large. Consider increasing max_steps or checking if the system is stuck.
+  - Displacements are still large. The optimization may need more steps to settle.
+  - Try increasing 'max_steps' in your input file
+  - Check if the initial geometry is reasonable
+  - Consider using a different optimizer (use_gediis = true)
+

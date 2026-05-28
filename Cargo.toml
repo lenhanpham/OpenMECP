@@ -1,0 +1,38 @@
+[package]
+name = "omecp"
+version = "0.0.5"
+edition = "2021"
+authors = ["Le Nhan Pham"]
+
+[dependencies]
+# Linear algebra
+nalgebra = "0.34.1"
+
+lazy_static = "1.5.0"
+
+# File I/O & parsing
+regex = "1.12.2"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+configparser = "3.1.0"
+
+
+# Error handling
+thiserror = "2.0.17"
+
+
+# Logging
+log = "0.4.28"
+env_logger = "0.11.8"
+
+# I/O & system
+tempfile = "3.23.0"
+
+[dev-dependencies]
+cargo-hack = "0.6.39"
+proptest = "1.4"
+
+[package.metadata.docs.rs]
+# Build all features and document private items on docs.rs
+all-features = true
+rustdoc-args = ["--document-private-items"]

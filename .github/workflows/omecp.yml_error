@@ -1,0 +1,211 @@
+name: OpenMECP CI
+'on':
+  push:
+    branches:
+      - main
+      - develop
+      - dev
+    tags:
+      - v*
+  pull_request:
+    branches:
+      - main
+      - develop
+      - dev
+  workflow_dispatch: {}
+concurrency:
+  group: '${{ github.workflow }}-${{ github.ref }}'
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+jobs:
+  determine-changes:
+    name: Determine which jobs to run
+    runs-on: ubuntu-latest
+    outputs:
+      run_tests: ${{ steps.check_changes.outputs.run_tests }}
+      run_docs: ${{ steps.check_changes.outputs.run_docs }}
+      run_security: ${{ steps.check_changes.outputs.run_security }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch base ref for PRs
+        if: github.event_name == 'pull_request'
+        run: git fetch origin ${{ github.base_ref }} --depth=1
+      - name: Check for file changes
+        id: check_changes
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} HEAD)
+          else
+            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+          fi
+          run_tests=false
+          run_docs=false
+          run_security=false
+          if echo "$CHANGED_FILES" | grep -qE '^(Cargo\.|src/|tests/|examples/|benches/|\.github/workflows/)'; then
+            run_tests=true
+            run_docs=true
+            run_security=true
+          fi
+          if echo "$CHANGED_FILES" | grep -qE '^(Cargo\.lock|Cargo\.toml)'; then
+            run_security=true
+          fi
+          echo "run_tests=$run_tests" >> "$GITHUB_OUTPUT"
+          echo "run_docs=$run_docs" >> "$GITHUB_OUTPUT"
+          echo "run_security=$run_security" >> "$GITHUB_OUTPUT"
+  test:
+    name: Test Suite
+    runs-on: '${{ matrix.os }}'
+    needs: determine-changes
+    if: |
+      needs.determine-changes.outputs.run_tests == 'true' ||
+      github.ref_type == 'tag'
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+        rust:
+          - stable
+          - beta
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '${{ matrix.rust }}'
+          components: 'clippy, rustfmt'
+          profile: minimal
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          cache-on-failure: true
+          save-if: '${{ github.ref == ''refs/heads/main'' || github.ref_type == ''tag'' }}'
+      - name: Install cargo-hack
+        run: cargo install cargo-hack
+      - name: Check that Cargo.lock is up to date
+        run: cargo check --locked --workspace
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Run tests
+        run: cargo test --verbose
+      - name: Build release
+        run: cargo build --release
+      - name: Build all features
+        run: cargo hack build --release --all-features
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    needs: determine-changes
+    if: |
+      needs.determine-changes.outputs.run_docs == 'true' ||
+      github.ref_type == 'tag'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rust-docs
+          profile: minimal
+      - name: Check documentation
+        run: cargo doc --no-deps --document-private-items
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    needs: determine-changes
+    if: |
+      needs.determine-changes.outputs.run_security == 'true' ||
+      github.ref_type == 'tag'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          profile: minimal
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      - name: Run audit
+        run: cargo audit
+  release:
+    name: Release
+    runs-on: '${{ matrix.os }}'
+    needs:
+      - test
+      - docs
+      - security
+    if: 'startsWith(github.ref, ''refs/tags/'')'
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: omecp-linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: omecp-windows-x86_64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: omecp-macos-x86_64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: '${{ matrix.target }}'
+          profile: minimal
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: .
+      - name: Build release binary
+        run: 'cargo build --release --target ${{ matrix.target }}'
+      - name: Package binary
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            zip -r ../../${{ matrix.artifact }}.zip omecp.exe
+          else
+            tar -czf ../../${{ matrix.artifact }}.tar.gz omecp
+          fi
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: 'target/${{ matrix.artifact }}.*'
+        env:
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+  ci-success:
+    name: CI Success Check
+    runs-on: ubuntu-latest
+    needs:
+      - test
+      - docs
+      - security
+      - release
+    if: always()
+    steps:
+      - name: Verify all jobs passed
+        run: |
+          if [[ "${{ needs.test.result }}" == "failure" || "${{ needs.docs.result }}" == "failure" || "${{ needs.security.result }}" == "failure" || "${{ needs.release.result }}" == "failure" ]]; then
+            echo "One or more required jobs failed."
+            exit 1
+          fi
+          echo "All relevant CI jobs passed!"

@@ -261,12 +261,9 @@ trust_max_radius = 1.0              # maximum trust radius (angstrom)
 #gediis_sim_switch = 0.0025         # (active: use_robust_diis=true)
 
 #===== Program Settings ========================================================
-program = gaussian                  # gaussian | orca | xtb | bagel
+program = gaussian                  # gaussian | orca 
 gau_comm = g16                      # Gaussian command
 orca_comm = orca                    # ORCA command
-xtb_comm = xtb                      # XTB command
-bagel_comm = bagel                  # BAGEL command
-bagel_model = model.inp             # BAGEL model file
 #custom_interface_file = custom_qm.json  # custom QM program config
 
 #===== Advanced Options ========================================================

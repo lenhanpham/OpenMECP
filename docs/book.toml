@@ -10,7 +10,7 @@ language = "en"
 [output.html]
 site-url = "/OpenMECP/"
 git-repository-url = "https://github.com/lenhanpham/OpenMECP"
-git-repository-icon = "fa-github"
+git-repository-icon = "fab-github"
 edit-url-template = "https://github.com/lenhanpham/OpenMECP/edit/main/docs/{path}"
 additional-css = []
 additional-js = ["theme/nav-title-link.js"]
